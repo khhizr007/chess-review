@@ -29,7 +29,8 @@ use crate::engine::{
 use crate::openings::OpeningBook;
 use crate::pgn::ParsedGame;
 use detectors::{
-    LineMaterial, is_recapture, material_gate, static_sacrifice, takes_free_piece, walk_line,
+    LineMaterial, captures_free_piece, is_only_escape, is_quiet_retreat, is_recapture,
+    material_gate, static_sacrifice, takes_free_piece, threatens_promotion, walk_line,
 };
 use model::*;
 
@@ -62,6 +63,8 @@ struct PositionInfo {
     eval: Eval,
     analysis: Option<PositionAnalysis>,
     is_draw: bool,
+    /// Best move of a shallow search, where the played move is the best move.
+    shallow_best: Option<String>,
 }
 
 pub async fn run_review(
@@ -117,6 +120,7 @@ async fn analyse_positions(
     let done = AtomicU32::new(0);
     progress(0, total);
 
+    let chess960 = game.castling_mode == shakmaty::CastlingMode::Chess960;
     let work: Vec<Option<AnalysisRequest>> = game
         .positions
         .iter()
@@ -126,7 +130,7 @@ async fn analyse_positions(
                 fen: board::fen(pos),
                 limit: request.limit,
                 multipv: request.multipv.max(1),
-                chess960: game.castling_mode == shakmaty::CastlingMode::Chess960,
+                chess960,
                 searchmoves: None,
             })
         })
@@ -167,7 +171,56 @@ async fn analyse_positions(
             eval,
             analysis,
             is_draw: draws[i],
+            shallow_best: None,
         });
+    }
+
+    // "Easy to find" proxy for Great Find: where the played move is the engine's
+    // best move, does a shallow search already choose it?
+    let easy_depth = request.config.great_find.easy_search_depth;
+    if request.config.great_find.enabled && easy_depth > 0 {
+        let shallow: Vec<(usize, AnalysisRequest)> = game
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(i, parsed)| {
+                infos[*i]
+                    .analysis
+                    .as_ref()
+                    .and_then(PositionAnalysis::best)
+                    .is_some_and(|l| l.pv.first() == Some(&parsed.uci))
+            })
+            .map(|(i, _)| {
+                (
+                    i,
+                    AnalysisRequest {
+                        fen: board::fen(&game.positions[i]),
+                        limit: SearchLimit::Depth { depth: easy_depth },
+                        multipv: 1,
+                        chess960,
+                        searchmoves: None,
+                    },
+                )
+            })
+            .collect();
+        let results = futures::stream::iter(shallow.into_iter().map(|(i, req)| async move {
+            Ok::<_, EngineError>((i, evaluator.analyze(&req, cancel).await?))
+        }))
+        .buffered(evaluator.parallelism().max(1))
+        .collect::<Vec<_>>()
+        .await;
+        for result in results {
+            match result {
+                Ok((i, analysis)) => {
+                    infos[i].shallow_best = analysis.best().and_then(|l| l.pv.first().cloned());
+                }
+                Err(EngineError::Cancelled) => return Err(ReviewError::Cancelled),
+                Err(e) => return Err(ReviewError::Engine(e)),
+            }
+        }
+        if cancel.is_cancelled() {
+            return Err(ReviewError::Cancelled);
+        }
     }
     Ok(infos)
 }
@@ -387,15 +440,24 @@ fn build_review(
         } else {
             None
         };
-        facts.events.great_find = cfg.great_find.enabled
+        // Recovered exclusions: easy to find (only escape, free capture, promoting
+        // pawn, or a shallow search already finds it) and obvious quiet retreats.
+        let gf = &cfg.great_find;
+        let easy_to_find = is_only_escape(before, m)
+            || captures_free_piece(before, m, 100)
+            || threatens_promotion(before, m)
+            || infos[i].shallow_best.as_ref() == Some(&parsed.uci);
+        let obvious_retreat = is_quiet_retreat(before, m)
+            && played_walk.max - played_walk.start < gf.quiet_retreat_min_stake_cp;
+        facts.events.great_find = gf.enabled
             && !facts.events.brilliant
             && good_grade
             && i > 0
-            && other_ep
-                .is_some_and(|other| ep_played - other >= cfg.great_find.min_gap_to_second_best)
-            && (!cfg.great_find.require_high_rated
-                || highest_elo as i32 >= cfg.great_find.high_rated_min)
+            && other_ep.is_some_and(|other| ep_played - other >= gf.min_gap_to_second_best)
+            && (!gf.require_high_rated || highest_elo as i32 >= gf.high_rated_min)
             && !takes_free_piece(&played_walk, 100)
+            && !easy_to_find
+            && !obvious_retreat
             && !recapture
             && !mover_completely_winning_before
             && endgame_gain_ok(&played_walk, cfg.brilliant.endgame_min_gain_cp);

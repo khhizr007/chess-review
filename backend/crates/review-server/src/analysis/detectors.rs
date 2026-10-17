@@ -164,16 +164,7 @@ fn not_doomed_or_mutual(before: &Chess, m: Move, role: Role) -> bool {
     if see::see(board, from, opponent) <= 0 {
         return true;
     }
-    let has_safe_square = before
-        .legal_moves()
-        .iter()
-        .filter(|mv| mv.from() == Some(from))
-        .any(|mv| {
-            let mut p = before.clone();
-            p.play_unchecked(*mv);
-            see::capture_gain(&p, mv.to()) <= 0
-        });
-    if !has_safe_square {
+    if safe_squares(before, from).is_empty() {
         return false;
     }
     let value = see::value(role);
@@ -193,6 +184,78 @@ fn not_doomed_or_mutual(before: &Chess, m: Move, role: Role) -> bool {
         .into_iter()
         .any(|sq| threatened(sq, mover));
     !own_threatened && !theirs_threatened
+}
+
+/// Legal destinations of the piece on `from` where the opponent cannot win it
+/// by exchange.
+fn safe_squares(before: &Chess, from: Square) -> Vec<Square> {
+    before
+        .legal_moves()
+        .iter()
+        .filter(|mv| mv.from() == Some(from))
+        .filter(|mv| {
+            let mut p = before.clone();
+            p.play_unchecked(**mv);
+            see::capture_gain(&p, mv.to()) <= 0
+        })
+        .map(|mv| mv.to())
+        .collect()
+}
+
+/// Great Find exclusion (`is_easy_to_find`): the moved piece was threatened
+/// and the move takes it to its only safe square.
+pub fn is_only_escape(before: &Chess, m: Move) -> bool {
+    let Some(from) = m.from() else {
+        return false;
+    };
+    let threatened = before
+        .board()
+        .role_at(from)
+        .is_some_and(|r| r != Role::King)
+        && see::see(before.board(), from, before.turn().other()) > 0;
+    threatened && safe_squares(before, from) == [m.to()]
+}
+
+/// The move captures a piece worth at least `min_value` that the opponent
+/// cannot win back by exchange.
+pub fn captures_free_piece(before: &Chess, m: Move, min_value: i32) -> bool {
+    let Some(captured) = m.capture().map(board::role_value) else {
+        return false;
+    };
+    let mut after = before.clone();
+    after.play_unchecked(m);
+    captured >= min_value && see::capture_gain(&after, m.to()) <= 0
+}
+
+/// Great Find exclusion: a pawn move that promotes or reaches the seventh rank.
+pub fn threatens_promotion(before: &Chess, m: Move) -> bool {
+    if m.role() != Role::Pawn {
+        return false;
+    }
+    let seventh = match before.turn() {
+        Color::White => shakmaty::Rank::Seventh,
+        Color::Black => shakmaty::Rank::Second,
+    };
+    m.is_promotion() || m.to().rank() == seventh
+}
+
+/// Great Find exclusion (`is_quiet_obvious_retreat`, first part): a piece
+/// (not a pawn) moves back towards its own side without capturing, checking
+/// or promoting.
+pub fn is_quiet_retreat(before: &Chess, m: Move) -> bool {
+    let Some(from) = m.from() else {
+        return false;
+    };
+    if m.is_capture() || m.is_castle() || m.role() == Role::Pawn {
+        return false;
+    }
+    let mut after = before.clone();
+    after.play_unchecked(m);
+    let backwards = match before.turn() {
+        Color::White => m.to().rank() < from.rank(),
+        Color::Black => m.to().rank() > from.rank(),
+    };
+    backwards && !after.is_check()
 }
 
 /// Largest value (king 99999) newly attacked by the mover's other sliders
@@ -328,6 +391,59 @@ mod tests {
                 see_gain: 600
             })
         );
+    }
+
+    fn mv(fen: &str, uci: &str) -> (Chess, Move) {
+        let p = pos(fen);
+        let m = board::parse_uci(&p, uci).expect("legal move");
+        (p, m)
+    }
+
+    #[test]
+    fn only_escape_square() {
+        // The bishop on a2 is attacked by the pawn; b1 is its only safe square
+        // (Bxb3 runs into the rook).
+        let fen = "1r2k3/8/8/8/8/1p6/B7/4K3 w - - 0 1";
+        let (p, m) = mv(fen, "a2b1");
+        assert!(is_only_escape(&p, m));
+        let (p, m) = mv(fen, "a2b3");
+        assert!(!is_only_escape(&p, m), "not the safe square");
+        // Without the rook, Bxb3 is safe too: two ways out.
+        let (p, m) = mv("4k3/8/8/8/8/1p6/B7/4K3 w - - 0 1", "a2b1");
+        assert!(!is_only_escape(&p, m));
+    }
+
+    #[test]
+    fn free_piece_by_exchange() {
+        let (p, m) = mv("4k3/8/8/3n4/8/8/8/3RK3 w - - 0 1", "d1d5");
+        assert!(captures_free_piece(&p, m, 300));
+        let (p, m) = mv("4k3/8/4p3/3n4/8/8/8/3RK3 w - - 0 1", "d1d5");
+        assert!(
+            !captures_free_piece(&p, m, 300),
+            "the pawn wins the rook back"
+        );
+    }
+
+    #[test]
+    fn promotion_threats_and_quiet_retreats() {
+        let (p, m) = mv("4k3/8/2P5/8/8/8/8/4K3 w - - 0 1", "c6c7");
+        assert!(threatens_promotion(&p, m));
+        let (p, m) = mv("4k3/8/8/8/8/2p5/8/4K3 b - - 0 1", "c3c2");
+        assert!(threatens_promotion(&p, m));
+        let (p, m) = mv("4k3/8/8/8/2P5/8/8/4K3 w - - 0 1", "c4c5");
+        assert!(!threatens_promotion(&p, m));
+
+        let fen = "4k3/8/8/3B4/8/8/8/4K3 w - - 0 1";
+        let (p, m) = mv(fen, "d5b3");
+        assert!(is_quiet_retreat(&p, m));
+        let (p, m) = mv(fen, "d5c6");
+        assert!(!is_quiet_retreat(&p, m), "forwards");
+        // A retreat that gives check is not quiet.
+        let fen = "8/4B3/8/8/8/8/1k6/4K3 w - - 0 1";
+        let (p, m) = mv(fen, "e7f6");
+        assert!(!is_quiet_retreat(&p, m), "Bf6+");
+        let (p, m) = mv(fen, "e7d6");
+        assert!(is_quiet_retreat(&p, m));
     }
 
     #[test]

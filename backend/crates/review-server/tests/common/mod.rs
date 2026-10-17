@@ -129,20 +129,34 @@ impl Evaluator for FakeEngine {
 }
 
 /// [`FakeEngine`] with fixed lines for chosen positions: `(white cp, pv)` per
-/// line, best first, keyed by the first four FEN fields.
+/// line, best first, keyed by the first four FEN fields and optionally by the
+/// search depth (a depth-specific script wins over the general one).
 #[derive(Default)]
 pub struct ScriptedEngine {
     pub fallback: FakeEngine,
-    pub scripts: HashMap<String, Vec<(i32, Vec<String>)>>,
+    pub scripts: HashMap<(String, Option<u32>), Script>,
 }
 
+type ScriptLines<'a> = &'a [(i32, &'a [&'a str])];
+/// Scripted lines: `(white cp, pv)`, best first.
+pub type Script = Vec<(i32, Vec<String>)>;
+
 impl ScriptedEngine {
-    pub fn script(mut self, fen: &str, lines: &[(i32, &[&str])]) -> Self {
+    pub fn script(self, fen: &str, lines: ScriptLines) -> Self {
+        self.insert(fen, None, lines)
+    }
+
+    /// Lines for searches of exactly `depth` plies.
+    pub fn script_at_depth(self, fen: &str, depth: u32, lines: ScriptLines) -> Self {
+        self.insert(fen, Some(depth), lines)
+    }
+
+    fn insert(mut self, fen: &str, depth: Option<u32>, lines: ScriptLines) -> Self {
         let lines = lines
             .iter()
             .map(|(cp, pv)| (*cp, pv.iter().map(|m| (*m).to_owned()).collect()))
             .collect();
-        self.scripts.insert(position_key(fen), lines);
+        self.scripts.insert((position_key(fen), depth), lines);
         self
     }
 }
@@ -164,9 +178,15 @@ impl Evaluator for ScriptedEngine {
                 .as_ref()
                 .is_none_or(|moves| pv.first().is_some_and(|m| moves.contains(m)))
         };
+        let key = position_key(&request.fen);
+        let depth = match request.limit {
+            review_server::engine::SearchLimit::Depth { depth } => Some(depth),
+            review_server::engine::SearchLimit::MoveTime { .. } => None,
+        };
         let lines: Vec<_> = self
             .scripts
-            .get(&position_key(&request.fen))
+            .get(&(key.clone(), depth))
+            .or_else(|| self.scripts.get(&(key, None)))
             .map(|lines| lines.iter().filter(|(_, pv)| allowed(pv)).collect())
             .unwrap_or_default();
         if lines.is_empty() {

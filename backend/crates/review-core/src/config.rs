@@ -80,6 +80,13 @@ pub struct GreatFindConfig {
     /// `TEP::is_high_rated`: `max(WhiteElo, BlackElo) >= 1000`. Recovered.
     pub require_high_rated: bool,
     pub high_rated_min: i32,
+    /// "Easy to find" proxy for the reference's move-probability model: a search
+    /// this deep already picks the move as best. 0 turns it off (the default:
+    /// on the calibration games depths 4 to 8 found nearly every Great move).
+    pub easy_search_depth: u32,
+    /// A quiet retreat is "obvious" unless it wins at least this much material
+    /// along the line (`is_quiet_obvious_retreat`; 200 recovered).
+    pub quiet_retreat_min_stake_cp: i32,
 }
 
 /// Miss-subtype detection (fallback heuristics; guards recovered).
@@ -138,6 +145,8 @@ impl Default for GreatFindConfig {
             min_gap_to_second_best: 0.20,
             require_high_rated: true,
             high_rated_min: 1000,
+            easy_search_depth: 0,
+            quiet_retreat_min_stake_cp: 200,
         }
     }
 }

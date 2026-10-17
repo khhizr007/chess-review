@@ -112,7 +112,9 @@ async fn missed_mate_in_one_is_a_miss() {
 async fn stalemate_final_position_is_not_searched() {
     let engine = Arc::new(FakeEngine::default());
     let evaluator: Arc<dyn Evaluator> = engine.clone();
-    let req = request("stalemate.pgn");
+    let mut req = request("stalemate.pgn");
+    // Count only the main searches, not the shallow Great Find ones.
+    req.config.great_find.easy_search_depth = 0;
     let positions = req.game.positions.len() as u32;
     let r = run_review(
         req,
