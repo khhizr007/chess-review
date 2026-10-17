@@ -36,17 +36,33 @@ pub struct ReviewConfig {
     pub material_horizon_plies: u32,
 }
 
-/// Brilliant detection. Gates are recovered; the sacrifice test is a fallback.
+/// Brilliant detection: a static sacrifice (SEE) by the engine's best move,
+/// plus the recovered gates. Thresholds marked *fallback* are starting values
+/// to calibrate.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export)]
 pub struct BrilliantConfig {
     pub enabled: bool,
-    /// Minimum material dip (cp) along the PV that counts as a sacrifice (fallback).
+    /// Minimum material (cp) the opponent wins, by static exchange, by capturing
+    /// the sacrificed piece.
     pub min_sacrifice_cp: i32,
-    /// Minimum value (cp) of the piece given up (fallback; excludes pawns).
+    /// Minimum value (cp) of the piece given up (excludes pawns).
     pub min_piece_value_cp: i32,
-    /// In the endgame a sacrifice also needs this much material gain. Recovered: 200.
+    /// The second-best move must lose at least this much EP against the played
+    /// move, or fall into a lower outcome bucket (fallback).
+    pub min_gap_to_second_best: f64,
+    /// No Brilliant for a move that forces mate itself (the reference excludes them).
+    pub exclude_mating_moves: bool,
+    /// The mover's EP before the move must be in `[min_ep_before, max_ep_before)`
+    /// (fallback; neither greatly winning nor greatly losing).
+    pub min_ep_before: f64,
+    pub max_ep_before: f64,
+    /// Also count a piece the move leaves en prise without moving it (for example
+    /// the queen in Legal's trap), not only the moved piece (fallback extension).
+    pub count_pieces_left_hanging: bool,
+    /// In the endgame a sacrifice also needs this much material gain along the
+    /// line, unless the second-best move drops an outcome bucket. Recovered: 200.
     pub endgame_min_gain_cp: i32,
     /// The mover must not be losing after the move (EP below this) (fallback).
     pub min_ep_after: f64,
@@ -102,8 +118,13 @@ impl Default for BrilliantConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_sacrifice_cp: 200,
+            min_sacrifice_cp: 100,
             min_piece_value_cp: 300,
+            min_gap_to_second_best: 0.10,
+            exclude_mating_moves: true,
+            min_ep_before: 0.10,
+            max_ep_before: 0.90,
+            count_pieces_left_hanging: false,
             endgame_min_gain_cp: 200,
             min_ep_after: 0.20,
         }

@@ -1,6 +1,7 @@
 //! Shared test helpers: fixture loading and a deterministic fake engine.
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -113,6 +114,63 @@ impl Evaluator for FakeEngine {
 
     fn name(&self) -> String {
         "FakeEngine".to_owned()
+    }
+
+    fn parallelism(&self) -> usize {
+        2
+    }
+}
+
+/// [`FakeEngine`] with fixed lines for chosen positions: `(white cp, pv)` per
+/// line, best first, keyed by the first four FEN fields.
+#[derive(Default)]
+pub struct ScriptedEngine {
+    pub fallback: FakeEngine,
+    pub scripts: HashMap<String, Vec<(i32, Vec<String>)>>,
+}
+
+impl ScriptedEngine {
+    pub fn script(mut self, fen: &str, lines: &[(i32, &[&str])]) -> Self {
+        let lines = lines
+            .iter()
+            .map(|(cp, pv)| (*cp, pv.iter().map(|m| (*m).to_owned()).collect()))
+            .collect();
+        self.scripts.insert(position_key(fen), lines);
+        self
+    }
+}
+
+fn position_key(fen: &str) -> String {
+    fen.split_whitespace().take(4).collect::<Vec<_>>().join(" ")
+}
+
+#[async_trait]
+impl Evaluator for ScriptedEngine {
+    async fn analyze(
+        &self,
+        request: &AnalysisRequest,
+        cancel: &CancellationToken,
+    ) -> Result<PositionAnalysis, EngineError> {
+        let Some(lines) = self.scripts.get(&position_key(&request.fen)) else {
+            return self.fallback.analyze(request, cancel).await;
+        };
+        Ok(PositionAnalysis {
+            lines: lines
+                .iter()
+                .take(usize::from(request.multipv.max(1)))
+                .enumerate()
+                .map(|(i, (cp, pv))| EngineLine {
+                    rank: i as u8 + 1,
+                    eval: Eval::Cp { cp: *cp },
+                    depth: 1,
+                    pv: pv.clone(),
+                })
+                .collect(),
+        })
+    }
+
+    fn name(&self) -> String {
+        "ScriptedEngine".to_owned()
     }
 
     fn parallelism(&self) -> usize {
