@@ -36,13 +36,15 @@ DESC_TO_LABEL = {
     "brilliant": "brilliant", "great": "great", "great move": "great",
     "book": "book", "best": "best", "excellent": "excellent", "good": "good",
     "inaccuracy": "inaccuracy", "mistake": "mistake", "miss": "miss",
-    "blunder": "blunder",
+    "blunder": "blunder", "forced": "forced",
 }
+# Labels the app shows that are not rows of its counts table.
+UNCOUNTED = {"forced"}
 ICON_TO_LABEL = {
     "brilliant": "brilliant", "great_find": "great", "book": "book",
     "best": "best", "excellent": "excellent", "good": "good",
     "inaccuracy": "inaccuracy", "mistake": "mistake", "incorrect": "miss",
-    "blunder": "blunder",
+    "blunder": "blunder", "forced": "forced",
 }
 # Arrow colour the review uses for the suggested best move.
 BEST_ARROW = "rgba(159,207,63"
@@ -101,6 +103,13 @@ def parse_line(line: str) -> dict:
 
 def build(raw: dict, pgn: str) -> tuple[dict, list[str]]:
     problems: list[str] = []
+    # Captures may carry the summary as {"sum": {"acc": [w, b], "c": {...}}}.
+    summary = raw.get("sum") or {}
+    if summary.get("acc"):
+        raw.setdefault("white_accuracy", summary["acc"][0])
+        raw.setdefault("black_accuracy", summary["acc"][1])
+    if summary.get("c"):
+        raw.setdefault("counts", summary["c"])
     sans = pgn_sans(pgn)
     lines = sorted((parse_line(x) for x in raw["lines"]), key=lambda r: r["move"])
     if len(lines) != len(sans):
@@ -119,7 +128,7 @@ def build(raw: dict, pgn: str) -> tuple[dict, list[str]]:
         if norm_san(r["san"]) != norm_san(san):
             problems.append(f"ply {i + 1}: SAN review {r['san']!r} vs pgn {san!r}")
         label = DESC_TO_LABEL.get(r["desc"].strip().lower())
-        icon_label = ICON_TO_LABEL.get(r["icon"])
+        icon_label = ICON_TO_LABEL.get(r["icon"].lower())
         if label and icon_label and label != icon_label:
             problems.append(f"ply {i + 1}: label {label} vs icon {r['icon']}")
         if label is None and icon_label is not None:
@@ -128,8 +137,10 @@ def build(raw: dict, pgn: str) -> tuple[dict, list[str]]:
             entry["label"] = label
         else:
             entry["hidden"] = r["desc"] or r["icon"] or "empty"
-        entry["app_eval"] = r["score"] or None
-        if label not in ("best", "book", "brilliant", "great"):
+        # The last move shows the game result instead of an evaluation.
+        if r["score"] and r["score"] not in ("1-0", "0-1", "1/2-1/2", "½-½"):
+            entry["app_eval"] = r["score"]
+        if label not in ("best", "book", "brilliant", "great", "forced"):
             for a in filter(None, r["arrows"].split(";")):
                 uci, _, colour = a.partition("@")
                 if colour.startswith(BEST_ARROW):
@@ -152,6 +163,8 @@ def build(raw: dict, pgn: str) -> tuple[dict, list[str]]:
         for p in side_plies:
             if p["label"] in have:
                 have[p["label"]] += 1
+            elif p["label"] in UNCOUNTED:
+                pass
             else:
                 unknown.append(p)
         if not table[side]:
@@ -174,12 +187,18 @@ def build(raw: dict, pgn: str) -> tuple[dict, list[str]]:
                 p["label"] = "uncertain:" + "/".join(sorted(short))
 
     counts = {"white": {}, "black": {}}
+    has_uncertain = {"white": False, "black": False}
     for p in plies:
         side = "white" if p["ply"] % 2 == 1 else "black"
         if p["label"] in LABELS:
             counts[side][p["label"]] = counts[side].get(p["label"], 0) + 1
+        elif p["label"].startswith("uncertain"):
+            has_uncertain[side] = True
+    # A side with uncertain plies was already checked against the table above
+    # (the hidden plies exactly cover the shortfall).
     if table["white"] and any(table[s].get(k, 0) != counts[s].get(k, 0)
-                              for s in ("white", "black") for k in LABELS):
+                              for s in ("white", "black") if not has_uncertain[s]
+                              for k in LABELS):
         problems.append(f"counts mismatch: table {table} vs labels {counts}")
 
     out = {
