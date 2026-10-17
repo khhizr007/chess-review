@@ -1,0 +1,33 @@
+[package]
+name = "review-server"
+description = "Chess game-review HTTP API: PGN import, Stockfish orchestration, review pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+review-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+async-trait = "0.1"
+axum = "0.8"
+futures = "0.3"
+lru = "0.18"
+pgn-reader = "0.29"
+shakmaty = "0.30"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time", "signal", "net"] }
+tokio-util = "0.7"
+tower-http = { version = "0.7", features = ["cors", "fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

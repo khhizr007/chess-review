@@ -1,0 +1,8 @@
+[Event "Missed mate in one"]
+[White "Learner"]
+[Black "Opponent"]
+[WhiteElo "1400"]
+[BlackElo "1400"]
+[Result "*"]
+
+1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qf3 Nd4 5. Qd3 d5 6. exd5 Bf5 7. Qc3 Nxc2+ *

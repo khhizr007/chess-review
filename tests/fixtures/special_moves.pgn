@@ -1,0 +1,10 @@
+[Event "Castling, en passant, promotion"]
+[White "Tester"]
+[Black "Tester"]
+[WhiteElo "1500"]
+[BlackElo "1500"]
+[Result "1-0"]
+[Termination "Black resigned"]
+
+1. e4 d5 2. e5 f5 3. exf6 e6 4. fxg7 Ke7 5. gxh8=Q Nf6 6. Nf3 Nc6 7. Bc4 b6
+8. O-O Bb7 9. Re1 Qd6 1-0
