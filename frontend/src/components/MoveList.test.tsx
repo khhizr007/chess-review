@@ -34,11 +34,23 @@ describe("MoveList", () => {
     expect(onSelect).toHaveBeenCalledWith(3);
   });
 
-  it("shows only matching moves when filtered", () => {
+  it("keeps every move but dims the ones outside the filter", () => {
     const plies = [ply(1, "white", 1), ply(2, "black", 1, { classification: "blunder", ep_lost: 0.4 })];
     render(<MoveList plies={plies} current={0} filter="attention" onSelect={() => {}} />);
-    expect(screen.queryByText("S1")).toBeNull();
-    expect(screen.getByText("S2")).toBeTruthy();
-    expect(screen.getByText(/Blunder · −40%/)).toBeTruthy();
+    expect(screen.getByText("S1").closest("button")?.className).toContain("is-dim");
+    expect(screen.getByText("S2").closest("button")?.className).not.toContain("is-dim");
+  });
+
+  it("marks only notable moves with an icon", () => {
+    const plies = [ply(1, "white", 1), ply(2, "black", 1, { classification: "blunder" })];
+    render(<MoveList plies={plies} current={0} filter="all" onSelect={() => {}} />);
+    expect(screen.queryByRole("img", { name: "Good" })).toBeNull();
+    expect(screen.getByRole("img", { name: "Blunder" })).toBeTruthy();
+  });
+
+  it("writes piece moves in figurine notation without losing the SAN text", () => {
+    const plies = [ply(1, "white", 1, { san: "Nf3" })];
+    render(<MoveList plies={plies} current={1} filter="all" onSelect={() => {}} />);
+    expect(screen.getByRole("button").textContent).toBe("Nf3");
   });
 });

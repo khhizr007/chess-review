@@ -6,26 +6,42 @@ import type { Side } from "../api/generated/Side";
 
 export interface ClassificationMeta {
   label: string;
-  /** Short annotation symbol shown in badges. */
-  symbol: string;
   /** CSS custom property holding the colour. */
   color: string;
+  /** Completes "<move> is …" in the coach headline. */
+  phrase: string;
+  /** Marked with an icon and colour in the move list (the rest stay plain). */
+  notable: boolean;
 }
 
 export const CLASSIFICATIONS: Record<Classification, ClassificationMeta> = {
-  brilliant: { label: "Brilliant", symbol: "!!", color: "var(--c-brilliant)" },
-  great_find: { label: "Great find", symbol: "!", color: "var(--c-great)" },
-  best: { label: "Best", symbol: "★", color: "var(--c-best)" },
-  excellent: { label: "Excellent", symbol: "✓", color: "var(--c-excellent)" },
-  good: { label: "Good", symbol: "✓", color: "var(--c-good)" },
-  book: { label: "Book", symbol: "≡", color: "var(--c-book)" },
-  inaccuracy: { label: "Inaccuracy", symbol: "?!", color: "var(--c-inaccuracy)" },
-  mistake: { label: "Mistake", symbol: "?", color: "var(--c-mistake)" },
-  miss: { label: "Miss", symbol: "✕", color: "var(--c-miss)" },
-  blunder: { label: "Blunder", symbol: "??", color: "var(--c-blunder)" },
-  forced: { label: "Forced", symbol: "→", color: "var(--c-forced)" },
-  tricky: { label: "Tricky", symbol: "⁈", color: "var(--c-great)" },
+  brilliant: { label: "Brilliant", color: "var(--c-brilliant)", phrase: "brilliant", notable: true },
+  great_find: { label: "Great find", color: "var(--c-great)", phrase: "a great find", notable: true },
+  best: { label: "Best", color: "var(--c-best)", phrase: "best", notable: false },
+  excellent: { label: "Excellent", color: "var(--c-excellent)", phrase: "excellent", notable: false },
+  good: { label: "Good", color: "var(--c-good)", phrase: "good", notable: false },
+  book: { label: "Book", color: "var(--c-book)", phrase: "a book move", notable: true },
+  inaccuracy: { label: "Inaccuracy", color: "var(--c-inaccuracy)", phrase: "an inaccuracy", notable: true },
+  mistake: { label: "Mistake", color: "var(--c-mistake)", phrase: "a mistake", notable: true },
+  miss: { label: "Miss", color: "var(--c-miss)", phrase: "a miss", notable: true },
+  blunder: { label: "Blunder", color: "var(--c-blunder)", phrase: "a blunder", notable: true },
+  forced: { label: "Forced", color: "var(--c-forced)", phrase: "the only move", notable: false },
+  tricky: { label: "Tricky", color: "var(--c-tricky)", phrase: "a tricky move", notable: true },
 };
+
+/** Report rows, best to worst, as in the reference summary. */
+export const REPORT_ORDER: Classification[] = [
+  "brilliant",
+  "great_find",
+  "best",
+  "excellent",
+  "good",
+  "book",
+  "inaccuracy",
+  "mistake",
+  "miss",
+  "blunder",
+];
 
 export const MISS_KINDS: Record<MissKind, string> = {
   win: "missed a winning continuation",
@@ -70,6 +86,16 @@ export function favouredSide(ev: Eval): Side | null {
   if (ev.cp > 0) return "white";
   if (ev.cp < 0) return "black";
   return null;
+}
+
+/** Evaluation for compact pills: "+0.38", "−1.65", "M3", "−M2", "1-0". */
+export function formatEvalPill(ev: Eval): string {
+  if (ev.kind === "cp") {
+    const pawns = ev.cp / 100;
+    if (Math.abs(pawns) < 0.005) return "0.00";
+    return `${pawns > 0 ? "+" : "−"}${Math.abs(pawns).toFixed(Math.abs(pawns) >= 10 ? 1 : 2)}`;
+  }
+  return formatEval(ev);
 }
 
 export function percent(x: number, digits = 0): string {

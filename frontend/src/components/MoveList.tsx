@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { PlyReview } from "../api/generated/PlyReview";
-import { CLASSIFICATIONS, moveNumberLabel } from "../lib/format";
-import { matchesFilter, type MoveFilter } from "../lib/review";
-import { ClassificationBadge } from "./ClassificationBadge";
+import { CLASSIFICATIONS } from "../lib/format";
+import { matchesFilter, showsListIcon, type MoveFilter } from "../lib/review";
+import { ClassificationIcon } from "./ClassificationIcon";
+import { San } from "./PieceIcon";
 
 interface Props {
   plies: PlyReview[];
@@ -30,21 +31,35 @@ function rows(plies: PlyReview[]): Row[] {
   return out;
 }
 
-function MoveCell({ ply, current, onSelect }: { ply?: PlyReview; current: number; onSelect: (n: number) => void }) {
+function MoveCell({
+  ply,
+  current,
+  filter,
+  onSelect,
+}: {
+  ply?: PlyReview;
+  current: number;
+  filter: MoveFilter;
+  onSelect: (n: number) => void;
+}) {
   if (!ply) return <td className="move-cell move-cell--empty">…</td>;
   const active = ply.ply === current;
+  const icon = showsListIcon(ply);
+  const meta = ply.classification ? CLASSIFICATIONS[ply.classification] : null;
+  const dim = filter !== "all" && !matchesFilter(ply, filter);
   return (
     <td className="move-cell">
       <button
         type="button"
-        className={`move ${active ? "move--active" : ""}`}
+        className={`move ${active ? "move--active" : ""} ${dim ? "is-dim" : ""}`}
         aria-current={active ? "step" : undefined}
         data-ply={ply.ply}
         onClick={() => onSelect(ply.ply)}
-        title={ply.classification ? CLASSIFICATIONS[ply.classification].label : undefined}
+        title={meta?.label}
+        style={icon && meta ? { color: meta.color } : undefined}
       >
-        <ClassificationBadge value={ply.classification} />
-        <span className="move__san">{ply.san}</span>
+        <span className="move__icon">{icon && <ClassificationIcon value={ply.classification} size={18} />}</span>
+        <San san={ply.san} side={ply.mover} />
       </button>
     </td>
   );
@@ -53,40 +68,21 @@ function MoveCell({ ply, current, onSelect }: { ply?: PlyReview; current: number
 export function MoveList({ plies, current, filter, onSelect }: Props) {
   const container = useRef<HTMLDivElement>(null);
 
-  // Keep the current move visible while navigating.
+  // Keep the current move visible inside the list without scrolling the page.
   useEffect(() => {
-    const el = container.current?.querySelector<HTMLElement>(`[data-ply="${current}"]`);
-    el?.scrollIntoView?.({ block: "nearest" });
-  }, [current, filter]);
-
-  if (filter !== "all") {
-    const matching = plies.filter((p) => matchesFilter(p, filter));
-    return (
-      <div className="move-list" ref={container}>
-        {matching.length === 0 && <p className="muted small pad">No moves match this view.</p>}
-        <ul className="move-filtered">
-          {matching.map((p) => (
-            <li key={p.ply}>
-              <button
-                type="button"
-                data-ply={p.ply}
-                className={`move move--wide ${p.ply === current ? "move--active" : ""}`}
-                onClick={() => onSelect(p.ply)}
-              >
-                <span className="muted move__number">{moveNumberLabel(p.move_number, p.mover)}</span>
-                <ClassificationBadge value={p.classification} />
-                <span className="move__san">{p.san}</span>
-                <span className="muted small move__meta">
-                  {p.classification ? CLASSIFICATIONS[p.classification].label : ""}
-                  {p.ep_lost >= 0.005 ? ` · −${(p.ep_lost * 100).toFixed(0)}%` : ""}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
+    const box = container.current;
+    const el = box?.querySelector<HTMLElement>(`[data-ply="${current}"]`);
+    if (!box) return;
+    if (!el) {
+      if (current === 0) box.scrollTop = 0;
+      return;
+    }
+    const row = (el.closest("tr") ?? el).getBoundingClientRect();
+    const view = box.getBoundingClientRect();
+    // Leave one row of context above/below the current move.
+    if (row.top < view.top + row.height) box.scrollTop -= view.top + row.height - row.top;
+    else if (row.bottom > view.bottom - row.height) box.scrollTop += row.bottom - (view.bottom - row.height);
+  }, [current]);
 
   return (
     <div className="move-list" ref={container}>
@@ -94,11 +90,11 @@ export function MoveList({ plies, current, filter, onSelect }: Props) {
         <tbody>
           {rows(plies).map((row) => (
             <tr key={`${row.number}-${row.white?.ply ?? row.black?.ply}`}>
-              <th scope="row" className="muted move-table__number">
+              <th scope="row" className="move-table__number">
                 {row.number}.
               </th>
-              <MoveCell ply={row.white} current={current} onSelect={onSelect} />
-              <MoveCell ply={row.black} current={current} onSelect={onSelect} />
+              <MoveCell ply={row.white} current={current} filter={filter} onSelect={onSelect} />
+              <MoveCell ply={row.black} current={current} filter={filter} onSelect={onSelect} />
             </tr>
           ))}
         </tbody>

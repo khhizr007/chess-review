@@ -2,6 +2,8 @@ import type { Classification } from "../api/generated/Classification";
 import type { Phase } from "../api/generated/Phase";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
+import type { Side } from "../api/generated/Side";
+import { CLASSIFICATIONS } from "./format";
 
 /** Board position shown at a ply (0 = start position, n = after the n-th move). */
 export function fenAt(review: ReviewResult, ply: number): string {
@@ -21,14 +23,20 @@ export function nextPlyAt(review: ReviewResult, ply: number): PlyReview | undefi
 export type MoveFilter = "all" | "attention" | "key" | "best" | Phase;
 
 export const FILTERS: { id: MoveFilter; label: string }[] = [
-  { id: "all", label: "All moves" },
-  { id: "attention", label: "Needs attention" },
-  { id: "key", label: "Key & critical" },
+  { id: "all", label: "Every move" },
+  { id: "attention", label: "Mistakes only" },
+  { id: "key", label: "Key moments" },
   { id: "best", label: "Best & missed" },
   { id: "opening", label: "Opening" },
   { id: "middlegame", label: "Middlegame" },
   { id: "endgame", label: "Endgame" },
 ];
+
+/** Whether the move list marks a move with its icon: notable classes, plus best moves at key moments. */
+export function showsListIcon(p: PlyReview): boolean {
+  if (!p.classification) return false;
+  return CLASSIFICATIONS[p.classification].notable || (p.classification === "best" && p.is_key_moment);
+}
 
 const GOOD_ENOUGH: ReadonlySet<Classification> = new Set([
   "brilliant",
@@ -72,4 +80,10 @@ export function stepFiltered(review: ReviewResult, from: number, dir: 1 | -1, fi
     if (p && matchesFilter(p, filter)) return ply;
   }
   return null;
+}
+
+/** First ply (1-based) where `side` played a move of this classification, or null. */
+export function firstPlyOf(review: ReviewResult, side: Side, classification: Classification): number | null {
+  const p = review.plies.find((m) => m.mover === side && m.classification === classification);
+  return p ? p.ply : null;
 }

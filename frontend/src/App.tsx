@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { ImportPanel } from "./components/ImportPanel";
+import { CoachBubble } from "./components/Coach";
 import { ReviewScreen } from "./components/ReviewScreen";
 import { useReviewJob } from "./hooks/useReviewJob";
 
@@ -28,38 +29,44 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <span className="brand">
-          <span className="brand__mark" aria-hidden="true" />
-          Game Review
-        </span>
-      </header>
-      <main className="main">
+      {view.kind !== "done" && (
+        <header className="topbar">
+          <span className="brand">
+            <span className="brand__mark" aria-hidden="true" />
+            Game Review
+          </span>
+        </header>
+      )}
+      <main className={view.kind === "done" ? "main main--review" : "main"}>
         {(view.kind === "idle" || view.kind === "submitting") && (
           <ImportPanel onStart={(req) => void start(req)} busy={view.kind === "submitting"} />
         )}
 
         {(view.kind === "running" || view.kind === "loading") && (
           <section className="card progress-card" aria-live="polite">
-            <h1>Reviewing…</h1>
-            {view.kind === "running" ? (
-              <>
-                <progress
-                  max={Math.max(1, view.status.progress.total)}
-                  value={view.status.progress.done}
-                  aria-label="Review progress"
-                />
-                <p className="muted">
-                  {view.status.state === "queued"
-                    ? "Waiting for a free engine…"
-                    : `Analysed ${view.status.progress.done} of ${view.status.progress.total} positions`}
+            <CoachBubble>
+              <div className="coach__head">
+                <h1 className="coach__title">Analyzing your game…</h1>
+              </div>
+              <div className="coach__body">
+                <p>
+                  {view.kind === "loading"
+                    ? "Almost there. Putting the review together."
+                    : view.status.state === "queued"
+                      ? "Waiting for a free engine."
+                      : `Checked ${view.status.progress.done} of ${view.status.progress.total} positions.`}
                 </p>
-                <button type="button" className="button" onClick={() => void cancel()}>
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <p className="muted">Loading results…</p>
+              </div>
+            </CoachBubble>
+            <progress
+              max={view.kind === "running" ? Math.max(1, view.status.progress.total) : 1}
+              value={view.kind === "running" ? view.status.progress.done : 1}
+              aria-label="Review progress"
+            />
+            {view.kind === "running" && (
+              <button type="button" className="button" onClick={() => void cancel()}>
+                Cancel
+              </button>
             )}
           </section>
         )}
