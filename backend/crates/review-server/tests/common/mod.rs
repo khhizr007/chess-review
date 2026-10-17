@@ -65,9 +65,16 @@ impl Evaluator for FakeEngine {
             .into_position(mode)
             .map_err(|e| EngineError::Protocol(e.to_string()))?;
         let mover = pos.turn();
+        let allowed = |m: &shakmaty::Move| {
+            request
+                .searchmoves
+                .as_ref()
+                .is_none_or(|moves| moves.contains(&board::uci(*m, mode)))
+        };
         let mut scored: Vec<(i64, EngineLine)> = pos
             .legal_moves()
             .into_iter()
+            .filter(allowed)
             .map(|m| {
                 let mut after = pos.clone();
                 after.play_unchecked(m);
@@ -151,12 +158,23 @@ impl Evaluator for ScriptedEngine {
         request: &AnalysisRequest,
         cancel: &CancellationToken,
     ) -> Result<PositionAnalysis, EngineError> {
-        let Some(lines) = self.scripts.get(&position_key(&request.fen)) else {
-            return self.fallback.analyze(request, cancel).await;
+        let allowed = |pv: &[String]| {
+            request
+                .searchmoves
+                .as_ref()
+                .is_none_or(|moves| pv.first().is_some_and(|m| moves.contains(m)))
         };
+        let lines: Vec<_> = self
+            .scripts
+            .get(&position_key(&request.fen))
+            .map(|lines| lines.iter().filter(|(_, pv)| allowed(pv)).collect())
+            .unwrap_or_default();
+        if lines.is_empty() {
+            return self.fallback.analyze(request, cancel).await;
+        }
         Ok(PositionAnalysis {
             lines: lines
-                .iter()
+                .into_iter()
                 .take(usize::from(request.multipv.max(1)))
                 .enumerate()
                 .map(|(i, (cp, pv))| EngineLine {

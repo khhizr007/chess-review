@@ -127,6 +127,7 @@ async fn analyse_positions(
                 limit: request.limit,
                 multipv: request.multipv.max(1),
                 chess960: game.castling_mode == shakmaty::CastlingMode::Chess960,
+                searchmoves: None,
             })
         })
         .collect();

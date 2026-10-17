@@ -448,6 +448,7 @@ async fn analyze_position(
                 limit,
                 multipv,
                 chess960: false,
+                searchmoves: None,
             },
             &CancellationToken::new(),
         )
