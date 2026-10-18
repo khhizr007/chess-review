@@ -60,7 +60,10 @@ into this project; formulas and constants are restated from the analysis.
 - **This project.** Stockfish (configurable version and path) through UCI with MultiPV. One search per position.
   - Best line and alternatives come from the search of the position *before* the move.
   - The played move's score is that move's MultiPV line when present. Otherwise it is the negated
-    evaluation of the position *after* the move.
+    evaluation of the position *after* the move. Calibration against Chess.com confirmed this choice: a
+    search of the parent position restricted to the played move matched worse.
+  - Every search starts from a cleared hash (`ucinewgame`, Clear Hash) with one thread, so a review is
+    reproducible run to run.
   - Internally every score is stored from White's perspective and converted to the mover's perspective only
     inside the classification functions.
   - **Expected difference:** the engine version and depth differ from the original, so classifications can
@@ -179,9 +182,16 @@ Brilliant, Tricky and Great Find are events in circumstances 13, 14 and 15 (`TEP
 - **Confirmed.** If that gate fails, the event is still allowed when the opponent was not already lost
   (EP ≥ 0.10 at R = 2000).
 - **Inferred.** The exact sacrifice definition was not decoded.
-- **This project.** A sacrifice is a non-pawn piece that is lost along the engine's principal variation
-  (material dips by at least that piece's value within a configurable horizon) while the move still grades
-  Best or Excellent and the mover is not losing afterwards.
+- **This project.** A static sacrifice (static exchange evaluation, not a line walk): the moved knight,
+  bishop, rook or queen can be won by the opponent by exchange on its new square; it is not a disguised
+  trade (capture plus discovered attack); a piece already threatened had a safe square and no mutual
+  threat existed (optionally, a piece left newly en prise also counts). In addition the move must be the
+  engine's best move, the second-best move clearly worse (≥ 0.10 EP or a lower bucket), the mover not
+  mated and not forcing mate, and the mover's EP before the move in [0.10, 0.90). See
+  `implementation-notes.md`.
+- **Calibrated.** Against Chess.com on 20 games (October 2026) this gives Brilliant precision 1.00 on
+  the tuning set (1 of the app's 3 found, no false ones); the earlier line-walk test gave 60 Brilliants
+  for the app's 3.
 
 **Great Find** (`is_great_find_candidate_core` [`0x1071764`], `compute_board_event<15>`):
 - **Confirmed.** Candidate requires: the parent and grandparent are scored, precision is Best or Excellent,
@@ -191,8 +201,14 @@ Brilliant, Tricky and Great Find are events in circumstances 13, 14 and 15 (`TEP
   position-difficulty label combined with a human move-probability model.
 - **Unknown.** The difficulty and move-probability models are machine-learned and were not recovered.
 - **This project.** Use an "only good move" proxy: the MultiPV gap between the best and second-best move is
-  at least 0.20 EP (configurable). Plus the confirmed gates that can be computed: rating, not a simple free
-  capture, not a recapture.
+  at least 0.20 EP (configurable). Plus the confirmed gates that can be computed:
+  rating, not a simple free capture, not a recapture; and the confirmed exclusions as far as they can be
+  computed without the ML models: the moved piece's only escape, a free capture, a promoting pawn, an
+  obvious quiet retreat.
+- **Calibrated.** Every Great move the app gave on the tuning set is our engine's best move, but the
+  gap proxy finds few of them (4 of 26, precision 0.57). Lowering the gap to 0.13 found 7 on the tuning
+  games but was mostly wrong on the holdout games. A shallow-search stand-in for "easy to find" removed
+  all of them and is off. The rating gate may read a different rating than the PGN's: see `parity.md`.
 
 **Tricky** (`compute_board_event<14>`):
 - **Confirmed.** It depends on the position-difficulty and move-probability models.

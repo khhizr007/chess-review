@@ -31,7 +31,7 @@ checked against what the recovered rules predict.
 
 | Fixture | Observed | Rule exercised |
 |---|---|---|
-| `opera_game.pgn` | 10.Nxb5, 13.Rxd7, 16.Qb8+ → **Brilliant**; 16…Nxb8 **Forced**; 17.Rd8# **Best**; 6…Nf6 **Mistake** (best 6…Qf6); White accuracy > Black | Sacrifice detector + gates; forced; precision |
+| `opera_game.pgn` | 10.Nxb5 → **Brilliant**; 16…Nxb8 **Forced**; 17.Rd8# **Best**; 6…Nf6 **Mistake** (best 6…Qf6); White accuracy > Black. Since the calibration rebuild (Stockfish 17.1, depths 14 and 18), 13.Rxd7 is **Best** because White's EP before it is 0.97 (≥ 0.90), and 16.Qb8+ is **Best** because it forces mate. The earlier line-walk detector called all three Brilliant. | Sacrifice detector + gates; forced; precision |
 | `scholars_mate.pgn` | 3…Nf6 **Blunder**; 4.Qxf7# **Best**, CAPS2 100 | Mate against the mover; mate delivered = 100 |
 | `missed_mate.pgn` | 4.Qf3 **Miss (mate)** with "Qxf7# forces mate in 1 move" | Mate rule: missed mate |
 | `back_rank.pgn` (FEN start) | 1.Rd7 **Miss (mate)**; …Kh7 **Forced** | Mate rule; forced |
@@ -55,12 +55,32 @@ Three changes fixed it:
 
 All three are implementation-side fixes. The recovered rule itself is unchanged.
 
+## Live comparison with Chess.com Game Review (calibration, 2026-10)
+
+Twenty games were reviewed on Chess.com (engine Stockfish, strength Fast) and compared move by
+move with this app; see `docs/calibration/log.md` and `tests/calibration/README.md`. The Confirmed
+constants (EP curve, precision thresholds, outcome buckets, CAPS2) were **not** changed. Two
+findings bear on recovered rules:
+
+- **Great Find's high-rated gate.** `TEP::is_high_rated` was recovered as `max(WhiteElo, BlackElo)
+  ≥ 1000`. In game 185209623352 (tuning set) both players are rated below 1000 (995 and 980) in the
+  PGN, yet the app gives six Great moves. So the reference either reads a different rating (for
+  example the account's current rating rather than the rating at game time) or the gate is not what
+  was recovered. Turning the gate off (`great_find.require_high_rated: false`) adds one matching
+  label on the tuning set. **Not changed; this needs the owner's decision.**
+- **Accuracy bias.** Our per-player accuracy is higher than the app's by about +2.8 on average
+  (tuning set, higher in 24 of 28 player-games; holdout +1.7, 9 of 12). No detector touches CAPS2, so the
+  likely causes are the engine (we use Stockfish 17.1, the app Stockfish 16) and search details,
+  not the formula. Not changed; see the open question on engine version.
+
 ## Expected (non-algorithmic) differences
 
 These differences come from the environment, not the algorithm:
 - **Engine and depth.** The reference uses Stockfish 16.1 NNUE (or a "human" Torch net) at an unknown
   depth per preset. Classifications near a threshold, such as an EP loss of about 0.05 or 0.10, can
-  differ between versions and depths, and even between runs with multiple threads.
+  differ between versions and depths. They no longer differ between runs: every search now starts
+  from a cleared hash with one thread. On the calibration games most remaining mismatches are one
+  step apart on the precision scale (`docs/calibration/log.md`).
 - **Book.** A different opening database, so the number of Book moves can differ.
 - **Detectors.** Brilliant, Great Find and Miss subtypes use heuristics (see
   `implementation-notes.md`), so their frequency can differ. The surrounding decision tree is exact.

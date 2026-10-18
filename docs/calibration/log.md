@@ -26,3 +26,61 @@ P / R = precision / recall. Acc MAD = mean absolute difference from the app's pe
 | 2026-10-18 | `32b5149` | `holdout-1` | **holdout check** after Fix 1, 3a and 4 (6 games, 310 plies) | 65.5% | 85.2% | - / 0.00 | - / 0.00 | 2.93 (+1.65) | 4.9 points below tuning (70.4%), inside the 5-point limit. Nothing had been tuned yet, so this is the spread between game sets. We give no Brilliant or Great Find on the holdout games. |
 | 2026-10-18 | (reverted) | `fix5-miss` | Fix 5: Miss tactic needs a capture or check first and the gain within 3 plies; opportunity needs the best move to keep 70% of the opponent's loss and the played move not to; free piece by SEE | 70.3% | 89.0% | 1.00 / 0.33 | 0.57 / 0.15 | 3.19 (+2.79) | 1 better, 2 worse. The SEE free-piece test turns 5...Bxd1 in Legal's trap (app: Blunder) into a Miss. Variants on the same code: `fix5-regain50` (share 0.5) identical; `fix5-tactic5` (5 plies) 70.4%. |
 | 2026-10-18 | (reverted) | `fix5-miss-adj` | adjusted once: free piece back to the line test, tactic and opportunity kept | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 | 3.19 (+2.79) | Reverted: 1 better (Ne4, app Mistake), 1 worse (exd3, app Miss). No net gain. |
+| 2026-10-18 | (reverted) | `fix6-tuned` | Fix 6: tuned defaults from the trials below: Great Find gap 0.20 → 0.13; Brilliant gap 0.10 → 0.05 and `count_pieces_left_hanging` on | 70.8% | 89.5% | 1.00 / 0.67 | 0.64 / 0.27 | 3.19 (+2.79) | Best tuning-set result: +3 Great Find and +1 Brilliant (Legal's trap 5.Nxe5) labels. |
+| 2026-10-18 | (reverted) | `holdout-2` | **holdout check** of `fix6-tuned` | 64.8% | 84.5% | - / 0.00 | 0.25 / 0.10 | 2.93 (+1.65) | 6.0 points below tuning, over the 5-point limit, and below `holdout-1` (65.5%): the lower Great Find gap gives 4 Great Finds on holdout, 1 right. Overfitting, so the Fix 6 tuning is undone; the final code is `32b5149` and `holdout-1` is its holdout report. |
+
+**Stopped** after Fix 6: three iterations in a row (Fix 4, Fix 5, Fix 6) brought no lasting improvement.
+Holdout Brilliant precision is undefined (we give no Brilliant on the 6 holdout games; the app gives 1).
+
+### Fix 6 trials (tuning set, one server, one parameter at a time)
+
+All rows use the code of `32b5149` with the given override merged over the defaults. `t2-*` and
+`t3-*` start from the best Great Find gap of the first batch.
+
+| trial | config override | exact | within-one | Brilliant P / R | Great P / R |
+|---|---|---:|---:|---|---|
+| `t-ref` | none | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-gf-gap10` | `{"great_find":{"min_gap_to_second_best":0.1}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.53 / 0.31 |
+| `t-gf-gap12` | `{"great_find":{"min_gap_to_second_best":0.12}}` | 70.7% | 89.4% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t-gf-gap15` | `{"great_find":{"min_gap_to_second_best":0.15}}` | 70.6% | 89.3% | 1.00 / 0.33 | 0.60 / 0.23 |
+| `t-gf-gap17` | `{"great_find":{"min_gap_to_second_best":0.17}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-gf-gap25` | `{"great_find":{"min_gap_to_second_best":0.25}}` | 70.3% | 89.0% | 1.00 / 0.33 | 0.50 / 0.04 |
+| `t-br-gap05` | `{"brilliant":{"min_gap_to_second_best":0.05}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-br-gap07` | `{"brilliant":{"min_gap_to_second_best":0.07}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-br-gap15` | `{"brilliant":{"min_gap_to_second_best":0.15}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-br-hanging` | `{"brilliant":{"count_pieces_left_hanging":true}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-br-maxep95` | `{"brilliant":{"max_ep_before":0.95}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-br-maxep85` | `{"brilliant":{"max_ep_before":0.85}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-br-mateok` | `{"brilliant":{"exclude_mating_moves":false}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-horizon4` | `{"material_horizon_plies":4}` | 70.4% | 89.4% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-horizon8` | `{"material_horizon_plies":8}` | 70.2% | 88.9% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-blunder200` | `{"blunder_material_threshold_cp":200}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-miss-opp15` | `{"miss":{"opportunity_min_opponent_ep_lost":0.15}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-miss-tactic300` | `{"miss":{"tactic_min_gain_cp":300}}` | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t-miss-free100` | `{"miss":{"free_piece_min_value_cp":100}}` | 70.6% | 89.3% | 1.00 / 0.33 | 0.57 / 0.15 |
+| `t2-gf11` | `{"great_find":{"min_gap_to_second_best":0.11}}` | 70.7% | 89.4% | 1.00 / 0.33 | 0.62 / 0.31 |
+| `t2-gf12` | `{"great_find":{"min_gap_to_second_best":0.12}}` | 70.7% | 89.4% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t2-gf13` | `{"great_find":{"min_gap_to_second_best":0.13}}` | 70.7% | 89.4% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t2-gf14` | `{"great_find":{"min_gap_to_second_best":0.14}}` | 70.7% | 89.4% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t2-free100` | `{"great_find":{"min_gap_to_second_best":0.12},"miss":{"free_piece_min_value_cp":100}}` | 70.8% | 89.5% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t2-free200` | `{"great_find":{"min_gap_to_second_best":0.12},"miss":{"free_piece_min_value_cp":200}}` | 70.7% | 89.4% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t2-h4` | `{"great_find":{"min_gap_to_second_best":0.12},"material_horizon_plies":4}` | 70.7% | 89.6% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t2-h5` | `{"great_find":{"min_gap_to_second_best":0.12},"material_horizon_plies":5}` | 70.7% | 89.6% | 1.00 / 0.33 | 0.64 / 0.27 |
+| `t2-br-hang05` | `{"great_find":{"min_gap_to_second_best":0.12},"brilliant":{"count_pieces_left_hanging":true,"min_gap_to_second_best":0.05}}` | 70.8% | 89.5% | 1.00 / 0.67 | 0.64 / 0.27 |
+| `t2-br-hang03` | `{"great_find":{"min_gap_to_second_best":0.12},"brilliant":{"count_pieces_left_hanging":true,"min_gap_to_second_best":0.03}}` | 70.8% | 89.5% | 1.00 / 0.67 | 0.64 / 0.27 |
+| `t2-gf12-hr0` | `{"great_find":{"min_gap_to_second_best":0.12,"require_high_rated":false}}` | 70.8% | 89.4% | 1.00 / 0.33 | 0.60 / 0.35 |
+| `t3-final` | `{"great_find":{"min_gap_to_second_best":0.13},"brilliant":{"count_pieces_left_hanging":true,"min_gap_to_second_best":0.05}}` | 70.8% | 89.5% | 1.00 / 0.67 | 0.64 / 0.27 |
+| `t3-final-free100` | `{"great_find":{"min_gap_to_second_best":0.13},"brilliant":{"count_pieces_left_hanging":true,"min_gap_to_second_best":0.05},"miss":{"free_piece_min_value_cp":100}}` | 70.9% | 89.6% | 1.00 / 0.67 | 0.64 / 0.27 |
+
+### Optional: search depth (final code `32b5149`, tuning set)
+
+| run | depth | exact | within-one | Brilliant P / R | Great P / R | acc MAD (bias) |
+|---|---:|---:|---:|---|---|---|
+| `depth-14` | 14 | 66.5% | 87.7% | 1.00 / 0.33 | 0.60 / 0.12 | 3.04 (+2.65) |
+| `depth-16` | 16 | 68.7% | 88.9% | 1.00 / 0.33 | 0.57 / 0.15 | 2.99 (+2.64) |
+| `fix4-committed` | 18 | 70.4% | 89.1% | 1.00 / 0.33 | 0.57 / 0.15 | 3.19 (+2.79) |
+| `depth-20` | 20 | 68.2% | 89.8% | 1.00 / 0.33 | 0.60 / 0.12 | 2.71 (+2.57) |
+
+Depth 18, the app's "Fast" setting, gives the best exact agreement; depth 20 is slightly closer on
+within-one agreement and accuracy. The default stays 18. Stockfish 16.1 (the reference's engine) was
+not tried: it needs a download that is the owner's call.
