@@ -335,7 +335,13 @@ fn build_review(
 
         let is_forced = before.legal_moves().len() == 1;
         in_book = in_book && openings.contains(after);
-        let is_book = in_book;
+        // The reference also marks a later move Book when play transposes back into
+        // the book; `book_requires_unbroken` keeps the stricter fallback.
+        let is_book = if cfg.book_requires_unbroken {
+            in_book
+        } else {
+            openings.contains(after)
+        };
 
         // Material along the engine lines.
         let played_pv: Vec<String> = match played_rank {

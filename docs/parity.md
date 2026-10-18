@@ -100,5 +100,13 @@ the app's own evals, the app's grades are reproduced best with that rating raise
 (86.5% → 89.0% on tuning, 85.8% → 88.4% on holdout), and the full pipeline agrees 1.3 (tuning) and
 1.9 (holdout) points more often with `rating_offset: 200`. Together with the Great Find gate finding
 above, this suggests the reference reads a higher rating than the PGN's game-time ratings, for
-example the players' current ratings. `rating_offset` exists for this; its default is 0 until the
-owner decides.
+example the players' current ratings. At the owner's decision `rating_offset` defaults to 200; set
+it to 0 for the recovered rule.
+
+### Search noise is the main remaining gap
+
+Stockfish 16 and 16.1 (the reference's family) did not match better than 17.1 (70.8% and 68.9% vs
+71.7% with the +200 rating, tuning set), and their evals are no closer to the app's. At every
+depth tried (14–20) and with every version, our evals differ from the app's by a median of 12–16
+cp. That difference alone flips about 15% of precision grades; the app's search (probably
+multi-threaded and time-limited on its servers) cannot be reproduced exactly.

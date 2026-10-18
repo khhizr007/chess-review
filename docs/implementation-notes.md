@@ -143,8 +143,10 @@ These are only consulted when precision is Mistake or Blunder, under the recover
   - Plus a trigger: the line wins ≥ 200 material, the move keeps or delivers mate, it is a promotion,
     or it takes a free piece.
   - Critical moments are Blunder, Mistake, Miss, Brilliant and Great Find.
-- **Book.** A move is Book while every earlier move was Book and the position after it appears in the
-  Lichess openings data (any position along a named line). The lookup is position-based, so
-  transpositions count.
+- **Book.** A move is Book when the position after it appears in the Lichess openings data (any
+  position along a named line), even after earlier non-book moves: Chess.com marks moves that
+  transpose back into the book as Book (calibration: +0.5 points on tuning, +0.7 on holdout).
+  `book_requires_unbroken` restores the stricter "every earlier move was Book" rule. Chess.com's
+  book is also larger than this one: in several games it continues 3–8 plies longer.
 - **Explanations.** Only computed facts are stated: mate distance, the best move, material along the
   engine line, and expected score. They are labelled "generated" in the UI.

@@ -82,6 +82,8 @@ The inverse, `expected_points_to_centipawns` [`0x1138a3c`], is `cp = ln(1/EP −
 
 - **Rating R** (`node_lib::elo_rating_for_expected_points` [`0x1310a34`]) is `max(WhiteElo, BlackElo)`,
   clamped to `[1000, 2500]`.
+  - **This project (calibrated).** 200 is added before the clamp (`rating_offset`): Chess.com's grades
+    match a rating above the PGN's game-time ratings (see `parity.md`). Set it to 0 for the recovered rule.
   - Missing ratings count as 0 and therefore become **1000**.
   - With no game context at all, R is **2000**.
 - **EP of a node** (`node_lib::expected_points` [`0x130c9c8`]) is `0.5` if the position is a draw by

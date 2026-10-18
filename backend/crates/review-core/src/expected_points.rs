@@ -121,7 +121,11 @@ mod tests {
 
     #[test]
     fn rating_rule_uses_higher_rating_and_clamps() {
-        let cfg = ReviewConfig::default();
+        // The recovered rule, without the calibrated offset.
+        let cfg = ReviewConfig {
+            rating_offset: 0,
+            ..ReviewConfig::default()
+        };
         assert_eq!(
             rating_for_expected_points(Some(1200), Some(1850), &cfg),
             1850

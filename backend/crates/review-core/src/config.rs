@@ -18,9 +18,9 @@ pub struct ReviewConfig {
     /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
     pub rating_min: i32,
     pub rating_max: i32,
-    /// Experimental: added to `max(WhiteElo, BlackElo)` before the clamp. Calibration
-    /// suggests the reference reads a higher rating than the PGN's; default 0 keeps
-    /// the recovered rule.
+    /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
+    /// recovered rule is 0; Chess.com grades match a higher rating than the PGN's
+    /// (see `docs/parity.md`).
     pub rating_offset: i32,
     /// Material (cp) a Blunder must actually lose to stay a Blunder (fallback for
     /// `is_losing_material_or_getting_mated`).
@@ -38,6 +38,9 @@ pub struct ReviewConfig {
     pub caps_exclude_completely_lost: bool,
     /// Plies of the principal variation inspected for material changes (fallback).
     pub material_horizon_plies: u32,
+    /// Book moves must form an unbroken run from the start. Off by default: Chess.com
+    /// also marks a move Book when play transposes back into the book (calibration).
+    pub book_requires_unbroken: bool,
 }
 
 /// Brilliant detection: a static sacrifice (SEE) by the engine's best move,
@@ -113,7 +116,7 @@ impl Default for ReviewConfig {
             outcome_thresholds: [0.10, 0.20, 0.35, 0.65, 0.80, 0.90],
             rating_min: 1000,
             rating_max: 2500,
-            rating_offset: 0,
+            rating_offset: 200,
             blunder_material_threshold_cp: 100,
             forgiving_material_lost_cp: 200,
             allow_tricky: false,
@@ -122,6 +125,7 @@ impl Default for ReviewConfig {
             miss: MissConfig::default(),
             caps_exclude_completely_lost: true,
             material_horizon_plies: 6,
+            book_requires_unbroken: false,
         }
     }
 }
