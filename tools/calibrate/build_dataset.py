@@ -103,6 +103,9 @@ def parse_line(line: str) -> dict:
 
 def build(raw: dict, pgn: str) -> tuple[dict, list[str]]:
     problems: list[str] = []
+    # A capture may hold the reader's output verbatim as a JSON string: "dump": "{\"sum\":...,\"lines\":[...]}".
+    if isinstance(raw.get("dump"), str):
+        raw.update(json.loads(raw.pop("dump")))
     # Captures may carry the summary as {"sum": {"acc": [w, b], "c": {...}}}.
     summary = raw.get("sum") or {}
     if summary.get("acc"):

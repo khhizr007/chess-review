@@ -1,4 +1,4 @@
-# Calibration tuning set (14 games).
+# Calibration tuning set (41 games: 14 from batch 1, 27 from batch 2).
 # Split method: games stratified by result (1-0 / 0-1 / draw), shuffled with Python random.Random(5),
 # 30% of each stratum to holdout. Seed 5 was the first of seeds 1-5 whose holdout has a Brilliant,
 # a game of 80+ plies and a non-rapid time control. Never tune on holdout games.
@@ -16,3 +16,31 @@
 185468614210
 185475865432
 185962590893
+# Batch 2 (2026-10-18): stratified by level (max Elo >= 2000) and result, random.Random(2026), 30% to holdout.
+1011026868
+184678264914
+184732665836
+184759290504
+184773009646
+184784174152
+184794204922
+184828162542
+184829980734
+184873703892
+185110487484
+185117573448
+185173941140
+185193771738
+185217478440
+185218140778
+185277691132
+185328167888
+185330935602
+185334658860
+185363017994
+185461631884
+185617589205
+185966191317
+186222389165
+186411389477
+186429989523

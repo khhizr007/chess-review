@@ -12,11 +12,17 @@ Ground truth for comparing our review labels with Chess.com Game Review. See
 
 ## Collection
 
-All 20 games were reviewed on 2026-10-17/18 with Game Review set to engine **Stockfish**
-(`stockfish16 nnue` in the site's settings) at strength **Fast** (depth 18). Games whose review
-already existed were shown again with the same accuracy after the engine switch; the rest were
-reviewed fresh. Labels were read move by move from the review panel (label text and icon), and the
-per-move labels reproduce the counts table for both players in every game.
+59 games in two batches, all reviewed with Game Review set to engine **Stockfish**
+(`stockfish16 nnue` in the site's settings) at strength **Fast** (depth 18):
+
+- Batch 1 (2026-10-17/18): 20 games. Games whose review already existed were shown again with the
+  same accuracy after the engine switch; the rest were reviewed fresh.
+- Batch 2 (2026-10-18): 39 games drawn at random (seed 2026) from the October archives of khhizr7,
+  boy1956, PeterSouth1954, Hikaru, GothamChess and IMRosen, by source and time control, plus three
+  draws; 2,915 moves.
+
+Labels were read move by move from the review panel (label text and icon), and the per-move labels
+reproduce the counts table for both players in every game.
 
 ## Format additions
 
