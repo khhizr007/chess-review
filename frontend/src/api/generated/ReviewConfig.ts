@@ -18,6 +18,12 @@ outcome_thresholds: [number, number, number, number, number, number],
  */
 rating_min: number, rating_max: number, 
 /**
+ * Experimental: added to `max(WhiteElo, BlackElo)` before the clamp. Calibration
+ * suggests the reference reads a higher rating than the PGN's; default 0 keeps
+ * the recovered rule.
+ */
+rating_offset: number, 
+/**
  * Material (cp) a Blunder must actually lose to stay a Blunder (fallback for
  * `is_losing_material_or_getting_mated`).
  */

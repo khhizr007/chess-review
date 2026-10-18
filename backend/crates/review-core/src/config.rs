@@ -18,6 +18,10 @@ pub struct ReviewConfig {
     /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
     pub rating_min: i32,
     pub rating_max: i32,
+    /// Experimental: added to `max(WhiteElo, BlackElo)` before the clamp. Calibration
+    /// suggests the reference reads a higher rating than the PGN's; default 0 keeps
+    /// the recovered rule.
+    pub rating_offset: i32,
     /// Material (cp) a Blunder must actually lose to stay a Blunder (fallback for
     /// `is_losing_material_or_getting_mated`).
     pub blunder_material_threshold_cp: i32,
@@ -109,6 +113,7 @@ impl Default for ReviewConfig {
             outcome_thresholds: [0.10, 0.20, 0.35, 0.65, 0.80, 0.90],
             rating_min: 1000,
             rating_max: 2500,
+            rating_offset: 0,
             blunder_material_threshold_cp: 100,
             forgiving_material_lost_cp: 200,
             allow_tricky: false,

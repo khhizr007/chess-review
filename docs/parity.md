@@ -92,3 +92,13 @@ These differences come from the environment, not the algorithm:
 - The Tricky class.
 
 See `open-questions.md`.
+
+### Rating input to the EP curve
+
+The recovered rule feeds `max(WhiteElo, BlackElo)` (clamped to 1000–2500) into the EP curve. Using
+the app's own evals, the app's grades are reproduced best with that rating raised by about 200
+(86.5% → 89.0% on tuning, 85.8% → 88.4% on holdout), and the full pipeline agrees 1.3 (tuning) and
+1.9 (holdout) points more often with `rating_offset: 200`. Together with the Great Find gate finding
+above, this suggests the reference reads a higher rating than the PGN's game-time ratings, for
+example the players' current ratings. `rating_offset` exists for this; its default is 0 until the
+owner decides.

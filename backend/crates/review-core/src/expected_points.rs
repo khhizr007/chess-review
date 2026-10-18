@@ -19,7 +19,9 @@ pub fn rating_for_expected_points(
 ) -> i32 {
     let highest = white.unwrap_or(0).max(black.unwrap_or(0));
     let highest = i32::try_from(highest).unwrap_or(i32::MAX);
-    highest.clamp(cfg.rating_min, cfg.rating_max)
+    highest
+        .saturating_add(cfg.rating_offset)
+        .clamp(cfg.rating_min, cfg.rating_max)
 }
 
 /// Slope of the logistic curve per centipawn for a rating.

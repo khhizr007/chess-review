@@ -84,3 +84,21 @@ All rows use the code of `32b5149` with the given override merged over the defau
 Depth 18, the app's "Fast" setting, gives the best exact agreement; depth 20 is slightly closer on
 within-one agreement and accuracy. The default stays 18. Stockfish 16.1 (the reference's engine) was
 not tried: it needs a download that is the owner's call.
+
+### Where the remaining disagreement comes from (oracle check, after `c9aec9f`)
+
+The app's dataset records its eval after every move, and the eval before a move is the value of
+the app's best move. Feeding those evals through our recovered rules reproduces the app's label
+on **86.5%** of the 688 tuning plies with a precision-type label (holdout 85.8%), against 71% with
+our engine's evals. Our evals differ from the app's by a median of 13 cp (90th percentile 45 cp).
+So about 15 points of disagreement come from the engine, not the rules.
+
+The rest is one-directional: with its own evals the app is one step harsher than our rules
+(Inaccuracy→Good 22, Good→Excellent 21, Mistake→Inaccuracy 13). A higher rating input to the
+EP curve reproduces this: max(Elo) + 100…350 gives 88.7–89.2% on tuning and 87.1–88.4% on
+holdout (+200: 89.0% / 88.4%). A fixed rating does worse.
+
+| date | commit | run | change | exact | within-one | Brilliant P / R | Great P / R | acc MAD (bias) | conclusion |
+|---|---|---|---|---:|---:|---|---|---|---|
+| 2026-10-18 | (rating offset) | `r-off200` | experimental `rating_offset` +200 (tuning; +150 equal, +250 71.5%, +300 70.7%) | 71.7% | 89.3% | 1.00 / 0.33 | 0.71 / 0.19 | 3.05 (+2.93) | +1.3 points and better Great Find precision. Chosen on tuning. |
+| 2026-10-18 | (rating offset) | `holdout-r-off200` | **holdout check** of +200 | 67.4% | 85.2% | - / 0.00 | 0.50 / 0.10 | 2.74 (+0.92) | Generalises: +1.9 points over `holdout-r-off0` (65.5%), accuracy bias halved. Left at default 0 pending the owner's decision (it changes a recovered rule's input). |
