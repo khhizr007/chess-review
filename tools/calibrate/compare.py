@@ -468,9 +468,10 @@ def analyse(records: list[dict]) -> dict:
     uncertain_guess_hits = 0
     for r in records:
         if r["excluded"] == "uncertain":
-            guess = str(r["app_raw"]).split(":", 1)[-1].strip().lower()
-            guess = APP_LABEL_ALIASES.get(guess, guess)
-            uncertain_guess_hits += guess == r["ours"]
+            # The collector's guess may list several candidates: "uncertain:best/excellent".
+            guesses = str(r["app_raw"]).split(":", 1)[-1].strip().lower().split("/")
+            guesses = {APP_LABEL_ALIASES.get(g.strip(), g.strip()) for g in guesses}
+            uncertain_guess_hits += r["ours"] in guesses
 
     confusion: dict[str, Counter] = {lab: Counter() for lab in LABELS}
     for r in scored:
@@ -748,7 +749,7 @@ def build_report(ctx: dict) -> tuple[str, dict]:
         L.append(
             f"{len(excluded_recs)} {'ply is' if len(excluded_recs) == 1 else 'plies are'} not scored: "
             + ", ".join(f"{k} {v}" for k, v in sorted(exc.items()))
-            + f". Our label equals the collector's guess for {a['uncertain_guess_hits']} of the "
+            + f". Our label is one of the collector's candidates for {a['uncertain_guess_hits']} of the "
             f"{exc.get('uncertain', 0)} uncertain ones."
         )
         L.append("")
