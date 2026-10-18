@@ -106,3 +106,17 @@ holdout (+200: 89.0% / 88.4%). A fixed rating does worse.
 | 2026-10-18 | (engine) | `sf16.1-off200` | Stockfish 16.1, rating +200 | 68.9% | 89.0% | 1.00 / 0.33 | 0.80 / 0.15 | 3.18 (+3.06) | Worse; `sf16.1-off0` 67.5%. Engine version is not the cause; the median eval gap to the app is 12–16 cp for every version and depth. Stockfish 17.1 kept. |
 | 2026-10-18 | (book) | `book-anywhere` | rating +200 (now default) and a move is Book whenever its position is in the book, even after leaving it (`book_requires_unbroken` false) | 72.2% | 89.7% | 1.00 / 0.33 | 0.71 / 0.19 | 3.14 (+3.02) | Kept as default: 5 better, 1 worse; the app marks transpositions back into the book as Book. Reference for the defaults. |
 | 2026-10-18 | (book) | `holdout-book-anywhere` | **holdout check** of the new defaults | 68.1% | 85.8% | - / 0.00 | 0.50 / 0.10 | 2.72 (+0.94) | +0.7 over the +200 rating alone (67.4%), +2.6 over `holdout-1`. Tuning–holdout gap 4.1 points. |
+
+### Batch 2: 59 games (tuning 41 games / 2,833 scored moves, holdout 18 / 1,248), code `27fafb5`
+
+| run | change | exact | within-one | Brilliant P / R | Great P / R | acc MAD (bias) | conclusion |
+|---|---|---:|---:|---|---|---|---|
+| `b2-default` | current defaults (rating +200, transposition book) | 67.4% | 89.4% | 0.50 / 0.25 | 0.60 / 0.12 | 3.66 (+3.44) | Reference for the larger set. Club games 69.8% exact, titled 64.1%. |
+| `b2-off0` | rating offset 0 (recovered rule) | 66.1% | 89.2% | 0.50 / 0.25 | 0.50 / 0.10 | 3.50 (+3.19) | The +200 offset still gains 1.3 points on new data. |
+| `b2-*` (16 trials) | rating 100/300; Great Find gap 0.10–0.25; high-rated gate off; Brilliant gap, hanging pieces, mating moves, EP window; free piece 100; horizon 4; blunder threshold 200; opportunity 0.15 | 67.0–67.5% | 89.2–89.6% | | | | All within ±0.1 point of the reference (about 3 labels): nothing left to tune in the rules. |
+| `holdout-b2` | **holdout check** of the defaults | 65.7% | 88.0% | 0.50 / 0.33 | 0.78 / 0.17 | 3.14 (+1.93) | 1.7 points below tuning: no overfitting. Club games 70.0% exact, titled 59.1%. |
+
+On the larger set the app-eval oracle (our rules on Chess.com's own evals) reproduces 85.3% of
+tuning labels (87.6% with the +200 rating) against 67% with our engine's evals, so the remaining gap
+is still the engine's search noise, larger in titled games, where the steep EP curve at rating 2500
+turns small eval differences into grade changes.
