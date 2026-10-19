@@ -1,6 +1,8 @@
+import type { ArrowKind } from "../api/generated/ArrowKind";
 import type { Classification } from "../api/generated/Classification";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
+import type { Sentence } from "../api/generated/Sentence";
 import type { Side } from "../api/generated/Side";
 import { CLASSIFICATIONS, MISS_KINDS, formatAccuracy, moveNumberLabel } from "./format";
 
@@ -11,6 +13,8 @@ export interface CoachMessage {
   verdict: string;
   /** Plain-language advice, most important first. */
   advice: string[];
+  /** The backend coach's sentences (motif and line), when it explains the move; they replace `advice`. */
+  sentences: Sentence[];
   /** Engine-derived facts from the backend that the advice does not already say. */
   facts: string[];
   /** Mover's winning chances before and after, when the move changed them noticeably. */
@@ -108,13 +112,34 @@ export function coachMessage(review: ReviewResult, ply: PlyReview, next: PlyRevi
   const delta = ply.ep_after - ply.ep_before;
   const swing = Math.abs(delta) >= 0.02 && c !== "book" ? { before: ply.ep_before, after: ply.ep_after } : null;
   let facts = ply.explanation.filter((s) => !RESTATED.some((p) => s.startsWith(p)));
-  // For moves worth learning from, the engine facts are the "why": say them in the bubble.
-  if (c && LEARNABLE.has(c)) {
+  const sentences = c && LEARNABLE.has(c) ? (ply.coach?.sentences ?? []) : [];
+  if (sentences.length > 0) {
+    // The coach names the motif and the better move: its sentences replace the
+    // generic advice, and the engine facts stay in the details drawer.
+    advice.length = 0;
+  } else if (c && LEARNABLE.has(c)) {
+    // Without a coach explanation, the engine facts are the "why": say them in the bubble.
     advice.push(...facts);
     facts = [];
   }
 
-  return { classification: c, verdict, advice, facts, swing };
+  return { classification: c, verdict, advice, sentences, facts, swing };
+}
+
+/** A board arrow drawn for the coach's explanation. */
+export interface CoachArrow {
+  from: string;
+  to: string;
+  kind: ArrowKind;
+}
+
+/**
+ * Arrows of the coach's main sentence: those of its first fragment that has any,
+ * so the board shows what the sentence is about.
+ */
+export function coachArrows(ply: PlyReview): CoachArrow[] {
+  const first = ply.coach?.sentences[0]?.fragments.find((f) => f.arrows.length > 0);
+  return first ? first.arrows.map((a) => ({ from: a.from, to: a.to, kind: a.kind })) : [];
 }
 
 /** One-paragraph summary for the report view. */

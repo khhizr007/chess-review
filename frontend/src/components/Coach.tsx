@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { Eval } from "../api/generated/Eval";
 import type { Line } from "../api/generated/Line";
 import type { PlyReview } from "../api/generated/PlyReview";
+import type { Sentence } from "../api/generated/Sentence";
 import type { Side } from "../api/generated/Side";
 import { favouredSide, formatEval, formatEvalPill, moveNumberLabel, percent, sideLabel } from "../lib/format";
 import type { CoachMessage } from "../lib/coach";
@@ -83,8 +84,11 @@ export function MoveVerdict({ ply, message }: { ply: PlyReview; message: CoachMe
         </h2>
         <EvalPill value={ply.eval_after} />
       </div>
-      {(message.advice.length > 0 || message.swing) && (
+      {(message.advice.length > 0 || message.sentences.length > 0 || message.swing) && (
         <div className="coach__body">
+          {message.sentences.map((s, i) => (
+            <CoachSentence key={i} sentence={s} />
+          ))}
           {message.advice.map((s) => (
             <p key={s}>{s}</p>
           ))}
@@ -93,6 +97,23 @@ export function MoveVerdict({ ply, message }: { ply: PlyReview; message: CoachMe
       )}
       {ply.pgn_comment && <blockquote className="coach__comment">“{ply.pgn_comment}”</blockquote>}
     </>
+  );
+}
+
+/** A coach sentence; fragments that name a move or piece shown on the board are emphasised. */
+function CoachSentence({ sentence }: { sentence: Sentence }) {
+  return (
+    <p>
+      {sentence.fragments.map((f, i) =>
+        f.arrows.length > 0 || f.squares.length > 0 ? (
+          <strong key={i} className="coach__ref">
+            {f.text}
+          </strong>
+        ) : (
+          <Fragment key={i}>{f.text}</Fragment>
+        ),
+      )}
+    </p>
   );
 }
 

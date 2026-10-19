@@ -1,0 +1,232 @@
+# English coach text. Every word in this file was written for this project.
+#
+# A sentence is a frame (chosen by circumstance and style) with the tag's
+# phrase in {pred}. A frame lists one or more wordings; one is picked per move.
+# Styles: `you` talks to the player about their own move, `opponent` talks to
+# the player about the other side's move, `neutral` names the sides. A frame
+# without a `you` or `opponent` wording uses the `neutral` one.
+#
+# Placeholders:
+#   {move}        the move under review
+#   {reply}       the move that carries out the event
+#   {line}        the moves of the line before {reply}
+#   {best}        the engine's best move
+#   {mover}       who played {move}: "you", "your opponent", "White", "Black"
+#   {piece}       the piece in focus with its owner and square ("your knight on f6")
+#   {piece_role}  the same without the square ("your knight")
+#   {square}      the square in focus
+#   {targets}     the other pieces involved ("your queen on d8 and rook on h8")
+#   {gain}        the material won ("a knight", "two pawns")
+#   {n}           moves to mate
+#   {pred}        (frames only) the tag's phrase
+
+# ---------------------------------------------------------------- frames
+
+# The move itself is the problem.
+[frame.base]
+neutral = ["{move} {pred}."]
+
+[frame.base_refuted]
+neutral = ["{move} {pred}, and {reply} wins {gain}.", "{move} {pred}, so {reply} wins {gain}."]
+
+# The move allows the opponent's best reply to do something.
+[frame.permits]
+neutral = ["{move} allows {reply}, which {pred}.", "After {move}, {reply} {pred}."]
+
+[frame.permits_line]
+neutral = ["{move} allows {line}, and then {reply} {pred}.", "After {move} {line}, {reply} {pred}."]
+
+# As above, when the line before {reply} is too long to spell out.
+[frame.permits_long]
+neutral = ["{move} allows a sequence that ends with {reply}, which {pred}."]
+
+# The best move would have done something.
+[frame.misses]
+you = ["You missed {reply}, which {pred}.", "{reply} was the move here: it {pred}."]
+opponent = ["Your opponent missed {reply}, which {pred}.", "{reply} was the move here: it {pred}."]
+neutral = ["{mover} missed {reply}, which {pred}.", "{reply} was the move here: it {pred}."]
+
+[frame.misses_line]
+you = ["You missed a chance: after {line}, {reply} {pred}."]
+opponent = ["Your opponent missed a chance: after {line}, {reply} {pred}."]
+neutral = ["{mover} missed a chance: after {line}, {reply} {pred}."]
+
+[frame.misses_long]
+you = ["You missed a sequence that ends with {reply}, which {pred}."]
+opponent = ["Your opponent missed a sequence that ends with {reply}, which {pred}."]
+neutral = ["{mover} missed a sequence that ends with {reply}, which {pred}."]
+
+# The best move would have taken the piece the other side just left hanging.
+[frame.misses_same]
+you = ["You missed {reply}, which wins {piece}: it had just been left hanging."]
+opponent = ["Your opponent missed {reply}, which wins {piece}: it had just been left hanging."]
+neutral = ["{mover} missed {reply}, which wins {piece}: it had just been left hanging."]
+
+# What was better, after the main sentence.
+[frame.best]
+neutral = ["Better was {best}.", "{best} was the better move."]
+
+[frame.best_event]
+neutral = ["Better was {best}, which {pred}.", "{best} was better: it {pred}."]
+
+[frame.best_line]
+neutral = ["Better was {best}: after {line}, {reply} {pred}."]
+
+[frame.best_long]
+neutral = ["Better was {best}, starting a sequence that ends with {reply}, which {pred}."]
+
+# ---------------------------------------------------------------- tags
+#
+# vp      phrase after the move that does it ("Nd4 forks your queen and rook")
+# wins    the phrase when the event also wins material (default: "{vp}, winning {gain}")
+# vp_long the phrase for a mate in more than one move
+# label   the button that replays the line
+
+[tag.back_rank_mate]
+vp = "mates on the back rank"
+vp_long = "starts a back-rank mate in {n}"
+label = "Show the mate"
+
+[tag.checkmate]
+vp = "is checkmate"
+label = "Show the mate"
+
+[tag.forced_mate]
+vp = "starts a forced mate"
+vp_long = "starts a forced mate in {n}"
+label = "Show the mate"
+
+[tag.free_piece]
+vp = "wins {piece}"
+wins = "wins {piece}"
+label = "Show the capture"
+
+[tag.trapped_piece]
+vp = "traps {piece}"
+label = "Show the trapped piece"
+
+[tag.double_check]
+vp = "gives double check"
+label = "Show the double check"
+
+[tag.royal_fork]
+vp = "forks {targets}"
+label = "Show the fork"
+
+[tag.fork]
+vp = "forks {targets}"
+label = "Show the fork"
+
+[tag.discovered_check]
+vp = "uncovers a check from {piece}"
+label = "Show the discovered check"
+
+[tag.discovered_attack]
+vp = "uncovers an attack by {piece_role} on {targets}"
+label = "Show the discovered attack"
+
+[tag.skewer]
+vp = "skewers {targets}"
+label = "Show the skewer"
+
+[tag.exploits_pin]
+vp = "makes use of the pin on {piece}"
+label = "Show the pin"
+
+[tag.pin]
+vp = "pins {piece} to {targets}"
+label = "Show the pin"
+
+[tag.removes_defender]
+vp = "takes {piece}, which was guarding {targets}"
+label = "Show the line"
+
+[tag.overloaded]
+vp = "overloads {piece}, which cannot guard both {targets}"
+label = "Show the line"
+
+[tag.attraction]
+vp = "lures {piece_role} to {square}"
+label = "Show the line"
+
+[tag.promotion]
+vp = "promotes on {square}"
+label = "Show the promotion"
+
+[tag.moves_pinned_piece]
+vp = "moves {piece_role} out of a pin and exposes {targets}"
+label = "Show the punishment"
+
+[tag.did_not_recapture]
+vp = "does not take back {piece}"
+label = "Show the punishment"
+
+[tag.ignores_threat]
+vp = "leaves {piece} under attack"
+label = "Show the punishment"
+
+[tag.removes_own_defender]
+vp = "stops guarding {piece}"
+label = "Show the punishment"
+
+[tag.bad_trade]
+vp = "gives up {piece_role} for {targets}"
+label = "Show the punishment"
+
+[tag.hangs_piece]
+vp = "leaves {piece} hanging"
+label = "Show the punishment"
+
+[tag.hangs_pawn]
+vp = "leaves {piece} hanging"
+label = "Show the punishment"
+
+[tag.material_gain]
+vp = "wins {gain}"
+wins = "wins {gain}"
+label = "Show the line"
+
+# ---------------------------------------------------------------- show lines
+
+# One short line per move of a replayed line. A move that carries out a tag
+# uses `tactic` with that tag's vp.
+[narrate]
+tactic = "{san} {vp}."
+capture = "{san} takes {piece}."
+recapture = "{san} takes back."
+check = "{san} gives check."
+forced = "{san} is the only move."
+quiet = "{san}."
+
+[label]
+best = "Show the best line"
+
+# ---------------------------------------------------------------- words
+
+[words]
+pawn = "pawn"
+knight = "knight"
+bishop = "bishop"
+rook = "rook"
+queen = "queen"
+king = "king"
+you = "you"
+opponent = "your opponent"
+white = "White"
+black = "Black"
+your = "your"
+their = "their"
+white_s = "White's"
+black_s = "Black's"
+piece = "{owner} {role} on {square}"
+piece_role = "{owner} {role}"
+pieces_same = "{owner} {role}s on {squares}"
+king_piece = "{owner} king"
+list_comma = ", "
+list_and = " and "
+wins_default = "{vp}, winning {gain}"
+gain_piece = "a {role}"
+gain_exchange = "the exchange"
+gain_pawns = "{count} pawns"
+gain_material = "material worth about {count} pawns"
+numbers = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]

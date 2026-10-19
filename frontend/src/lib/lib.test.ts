@@ -39,6 +39,7 @@ function ply(n: number, overrides: Partial<PlyReview> = {}): PlyReview {
     is_critical: false,
     material_lost_cp: null,
     explanation: [],
+    coach: { sentences: [], show_lines: [], events: [] },
     pgn_comment: null,
     ...overrides,
   };

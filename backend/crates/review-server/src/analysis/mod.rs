@@ -23,6 +23,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::board::{self, side};
+use crate::coach;
 use crate::engine::{
     AnalysisRequest, EngineError, EngineLine, Evaluator, PositionAnalysis, SearchLimit,
 };
@@ -539,6 +540,28 @@ fn build_review(
             opening: if is_book { openings.name(after) } else { None },
         });
 
+        let reply_line = infos[i + 1]
+            .analysis
+            .as_ref()
+            .and_then(PositionAnalysis::best);
+        let coach = coach::coach_move(&coach::CoachInput {
+            before,
+            played: m,
+            previous: previous_move,
+            reply: reply_line.map(|l| coach::LineInput {
+                pv: &l.pv,
+                eval: l.eval,
+            }),
+            best: Some(coach::LineInput {
+                pv: &best_line.pv,
+                eval: best_line.eval,
+            }),
+            classification: outcome.classification,
+            style: coach::Style::Neutral,
+            horizon,
+            seed: i as u32,
+        });
+
         let (from, to) = board::move_squares(m);
         let ply = PlyReview {
             ply: i as u32 + 1,
@@ -584,6 +607,7 @@ fn build_review(
             is_critical,
             material_lost_cp: (material_lost > 0).then_some(material_lost),
             explanation,
+            coach,
             pgn_comment: parsed.comment.clone(),
         };
         outcomes.push(MoveOutcome {

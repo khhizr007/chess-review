@@ -1,8 +1,8 @@
 # Building a real move coach: how Chess.com's coach works and how to build ours
 
 October 2026. Sources: reverse engineering of the Chess.com Android app 4.10.15 and the Chess.com web
-client, plus published research and products. This is an analysis and design document. Nothing
-here has been implemented yet.
+client, plus published research and products. This is an analysis and design document. Phase 1
+(§7) is implemented in `backend/crates/review-server/src/coach/`; see `implementation-notes.md`, "Coach".
 
 ## 1. Summary
 

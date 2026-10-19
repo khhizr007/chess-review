@@ -104,7 +104,8 @@ Each `PlyReview` contains:
 | `lines[]` | MultiPV lines from the position before the move. Each move carries SAN, UCI and the FEN after it, so the UI can preview lines without chess logic. |
 | `accuracy` | CAPS2 move score |
 | `phase`, `is_book`, `is_key_moment`, `is_critical`, `material_lost_cp` | Context flags |
-| `explanation[]` | Generated facts |
+| `explanation[]` | Generated facts (shown in the details drawer) |
+| `coach` | The coach note for Inaccuracies, Mistakes, Blunders and Misses (empty otherwise): `sentences[]` (each a list of `fragments` with `text`, `arrows` and `squares`, plus the index of the `event` it says), `show_lines[]` (`label`, `start_fen`, `moves`, one `narration` per move) and `events[]` (`chain` of circumstances, `tag`, `piece`, `square`, `actor`, `geometry`, `line` in UCI, `ply`, `gain_cp`, `mate_in`). See `docs/implementation-notes.md`, "Coach". |
 | `pgn_comment` | The comment from the imported PGN |
 
 ### `GET /api/reviews/{id}/plies/{ply}`

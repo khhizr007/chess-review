@@ -24,6 +24,7 @@ tower-http = { version = "0.7", features = ["cors", "fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+toml = { version = "1", default-features = false, features = ["parse", "serde"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

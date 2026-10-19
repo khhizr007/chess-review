@@ -7,6 +7,7 @@ use review_core::{
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::coach::CoachNote;
 use crate::engine::SearchLimit;
 use crate::openings::OpeningName;
 
@@ -111,8 +112,11 @@ pub struct PlyReview {
     pub is_key_moment: bool,
     pub is_critical: bool,
     pub material_lost_cp: Option<i32>,
-    /// Factual sentences generated from engine output (not coach commentary).
+    /// Factual sentences generated from engine output, for the details drawer.
     pub explanation: Vec<String>,
+    /// The coach's explanation: the motif behind the move and the line that
+    /// shows it. Empty for moves the coach does not explain.
+    pub coach: CoachNote,
     /// Comment from the imported PGN.
     pub pgn_comment: Option<String>,
 }
