@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 import { ImportPanel } from "./components/ImportPanel";
+import { ClassificationIconDefs } from "./components/ClassificationIcon";
 import { CoachBubble } from "./components/Coach";
+import { Logo } from "./components/Logo";
+import { PieceDefs } from "./components/pieces";
 import { ReviewScreen } from "./components/ReviewScreen";
 import { useReviewJob } from "./hooks/useReviewJob";
 
@@ -8,6 +11,18 @@ import { useReviewJob } from "./hooks/useReviewJob";
 function hashId(): string | null {
   const m = /^#review=([0-9a-f-]{36})$/i.exec(window.location.hash);
   return m?.[1] ?? null;
+}
+
+function ProgressBar({ done, total }: { done: number; total: number }) {
+  const pct = Math.round((Math.min(done, total) / total) * 100);
+  return (
+    <div className="progress" role="progressbar" aria-label="Review progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+      <div className="progress__track">
+        <div className="progress__fill" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="progress__pct">{pct}%</span>
+    </div>
+  );
 }
 
 export function App() {
@@ -29,12 +44,11 @@ export function App() {
 
   return (
     <div className="app">
+      <PieceDefs />
+      <ClassificationIconDefs />
       {view.kind !== "done" && (
         <header className="topbar">
-          <span className="brand">
-            <span className="brand__mark" aria-hidden="true" />
-            Game Review
-          </span>
+          <Logo />
         </header>
       )}
       <main className={view.kind === "done" ? "main main--review" : "main"}>
@@ -58,10 +72,9 @@ export function App() {
                 </p>
               </div>
             </CoachBubble>
-            <progress
-              max={view.kind === "running" ? Math.max(1, view.status.progress.total) : 1}
-              value={view.kind === "running" ? view.status.progress.done : 1}
-              aria-label="Review progress"
+            <ProgressBar
+              done={view.kind === "running" ? view.status.progress.done : 1}
+              total={view.kind === "running" ? Math.max(1, view.status.progress.total) : 1}
             />
             {view.kind === "running" && (
               <button type="button" className="button" onClick={() => void cancel()}>

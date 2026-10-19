@@ -28,6 +28,7 @@ export function ImportPanel({ onStart, busy }: Props) {
   const [multipv, setMultipv] = useState(3);
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -80,10 +81,11 @@ export function ImportPanel({ onStart, busy }: Props) {
   return (
     <section className="import" aria-labelledby="import-title">
       <div className="import__intro">
-        <h1 id="import-title">Review a game</h1>
-        <p className="muted">
-          Paste a PGN or open a file. Each move is searched with the engine and graded with the recovered review
-          rules: expected-points loss, mate handling and CAPS2 accuracy.
+        <span className="import__eyebrow">Engine-graded review</span>
+        <h1 id="import-title">Find the moments that decided your game</h1>
+        <p>
+          Paste a PGN or drop a file. Every move is searched with the engine and graded for accuracy, so you can
+          step through your best moves, mistakes and missed chances.
         </p>
       </div>
 
@@ -96,7 +98,22 @@ export function ImportPanel({ onStart, busy }: Props) {
       )}
 
       <div className="import__grid">
-        <div className="card">
+        <div
+          className={`card card--pgn ${dragging ? "is-dragging" : ""}`}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            void onFile(e.dataTransfer.files[0]);
+          }}
+        >
           <div className="card__header">
             <label htmlFor="pgn-input" className="card__title">
               PGN
@@ -124,13 +141,19 @@ export function ImportPanel({ onStart, busy }: Props) {
             value={pgn}
             onChange={(e) => setPgn(e.target.value)}
           />
+          {dragging && (
+            <div className="dropzone" aria-hidden="true">
+              <strong>Drop the PGN file</strong>
+              <span>.pgn or .txt, up to 5 MB</span>
+            </div>
+          )}
           {parsing && <p className="muted small">Checking PGN…</p>}
           {parseError && <div className="notice notice--error">{parseError}</div>}
         </div>
 
-        <div className="card">
+        <div className="card card--settings">
           <h2 className="card__title">Game</h2>
-          {!games && <p className="muted">Games found in the PGN will be listed here.</p>}
+          {!games && <p className="empty-hint">Games found in the PGN will be listed here.</p>}
           {games && (
             <ul className="game-list" role="radiogroup" aria-label="Games in the PGN">
               {games.map((entry) => (
@@ -200,7 +223,12 @@ export function ImportPanel({ onStart, busy }: Props) {
           >
             {busy ? "Starting…" : "Start review"}
           </button>
-          {health?.engine && <p className="muted small">Engine: {health.engine}</p>}
+          {health?.engine && (
+            <p className="engine-status">
+              <span className="engine-status__dot" aria-hidden="true" />
+              {health.engine} ready
+            </p>
+          )}
         </div>
       </div>
     </section>

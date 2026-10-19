@@ -95,7 +95,7 @@ export function ReportView({ review, current, onSelect, onReviewAt, onStart, onN
               {(["white", "black"] as const).map((side) => (
                 <th scope="col" key={side}>
                   <span className={`avatar avatar--${side} avatar--lg`} aria-hidden="true">
-                    <PieceIcon kind="p" side={side} size={30} />
+                    <PieceIcon kind="p" side={side} size={42} />
                   </span>
                   <span className="report__name">{playerName(review, side)}</span>
                   {(side === "white" ? white : black).elo != null && (
