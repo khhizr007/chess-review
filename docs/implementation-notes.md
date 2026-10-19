@@ -230,7 +230,7 @@ the details drawer. Good moves get an empty note.
   app's text.
 - **Frontend.** `Coach.tsx` shows the sentences in place of the generic advice, with the named moves
   and pieces in bold. The board draws the arrows of the main sentence's first marked fragment.
-  Show-line buttons and fragment hover are phase 3.
+  Phase 3 makes it interactive (see "Coach UI (phase 3)").
 - **Tests.** `tests/coach_detect.rs` has hand-built positions per tag. `tests/coach_note.rs` checks
   circumstances, priority, styles and wording. `tests/coach_pipeline.rs` runs the fake and scripted
   engines. `cargo run --release --example coach_report -- game.pgn [depth]` (with `STOCKFISH_PATH`)
@@ -250,3 +250,37 @@ the details drawer. Good moves get an empty note.
   - 4...Bxf3 and 6.Bc4 are positional inaccuracies. All three engine lines keep material level within
     the horizon, so there is no tactic to name, and the bubble falls back to the old text. They need
     phase 2: a null-move THREATENS (6.Bc4: "Qb3 attacks b7") and positional tags.
+
+## Coach UI (phase 3)
+
+Frontend only (`coach-analysis.md` §6.8). It reads `PlyReview.coach` and keeps working when a move
+has no note, or when the backend adds fields or tags.
+
+- **Fragments.** In `Coach.tsx`, fragments with arrows or squares are buttons. Hover (mouse) or focus
+  (keyboard) draws that fragment's arrows and square rings on the board, in place of the default
+  main-sentence arrows. A click or tap pins it; a second tap unpins it.
+- **Show-lines.** Each `show_line` is a button with its `label`. It opens a `LinePreview` with source
+  `"coach"`. The board starts at `start_fen` (move -1) and plays itself. The bubble shows each move's
+  `narration` and the line's moves as chips. Prev, Play/Pause, Next and ← → step through it; Hide or
+  Esc returns to the game.
+- **Avatar mood** (`coachMood`): impressed for Brilliant and Great, happy for Best, concerned for
+  Mistake and Miss, sad for Blunder, neutral otherwise. In Retry it is happy when solved and
+  concerned after a wrong try. It is drawn with CSS only (tile colour, tilt, a short hop or slump).
+- **Retry** (`lib/retry.ts`):
+  - The hint ladder comes from one event: a MISSES / MISSES_SAME event of the mover when there is
+    one, else the main sentence's event.
+  - Rung 1 rings the geometry's target squares (fan targets, the x-ray's front and back, the
+    relation's end, and so on). Rung 2 names the motif: "Look for a free piece", "Make sure your
+    move doesn't allow a fork", or the error tag's own hint for BASE events. The last step reveals
+    the move.
+  - Without an event, the only rung is the old one: the piece to move.
+  - `judgeRetry` accepts the best move, or the first move of any engine line within 0.04 expected
+    points of it. It uses the backend's curve at `rating_used`. Moves outside the engine lines
+    cannot be judged and count as wrong. In a lost position most engine lines pass, as on lichess.
+- **Takeaways** (`lib/takeaways.ts`, report view): events said by a move's sentences, counted once per
+  move under (side, kind, tag family).
+  - Kinds: PERMITS gives "Allowed", MISSES gives "Missed", an error tag in BASE gives its own verb
+    ("Left a piece hanging"), and BASE on a good move gives "Found".
+  - The four most frequent are shown, then the most costly by expected points lost. Each links to
+    its moves.
+  - Tag wording for hints and takeaways is in `lib/tags.ts`. Unknown tags fall back to "a tactic".
