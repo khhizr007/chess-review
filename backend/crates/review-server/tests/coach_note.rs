@@ -377,6 +377,40 @@ fn the_piece_just_left_hanging() {
 }
 
 #[test]
+fn taking_back_a_rook_wins_the_exchange() {
+    // White has just played Rxd7, giving the rook for the knight; Black plays
+    // ...Ng4 instead of taking back. The better move nets the exchange, so the
+    // coach must not say ...Nxd7 "wins White's rook" as if it were hanging.
+    let prior = pos("4k3/3n4/5n2/8/8/8/8/3RK3 w - - 0 1");
+    let previous = board::parse_uci(&prior, "d1d7").unwrap();
+    let mut case = Case::new("4k3/3R4/5n2/8/8/8/8/4K3 b - - 0 1", "f6g4")
+        .reply(&["d7b7"], cp(-200))
+        .best(&["f6d7"], cp(-500))
+        .class(Classification::Mistake);
+    case.previous = Some(previous);
+    let note = case.run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::DidNotRecapture, vec![Circ::Base])
+    );
+    let best = &note.events[note.sentences[1].event.unwrap() as usize];
+    assert_eq!(
+        (best.tag, best.chain.clone()),
+        (Tag::MaterialGain, vec![Circ::Misses])
+    );
+    assert_eq!(best.gain_cp, Some(200));
+    assert_eq!(
+        note.text(),
+        vec![
+            "Ng4 does not take back White's rook on d7.",
+            "Better was Nxd7, which wins the exchange."
+        ]
+    );
+}
+
+#[test]
 fn wording_variants_follow_the_seed() {
     let mut case = Case::new(FORK, "d8e8").reply(&["b5c7", "e8d7", "c7a8"], cp(500));
     case.seed = 1;

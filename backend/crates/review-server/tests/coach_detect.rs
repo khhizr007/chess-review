@@ -117,6 +117,34 @@ fn free_piece_counts_only_on_the_first_move_of_a_line() {
 }
 
 #[test]
+fn taking_back_is_not_a_free_piece() {
+    // White has just played Rxd7 (a rook for the knight); ...Nxd7 takes back the
+    // rook. That wins the exchange, not a hanging rook.
+    let prior = pos("4k3/3n4/5n2/8/8/8/8/3RK3 w - - 0 1");
+    let previous = board::parse_uci(&prior, "d1d7").unwrap();
+    let mut before = prior.clone();
+    before.play_unchecked(previous);
+    let m = board::parse_uci(&before, "f6d7").unwrap();
+    let mut after = before.clone();
+    after.play_unchecked(m);
+    let ctx = MoveCtx {
+        before: &before,
+        m,
+        after: &after,
+        previous: Some(previous),
+        rest: &[],
+        first: true,
+    };
+    assert!(tactics(&ctx).iter().all(|f| f.tag != Tag::FreePiece));
+    // The same capture with no capture before it is a free rook.
+    let ctx = MoveCtx {
+        previous: None,
+        ..ctx
+    };
+    assert_eq!(tactics(&ctx).first().map(|f| f.tag), Some(Tag::FreePiece));
+}
+
+#[test]
 fn trapped_piece() {
     // Rb1 attacks the knight on a1; Nb3 runs into axb3 and Nc2 into Kxc2.
     let fen = "1R6/7k/8/8/8/8/P2K4/n7 w - - 0 1";
