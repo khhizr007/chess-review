@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
-import { coachArrows, coachMessage, reportSummary } from "./coach";
+import { coachArrows, coachMessage, coachMood, reportSummary } from "./coach";
 import { materialFromFen } from "./material";
 
 function ply(overrides: Partial<PlyReview> = {}): PlyReview {
@@ -97,6 +97,19 @@ describe("coachMessage", () => {
     const good = coachMessage(review, ply({ classification: "good", coach }), undefined);
     expect(good.sentences).toHaveLength(2);
     expect(good.advice).not.toEqual([]);
+  });
+});
+
+describe("coachMood", () => {
+  it("follows the classification", () => {
+    expect(coachMood("brilliant")).toBe("impressed");
+    expect(coachMood("great_find")).toBe("impressed");
+    expect(coachMood("best")).toBe("happy");
+    expect(coachMood("mistake")).toBe("concerned");
+    expect(coachMood("miss")).toBe("concerned");
+    expect(coachMood("blunder")).toBe("sad");
+    expect(coachMood("good")).toBe("neutral");
+    expect(coachMood(null)).toBe("neutral");
   });
 });
 

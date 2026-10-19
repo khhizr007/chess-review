@@ -3,17 +3,20 @@ import type { Eval } from "../api/generated/Eval";
 import type { Line } from "../api/generated/Line";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { Sentence } from "../api/generated/Sentence";
+import type { ShowLine } from "../api/generated/ShowLine";
 import type { Side } from "../api/generated/Side";
 import { favouredSide, formatEval, formatEvalPill, moveNumberLabel, percent, sideLabel } from "../lib/format";
-import type { CoachMessage } from "../lib/coach";
+import type { CoachMessage, CoachMood } from "../lib/coach";
 import { ClassificationIcon } from "./ClassificationIcon";
+import { Icons } from "./icons";
 import { PieceIcon, San } from "./PieceIcon";
 
 /* ------------------------------------------------------------------ shared bits */
 
-export function CoachAvatar() {
+/** The coach's face; its mood is drawn with CSS only (tilt, glow, colour). */
+export function CoachAvatar({ mood = "neutral" }: { mood?: CoachMood }) {
   return (
-    <span className="coach__avatar" aria-hidden="true">
+    <span className={`coach__avatar coach__avatar--${mood}`} aria-hidden="true" key={mood}>
       <PieceIcon kind="n" side="white" size={44} />
     </span>
   );
@@ -29,10 +32,10 @@ export function EvalPill({ value }: { value: Eval }) {
 }
 
 /** Avatar plus white speech bubble, as in the reference coach. */
-export function CoachBubble({ children }: { children: ReactNode }) {
+export function CoachBubble({ children, mood }: { children: ReactNode; mood?: CoachMood }) {
   return (
     <div className="coach">
-      <CoachAvatar />
+      <CoachAvatar mood={mood} />
       <div className="coach__bubble">
         {children}
       </div>
@@ -74,7 +77,34 @@ export function CoachActions({ actions }: { actions: CoachAction[] }) {
 
 /* ------------------------------------------------------------------ move verdict */
 
-export function MoveVerdict({ ply, message }: { ply: PlyReview; message: CoachMessage }) {
+/** A fragment of a coach sentence, by position. */
+export interface FragmentRef {
+  sentence: number;
+  fragment: number;
+}
+
+/** Board marking of sentence fragments: hover or focus shows one, a click or tap pins it. */
+export interface FragmentMarking {
+  /** The fragment whose arrows and squares are on the board. */
+  active: FragmentRef | null;
+  pinned: FragmentRef | null;
+  onHover: (ref: FragmentRef | null) => void;
+  onToggle: (ref: FragmentRef) => void;
+}
+
+export function MoveVerdict({
+  ply,
+  message,
+  marking,
+  onShowLine,
+}: {
+  ply: PlyReview;
+  message: CoachMessage;
+  marking?: FragmentMarking;
+  /** Starts replaying one of the coach's show-lines; omitted where lines cannot be shown. */
+  onShowLine?: (index: number) => void;
+}) {
+  const lines = onShowLine ? (ply.coach?.show_lines ?? []) : [];
   return (
     <>
       <div className="coach__head">
@@ -87,7 +117,7 @@ export function MoveVerdict({ ply, message }: { ply: PlyReview; message: CoachMe
       {(message.advice.length > 0 || message.sentences.length > 0 || message.swing) && (
         <div className="coach__body">
           {message.sentences.map((s, i) => (
-            <CoachSentence key={i} sentence={s} />
+            <CoachSentence key={i} index={i} sentence={s} marking={marking} />
           ))}
           {message.advice.map((s) => (
             <p key={s}>{s}</p>
@@ -95,24 +125,62 @@ export function MoveVerdict({ ply, message }: { ply: PlyReview; message: CoachMe
           {message.swing && <WinChance side={ply.mover} before={message.swing.before} after={message.swing.after} />}
         </div>
       )}
+      {lines.length > 0 && (
+        <div className="coach__lines">
+          {lines.map((l, i) => (
+            <button key={`${l.label}-${i}`} type="button" className="coach__line-btn" onClick={() => onShowLine?.(i)}>
+              {Icons.eye}
+              {l.label}
+            </button>
+          ))}
+        </div>
+      )}
       {ply.pgn_comment && <blockquote className="coach__comment">“{ply.pgn_comment}”</blockquote>}
     </>
   );
 }
 
-/** A coach sentence; fragments that name a move or piece shown on the board are emphasised. */
-function CoachSentence({ sentence }: { sentence: Sentence }) {
+const sameRef = (a: FragmentRef | null | undefined, b: FragmentRef) => !!a && a.sentence === b.sentence && a.fragment === b.fragment;
+
+/**
+ * A coach sentence. Fragments that name a move or piece are buttons: hovering, focusing or
+ * tapping one draws its arrows and squares on the board.
+ */
+function CoachSentence({ sentence, index, marking }: { sentence: Sentence; index: number; marking?: FragmentMarking }) {
   return (
     <p>
-      {sentence.fragments.map((f, i) =>
-        f.arrows.length > 0 || f.squares.length > 0 ? (
-          <strong key={i} className="coach__ref">
+      {sentence.fragments.map((f, i) => {
+        if (f.arrows.length === 0 && f.squares.length === 0) return <Fragment key={i}>{f.text}</Fragment>;
+        if (!marking) {
+          return (
+            <strong key={i} className="coach__ref">
+              {f.text}
+            </strong>
+          );
+        }
+        const ref = { sentence: index, fragment: i };
+        const pinned = sameRef(marking.pinned, ref);
+        return (
+          <button
+            key={i}
+            type="button"
+            className={`coach__ref coach__ref--live ${sameRef(marking.active, ref) ? "is-active" : ""}`}
+            aria-pressed={pinned}
+            title="Show on the board"
+            onPointerEnter={(e) => e.pointerType === "mouse" && marking.onHover(ref)}
+            onPointerLeave={(e) => e.pointerType === "mouse" && marking.onHover(null)}
+            onFocus={() => marking.onHover(ref)}
+            onBlur={() => marking.onHover(null)}
+            onClick={() => {
+              // A second tap unpins; drop the focus marking too so the board clears on touch.
+              if (pinned) marking.onHover(null);
+              marking.onToggle(ref);
+            }}
+          >
             {f.text}
-          </strong>
-        ) : (
-          <Fragment key={i}>{f.text}</Fragment>
-        ),
-      )}
+          </button>
+        );
+      })}
     </p>
   );
 }
@@ -133,10 +201,43 @@ function WinChance({ side, before, after }: { side: Side; before: number; after:
 /* ------------------------------------------------------------------ engine lines */
 
 export interface LinePreview {
-  /** Lines from before the played move ("alternatives"), from the shown position ("next"), or the best move alone. */
-  source: "alternatives" | "next";
+  /**
+   * Engine lines from before the played move ("alternatives") or from the shown position ("next"),
+   * or one of the coach's show-lines for the move ("coach").
+   */
+  source: "alternatives" | "next" | "coach";
   line: number;
+  /** Index of the move shown; -1 is a coach line's start position. */
   move: number;
+}
+
+/** Moves of a coach show-line as clickable chips, numbered from its start position. */
+export function ShowLineMoves({ line, move, onSelect }: { line: ShowLine; move: number; onSelect: (move: number) => void }) {
+  const fields = line.start_fen.split(" ");
+  let mover: Side = fields[1] === "b" ? "black" : "white";
+  let number = Number(fields[5]) || 1;
+  return (
+    <div className="show-line__moves">
+      {line.moves.map((m, i) => {
+        const label = mover === "white" ? `${number}.` : i === 0 ? `${number}…` : "";
+        const side = mover;
+        if (mover === "black") number += 1;
+        mover = mover === "white" ? "black" : "white";
+        return (
+          <button
+            key={m.uci + i}
+            type="button"
+            className={`line__move ${i === move ? "is-active" : ""}`}
+            onClick={() => onSelect(i)}
+            aria-current={i === move ? "step" : undefined}
+          >
+            {label && <span className="line__num">{label}</span>}
+            <San san={m.san} side={side} />
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function LineView({

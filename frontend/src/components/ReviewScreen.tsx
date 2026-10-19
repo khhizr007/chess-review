@@ -4,10 +4,11 @@ import type { ArrowKind } from "../api/generated/ArrowKind";
 import type { MoveRef } from "../api/generated/MoveRef";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
-import { LEARNABLE, coachArrows, coachMessage, playerName } from "../lib/coach";
+import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
 import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format";
 import { materialFromFen } from "../lib/material";
+import { hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
 import { FILTERS, fenAt, nextPlyAt, plyAt, stepFiltered, type MoveFilter } from "../lib/review";
 import { BoardView, type BoardBadge, type BoardRetry } from "./BoardView";
 import { ClassificationIcon } from "./ClassificationIcon";
@@ -17,7 +18,10 @@ import {
   EvalPill,
   MoveDetails,
   MoveVerdict,
+  ShowLineMoves,
   type CoachAction,
+  type FragmentMarking,
+  type FragmentRef,
   type LinePreview,
 } from "./Coach";
 import { EvalBar } from "./EvalBar";
@@ -42,12 +46,22 @@ interface Retry {
   status: "trying" | "wrong" | "correct" | "revealed";
   /** SAN of the last wrong attempt when the engine lines know it. */
   attempt: string | null;
-  hint: boolean;
+  /** Rungs of the hint ladder shown so far. */
+  hint: number;
+  /** The accepted move once solved: the best move, or one close enough to it. */
+  answer: RetryAnswer | null;
 }
+
+/** A marked sentence fragment, tied to the move whose sentence it is. */
+type Mark = FragmentRef & { ply: number };
 
 const BEST_ARROW = "rgba(129, 182, 76, 0.9)";
 const SUGGEST_ARROW = "rgba(92, 139, 176, 0.85)";
 const PREVIEW_TINT = "rgba(255, 196, 64, 0.5)";
+const HINT_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(255, 196, 64, 0.95)", background: "rgba(255, 196, 64, 0.25)" };
+const MARK_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(250, 65, 45, 0.8)", background: "rgba(250, 65, 45, 0.2)" };
+/** Pause between moves when a coach line plays itself. */
+const LINE_STEP_MS = 1400;
 const COACH_ARROW: Record<ArrowKind, string> = {
   move: "rgba(255, 164, 89, 0.9)",
   attack: "rgba(250, 65, 45, 0.85)",
@@ -91,11 +105,17 @@ export function ReviewScreen({ review, onNewGame }: Props) {
   const [showSuggestion, setShowSuggestion] = useState(() => loadFlag("review.engineArrow", false));
   const [explain, setExplain] = useState(() => loadFlag("review.explain", false));
   const [playing, setPlaying] = useState(false);
+  const [linePlaying, setLinePlaying] = useState(false);
+  const [hovered, setHovered] = useState<Mark | null>(null);
+  const [pinned, setPinned] = useState<Mark | null>(null);
 
   const go = useCallback(
     (target: number) => {
       setPreview(null);
+      setLinePlaying(false);
       setRetry(null);
+      setPinned(null);
+      setHovered(null);
       setPly(Math.max(0, Math.min(total, target)));
     },
     [total],
@@ -104,11 +124,40 @@ export function ReviewScreen({ review, onNewGame }: Props) {
   const current = plyAt(review, ply);
   const next = nextPlyAt(review, ply);
 
+  const showLine = preview?.source === "coach" ? current?.coach?.show_lines[preview.line] : undefined;
   const previewLine: MoveRef[] | undefined = useMemo(() => {
     if (!preview) return undefined;
+    if (preview.source === "coach") return showLine?.moves;
     return (preview.source === "alternatives" ? current?.lines : next?.lines)?.[preview.line]?.moves;
-  }, [preview, current, next]);
-  const previewMove = preview ? previewLine?.[preview.move] : undefined;
+  }, [preview, showLine, current, next]);
+  const previewMove = preview && preview.move >= 0 ? previewLine?.[preview.move] : undefined;
+  const previewing = !!preview && !!previewLine && (!!previewMove || !!showLine);
+
+  const openShowLine = (index: number) => {
+    setPlaying(false);
+    setRetry(null);
+    setPreview({ source: "coach", line: index, move: -1 });
+    setLinePlaying(true);
+  };
+  const closePreview = () => {
+    setPreview(null);
+    setLinePlaying(false);
+  };
+
+  // Sentence fragments marked on the board (only those of the move shown).
+  const ofCurrent = (m: Mark | null): FragmentRef | null => (m && current && m.ply === current.ply ? m : null);
+  const marking: FragmentMarking | undefined = current
+    ? {
+        active: ofCurrent(hovered) ?? ofCurrent(pinned),
+        pinned: ofCurrent(pinned),
+        onHover: (ref) => setHovered(ref ? { ...ref, ply: current.ply } : null),
+        onToggle: (ref) =>
+          setPinned((p) => (p && p.ply === current.ply && p.sentence === ref.sentence && p.fragment === ref.fragment ? null : { ...ref, ply: current.ply })),
+      }
+    : undefined;
+  const markedFragment = marking?.active
+    ? current?.coach?.sentences[marking.active.sentence]?.fragments[marking.active.fragment]
+    : undefined;
 
   const step = useCallback(
     (dir: 1 | -1) => {
@@ -142,16 +191,33 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     (dir: 1 | -1) => {
       if (!preview || !previewLine) return;
       const m = preview.move + dir;
-      if (m < 0) setPreview(null);
-      else if (m < previewLine.length) setPreview({ ...preview, move: m });
+      // A coach line starts at its start position (-1) and stays open until hidden.
+      const first = preview.source === "coach" ? -1 : 0;
+      if (m < first) {
+        if (preview.source !== "coach") setPreview(null);
+      } else if (m < previewLine.length) setPreview({ ...preview, move: m });
     },
     [preview, previewLine],
   );
+
+  // A coach line plays itself move by move until paused or finished.
+  const lineMove = preview?.source === "coach" ? preview.move : null;
+  const lineLength = showLine?.moves.length ?? 0;
+  useEffect(() => {
+    if (!linePlaying || lineMove === null) return;
+    if (lineMove + 1 >= lineLength) {
+      setLinePlaying(false);
+      return;
+    }
+    const t = setTimeout(() => setPreview((p) => (p && p.source === "coach" ? { ...p, move: p.move + 1 } : p)), lineMove < 0 ? 700 : LINE_STEP_MS);
+    return () => clearTimeout(t);
+  }, [linePlaying, lineMove, lineLength]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
       if (preview && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        setLinePlaying(false);
         stepPreview(e.key === "ArrowRight" ? 1 : -1);
       } else if (e.key === "ArrowLeft") {
         setMode("review");
@@ -165,7 +231,9 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       } else if (e.key === "f") setFlipped((f) => !f);
       else if (e.key === "Escape") {
         setPreview(null);
+        setLinePlaying(false);
         setRetry(null);
+        setPinned(null);
       } else return;
       e.preventDefault();
     };
@@ -185,13 +253,16 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     setPreview(i >= 0 ? { source: "alternatives", line: i, move: 0 } : null);
   };
 
+  const ladder = useMemo(() => (current ? hintLadder(current) : []), [current]);
+
   const onRetryDrop = (from: string, to: string): boolean => {
     if (!current?.best_move || !activeRetry) return false;
-    const uci = `${from}${to}`;
-    if (current.best_move.uci.startsWith(uci)) {
-      setRetry({ ...activeRetry, status: "correct", attempt: null });
+    const answer = judgeRetry(current, review.rating_used, from, to);
+    if (answer) {
+      setRetry({ ...activeRetry, status: "correct", attempt: null, answer });
       return true;
     }
+    const uci = `${from}${to}`;
     const known = current.lines.find((l) => l.moves[0]?.uci.startsWith(uci))?.moves[0]?.san ?? null;
     setRetry({ ...activeRetry, status: "wrong", attempt: known ?? (current.uci.startsWith(uci) ? current.san : null) });
     return false;
@@ -199,28 +270,36 @@ export function ReviewScreen({ review, onNewGame }: Props) {
 
   /* ---------------------------------------------------------------- board */
 
+  // The move a solved retry shows: the one found, or the best move when revealed.
+  const solvedMove = retrySolved ? (activeRetry?.answer?.move ?? bestMove) : null;
+
   const displayFen = activeRetry
-    ? retrySolved && bestMove
-      ? bestMove.fen
-      : (current?.fen_before ?? fenAt(review, ply))
-    : (previewMove?.fen ?? fenAt(review, ply));
+    ? (solvedMove?.fen ?? current?.fen_before ?? fenAt(review, ply))
+    : (previewMove?.fen ?? (showLine && previewing ? showLine.start_fen : fenAt(review, ply)));
 
   const { arrows, squareStyles, badge } = useMemo(() => {
     const arrows: Arrow[] = [];
     const styles: Record<string, CSSProperties> = {};
     let badge: BoardBadge | null = null;
 
-    if (activeRetry && bestMove) {
-      const sq = uciSquares(bestMove.uci);
-      if (sq && (activeRetry.status === "correct" || activeRetry.status === "revealed")) {
-        styles[sq.from] = tint(CLASSIFICATIONS.best.color, 45);
-        styles[sq.to] = tint(CLASSIFICATIONS.best.color, 60);
-        badge = { square: sq.to, classification: "best" };
-      } else if (sq && activeRetry.hint) {
-        styles[sq.from] = { boxShadow: "inset 0 0 0 4px rgba(255, 196, 64, 0.95)", background: "rgba(255, 196, 64, 0.25)" };
+    if (activeRetry) {
+      const sq = solvedMove ? uciSquares(solvedMove.uci) : null;
+      if (sq) {
+        const best = solvedMove?.uci === bestMove?.uci;
+        const color = CLASSIFICATIONS[best ? "best" : "excellent"].color;
+        styles[sq.from] = tint(color, 45);
+        styles[sq.to] = tint(color, 60);
+        badge = { square: sq.to, classification: best ? "best" : "excellent" };
+      } else {
+        // Hint ladder: the squares of every area rung shown so far.
+        for (const rung of ladder.slice(0, activeRetry.hint)) {
+          if (rung.kind === "area") for (const s of rung.squares) styles[s] = HINT_SQUARE;
+        }
       }
       return { arrows, squareStyles: styles, badge };
     }
+
+    if (showLine && !previewMove) return { arrows, squareStyles: styles, badge };
 
     if (previewMove) {
       const sq = uciSquares(previewMove.uci);
@@ -239,6 +318,16 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       if (current.from) styles[current.from] = tint(color, 42);
       styles[current.to] = tint(color, 58);
       if (current.classification) badge = { square: current.to, classification: current.classification };
+      if (markedFragment) {
+        // A fragment the reader is pointing at replaces the default arrows with its own.
+        for (const a of markedFragment.arrows) {
+          if (!arrows.some((b) => b.startSquare === a.from && b.endSquare === a.to)) {
+            arrows.push({ startSquare: a.from, endSquare: a.to, color: COACH_ARROW[a.kind] });
+          }
+        }
+        for (const s of markedFragment.squares) styles[s] = { ...styles[s], ...MARK_SQUARE };
+        return { arrows, squareStyles: styles, badge };
+      }
       if (current.show_best_move && current.best_move && !current.played_is_best) {
         const sq = uciSquares(current.best_move.uci);
         if (sq) arrows.push({ startSquare: sq.from, endSquare: sq.to, color: BEST_ARROW });
@@ -261,7 +350,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       }
     }
     return { arrows, squareStyles: styles, badge };
-  }, [activeRetry, bestMove, previewMove, preview, current, next, showSuggestion]);
+  }, [activeRetry, solvedMove, bestMove, ladder, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
 
   const boardRetry: BoardRetry | null =
     activeRetry && current && !retrySolved ? { side: current.mover, onDrop: onRetryDrop } : null;
@@ -290,23 +379,44 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     // Retry: find the best move yourself.
     if (activeRetry && current && bestMove) {
       const name = playerName(review, current.mover);
+      const answer = activeRetry.status === "correct" ? activeRetry.answer : null;
+      // An accepted alternative is judged by its own engine line.
+      const solvedEval =
+        answer && !answer.best ? (current.lines.find((l) => l.moves[0]?.uci === answer.move.uci)?.eval ?? null) : current.eval_best;
+      const step = hintStep(activeRetry.hint, ladder);
+      const reveal = () => setRetry({ ...activeRetry, status: "revealed" });
       const actions: CoachAction[] = retrySolved
         ? [
             { label: "Back", icon: Icons.back, onClick: () => setRetry(null) },
             { label: "Next", icon: Icons.next, onClick: advance, primary: true },
           ]
         : [
-            { label: "Hint", icon: Icons.bulb, onClick: () => setRetry({ ...activeRetry, hint: true }), pressed: activeRetry.hint },
-            { label: "Show", icon: Icons.eye, onClick: () => setRetry({ ...activeRetry, status: "revealed" }), hint: "Show the answer" },
+            {
+              label: step.label,
+              icon: step.reveal ? Icons.eye : Icons.bulb,
+              onClick: step.reveal ? reveal : () => setRetry({ ...activeRetry, hint: activeRetry.hint + 1 }),
+              pressed: activeRetry.hint > 0 && !step.reveal,
+              hint: step.reveal ? "Show the answer" : "Get a hint without giving the move away",
+            },
+            ...(step.reveal ? [] : [{ label: "Show", icon: Icons.eye, onClick: reveal, hint: "Show the answer" }]),
             { label: "Cancel", onClick: () => setRetry(null) },
           ];
+      const mood = activeRetry.status === "correct" ? "happy" : activeRetry.status === "wrong" ? "concerned" : "neutral";
       return (
         <>
-          <CoachBubble>
+          <CoachBubble mood={mood}>
             <div className="coach__head">
-              {retrySolved ? <ClassificationIcon value="best" size={26} /> : <span className="coach__glyph">{Icons.target}</span>}
+              {retrySolved ? (
+                <ClassificationIcon value={answer && !answer.best ? "excellent" : "best"} size={26} />
+              ) : (
+                <span className="coach__glyph">{Icons.target}</span>
+              )}
               <h2 className="coach__title">
-                {activeRetry.status === "correct" ? (
+                {answer && !answer.best ? (
+                  <>
+                    Good! <San san={answer.move.san} side={current.mover} /> works too
+                  </>
+                ) : answer ? (
                   <>
                     Correct! <San san={bestMove.san} side={current.mover} /> is best
                   </>
@@ -318,7 +428,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
                   <>Find the best move for {name}</>
                 )}
               </h2>
-              {retrySolved && current.eval_best && <EvalPill value={current.eval_best} />}
+              {retrySolved && solvedEval && <EvalPill value={solvedEval} />}
             </div>
             <div className="coach__body">
               {activeRetry.status === "trying" && (
@@ -330,13 +440,24 @@ export function ReviewScreen({ review, onNewGame }: Props) {
               {activeRetry.status === "wrong" && (
                 <p className="retry-wrong">
                   {activeRetry.attempt ? `${activeRetry.attempt} isn't the best move here.` : "That's not the best move."} Try again
-                  {activeRetry.hint ? "." : ", or ask for a hint."}
+                  {activeRetry.hint > 0 ? "." : ", or ask for a hint."}
                 </p>
               )}
-              {activeRetry.hint && !retrySolved && <p>The highlighted piece is the one to move.</p>}
-              {retrySolved && current.eval_best && (
+              {!retrySolved &&
+                ladder.slice(0, activeRetry.hint).map((rung) => (
+                  <p key={rung.kind} className="retry-hint">
+                    {Icons.bulb}
+                    {rung.text}
+                  </p>
+                ))}
+              {answer && !answer.best && (
                 <p>
-                  It keeps the evaluation at {formatEvalPill(current.eval_best)} instead of {formatEvalPill(current.eval_after)}.
+                  It is close enough to the engine's top move, <San san={bestMove.san} side={current.mover} />.
+                </p>
+              )}
+              {retrySolved && solvedEval && (
+                <p>
+                  It keeps the evaluation at {formatEvalPill(solvedEval)} instead of {formatEvalPill(current.eval_after)}.
                 </p>
               )}
             </div>
@@ -346,8 +467,57 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       );
     }
 
+    // Replaying one of the coach's lines, with its narration.
+    if (preview?.source === "coach" && showLine && previewing && current) {
+      const atStart = preview.move < 0;
+      const last = preview.move + 1 >= showLine.moves.length;
+      const title = showLine.label.replace(/^Show /, "");
+      const actions: CoachAction[] = [
+        { label: "Prev", icon: Icons.prev, onClick: () => (setLinePlaying(false), stepPreview(-1)), hint: "Previous move (←)" },
+        linePlaying
+          ? { label: "Pause", icon: Icons.pause, onClick: () => setLinePlaying(false) }
+          : {
+              label: last ? "Replay" : "Play",
+              icon: last ? Icons.retry : Icons.play,
+              onClick: () => {
+                if (last) setPreview({ ...preview, move: -1 });
+                setLinePlaying(true);
+              },
+            },
+        { label: "Next", icon: Icons.forward, onClick: () => (setLinePlaying(false), stepPreview(1)), hint: "Next move (→)" },
+        { label: "Hide", icon: Icons.close, onClick: closePreview, primary: true, hint: "Back to the game (Esc)" },
+      ];
+      return (
+        <>
+          <CoachBubble>
+            <div className="coach__head">
+              <span className="coach__glyph">{Icons.eye}</span>
+              <h2 className="coach__title">{title.charAt(0).toUpperCase() + title.slice(1)}</h2>
+              <span className="show-line__count">
+                {preview.move + 1}/{showLine.moves.length}
+              </span>
+            </div>
+            <div className="coach__body">
+              <p className="show-line__narration" aria-live="polite">
+                {atStart ? "Here is the position. Watch the line, or step through it with ← →." : showLine.narration[preview.move]}
+              </p>
+              <ShowLineMoves
+                line={showLine}
+                move={preview.move}
+                onSelect={(m) => {
+                  setLinePlaying(false);
+                  setPreview({ ...preview, move: m });
+                }}
+              />
+            </div>
+          </CoachBubble>
+          <CoachActions actions={actions} />
+        </>
+      );
+    }
+
     // Previewing an engine line.
-    if (preview && previewLine && previewMove && current) {
+    if (preview && preview.source !== "coach" && previewLine && previewMove && current) {
       const line = current.lines[preview.line];
       const fromBest = preview.source === "alternatives" && previewLine[0]?.uci === current.best_move?.uci;
       return (
@@ -416,8 +586,8 @@ export function ReviewScreen({ review, onNewGame }: Props) {
           label: "Retry",
           icon: Icons.retry,
           onClick: () => {
-            setPreview(null);
-            setRetry({ ply: current.ply, status: "trying", attempt: null, hint: false });
+            closePreview();
+            setRetry({ ply: current.ply, status: "trying", attempt: null, hint: 0, answer: null });
           },
           hint: "Try to find the best move yourself",
         });
@@ -430,8 +600,8 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     );
     return (
       <>
-        <CoachBubble>
-          <MoveVerdict ply={current} message={msg} />
+        <CoachBubble mood={coachMood(current.classification)}>
+          <MoveVerdict ply={current} message={msg} marking={marking} onShowLine={openShowLine} />
           {atEnd && (
             <div className="coach__body">
               <p className="coach__end">

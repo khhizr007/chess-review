@@ -1185,6 +1185,53 @@ select option {
   height: 52px !important;
   margin-bottom: -2px;
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.25));
+  transform-origin: 50% 90%;
+  transition: transform 0.3s var(--ease), filter 0.3s var(--ease);
+}
+
+/* Moods: the knight perks up for good moves and slumps for bad ones. */
+.coach__avatar--happy .piece-icon {
+  animation: avatar-hop 0.45s var(--ease);
+}
+
+.coach__avatar--impressed {
+  background: radial-gradient(120% 90% at 30% 15%, #7ff0d8 0%, var(--c-brilliant) 50%, #138a73 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 2px rgba(38, 194, 163, 0.45), 0 0 14px rgba(38, 194, 163, 0.55);
+}
+
+.coach__avatar--impressed .piece-icon {
+  transform: scale(1.06);
+  animation: avatar-hop 0.5s var(--ease) 2;
+}
+
+.coach__avatar--concerned {
+  background: radial-gradient(120% 90% at 30% 15%, #ffd2a8 0%, #e8995a 50%, #a8612c 100%);
+}
+
+.coach__avatar--concerned .piece-icon {
+  transform: rotate(-8deg);
+}
+
+.coach__avatar--sad {
+  background: radial-gradient(120% 90% at 30% 15%, #b9b5b0 0%, #8a8580 50%, #5b5752 100%);
+}
+
+.coach__avatar--sad .piece-icon {
+  transform: rotate(-14deg) translateY(4px);
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.25)) saturate(0.6) brightness(0.92);
+  animation: avatar-slump 0.5s var(--ease);
+}
+
+@keyframes avatar-hop {
+  40% {
+    transform: translateY(-6px) scale(1.04);
+  }
+}
+
+@keyframes avatar-slump {
+  from {
+    transform: none;
+  }
 }
 
 .coach__bubble {
@@ -1263,6 +1310,140 @@ select option {
 /* A move or piece the coach's sentence names; its arrows are on the board. */
 .coach__ref {
   font-weight: 700;
+}
+
+/* Live fragments: hover, focus or tap to draw their arrows and squares. */
+.coach__ref--live {
+  display: inline;
+  margin: 0 -2px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--bubble-text);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline dotted rgba(49, 46, 43, 0.45);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease);
+}
+
+.coach__ref--live:hover,
+.coach__ref--live.is-active {
+  background: rgba(255, 164, 89, 0.28);
+  text-decoration-color: transparent;
+}
+
+.coach__ref--live[aria-pressed="true"] {
+  background: rgba(255, 164, 89, 0.42);
+}
+
+.coach__ref--live:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* Show-line buttons under the coach's sentences. */
+.coach__lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.coach__line-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px 0 9px;
+  border: 0;
+  border-radius: 15px;
+  background: #ecebe8;
+  color: var(--bubble-text);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.coach__line-btn svg {
+  width: 16px;
+  height: 16px;
+  color: #8a8886;
+}
+
+.coach__line-btn:hover {
+  background: #e1dfdb;
+}
+
+.coach__line-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Replaying a show-line: narration plus the line's moves. */
+.show-line__count {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #ecebe8;
+  color: var(--bubble-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.show-line__narration {
+  min-height: 2.7em;
+  color: var(--bubble-text);
+  font-weight: 600;
+}
+
+.show-line__moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #ecebe8;
+}
+
+.show-line__moves .line__move {
+  color: var(--bubble-muted);
+}
+
+.show-line__moves .line__move:hover {
+  background: #f1f0ed;
+}
+
+.show-line__moves .line__move.is-active {
+  background: rgba(255, 196, 64, 0.4);
+  color: var(--bubble-text);
+}
+
+.show-line__moves .line__num {
+  color: #a3a19f;
+}
+
+/* Retry hint ladder. */
+.retry-hint {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  color: var(--bubble-text);
+  font-weight: 600;
+}
+
+.retry-hint svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: #d9a400;
 }
 
 .coach__body--report {
@@ -1924,6 +2105,84 @@ select option {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+}
+
+/* End-of-game takeaways, aggregated from the coach's events. */
+.takeaways {
+  margin: 16px 0 4px;
+}
+
+.takeaways ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.takeaway {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 10px;
+  border-radius: var(--r);
+  background: var(--surface);
+  border-left: 3px solid var(--c-mistake);
+}
+
+.takeaway--missed {
+  border-left-color: var(--c-miss);
+}
+
+.takeaway--error {
+  border-left-color: var(--c-blunder);
+}
+
+.takeaway--found {
+  border-left-color: var(--c-best);
+}
+
+.takeaway__side.avatar {
+  grid-row: span 2;
+  width: 28px;
+  height: 28px;
+}
+
+.takeaway__text {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.takeaway__moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.takeaway__move {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--inset);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.takeaway__move:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.takeaway__move:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .report__graph {

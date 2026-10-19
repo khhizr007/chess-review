@@ -1,14 +1,16 @@
+import { useMemo } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Phase } from "../api/generated/Phase";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
 import { reportSummary, playerName } from "../lib/coach";
-import { CLASSIFICATIONS, PHASES, REPORT_ORDER, formatAccuracy } from "../lib/format";
+import { CLASSIFICATIONS, PHASES, REPORT_ORDER, formatAccuracy, moveNumberLabel } from "../lib/format";
 import { firstPlyOf } from "../lib/review";
+import { gameTakeaways } from "../lib/takeaways";
 import { ClassificationIcon } from "./ClassificationIcon";
 import { CoachBubble } from "./Coach";
 import { EvalGraph } from "./EvalGraph";
-import { PieceIcon } from "./PieceIcon";
+import { PieceIcon, San } from "./PieceIcon";
 
 interface Props {
   review: ReviewResult;
@@ -34,7 +36,8 @@ const PHASE_KEYS: Phase[] = ["opening", "middlegame", "endgame"];
 
 export function ReportView({ review, current, onSelect, onReviewAt, onStart, onNewGame }: Props) {
   const { white, black } = review;
-  const count = (side: Side, c: Classification) =>
+  const takeaways = useMemo(() => gameTakeaways(review), [review]);
+  const count =(side: Side, c: Classification) =>
     (side === "white" ? white : black).tally.find((t) => t.classification === c)?.count ?? 0;
 
   const countCell = (side: Side, c: Classification) => {
@@ -69,6 +72,41 @@ export function ReportView({ review, current, onSelect, onReviewAt, onStart, onN
             ))}
           </div>
         </CoachBubble>
+
+        {takeaways.length > 0 && (
+          <section className="takeaways" aria-label="Takeaways">
+            <h2 className="section-label">Takeaways</h2>
+            <ul>
+              {takeaways.map((t) => (
+                <li key={`${t.side}-${t.text}`} className={`takeaway takeaway--${t.kind}`}>
+                  <span className={`avatar avatar--${t.side} takeaway__side`} title={playerName(review, t.side)}>
+                    <PieceIcon kind="p" side={t.side} size={18} />
+                    <span className="visually-hidden">{playerName(review, t.side)}:</span>
+                  </span>
+                  <span className="takeaway__text">{t.text}</span>
+                  <span className="takeaway__moves">
+                    {t.plies.map((p) => {
+                      const m = review.plies[p - 1];
+                      if (!m) return null;
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          className="takeaway__move"
+                          onClick={() => onReviewAt(p)}
+                          title={`Review ${moveNumberLabel(m.move_number, m.mover)} ${m.san}`}
+                        >
+                          <span className="line__num">{moveNumberLabel(m.move_number, m.mover)}</span>
+                          <San san={m.san} side={m.mover} />
+                        </button>
+                      );
+                    })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <div className="report__graph">
           <EvalGraph

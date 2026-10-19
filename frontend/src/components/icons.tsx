@@ -41,6 +41,31 @@ export const Icons = {
       <circle cx="12" cy="12" r="1.4" fill="currentColor" />
     </svg>
   ),
+  prev: (
+    <svg {...I}>
+      <path fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" d="M15 5l-7 7 7 7" />
+    </svg>
+  ),
+  forward: (
+    <svg {...I}>
+      <path fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  ),
+  play: (
+    <svg {...I}>
+      <path fill="currentColor" d="M7.5 4.5v15L19.5 12z" />
+    </svg>
+  ),
+  pause: (
+    <svg {...I}>
+      <path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" />
+    </svg>
+  ),
+  close: (
+    <svg {...I}>
+      <path fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  ),
   report: (
     <svg {...I}>
       <path fill="currentColor" d="M5 20V10h3v10zm5.5 0V4h3v16zM16 20v-7h3v7z" />

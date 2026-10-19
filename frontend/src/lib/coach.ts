@@ -145,6 +145,27 @@ export function coachArrows(ply: PlyReview): CoachArrow[] {
   return first ? first.arrows.map((a) => ({ from: a.from, to: a.to, kind: a.kind })) : [];
 }
 
+/** The coach avatar's expression. */
+export type CoachMood = "impressed" | "happy" | "neutral" | "concerned" | "sad";
+
+/** Avatar expression for a move, from its classification (the API has no emotion yet). */
+export function coachMood(c: Classification | null | undefined): CoachMood {
+  switch (c) {
+    case "brilliant":
+    case "great_find":
+      return "impressed";
+    case "best":
+      return "happy";
+    case "mistake":
+    case "miss":
+      return "concerned";
+    case "blunder":
+      return "sad";
+    default:
+      return "neutral";
+  }
+}
+
 /** One-paragraph summary for the report view. */
 export function reportSummary(review: ReviewResult): string[] {
   const out: string[] = [];
