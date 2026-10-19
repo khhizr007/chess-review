@@ -20,6 +20,17 @@ Ground truth for comparing our review labels with Chess.com Game Review. See
 - Batch 2 (2026-10-18): 39 games drawn at random (seed 2026) from the October archives of khhizr7,
   boy1956, PeterSouth1954, Hikaru, GothamChess and IMRosen, by source and time control, plus three
   draws; 2,915 moves.
+- Batch 3 (2026-10-18): game 185058622904 (khhizr7, a Traxler counter-attack with two Brilliants),
+  reported by the owner when our review gave it none. Its labels come straight from the captured
+  `/v2/game-review` response (`label_source: "chesscom-capture"`); it is in the tuning split because the
+  Brilliant rule was designed on it.
+- Batch 4 (2026-10-19): 82 of khhizr7's rapid games (30+ plies, not already in the dataset) in
+  `random.Random(2027)` order from the archives 2025/09 to 2026/10, reviewed one after another until
+  the batch held 16 Brilliants (15 games). Labels, best moves and evaluations come straight from the
+  captured `/v2/game-review` responses (`cc-reviews/<id>.sf.txt`, `label_source: "chesscom-capture"`);
+  every played move was checked against the PGN's SAN and every best move for legality. The page
+  reviewed each game with engine 10 (Stockfish setting) and every score came back from engine 13
+  (Stockfish 18).
 
 Labels were read move by move from the review panel (label text and icon), and the per-move labels
 reproduce the counts table for both players in every game.

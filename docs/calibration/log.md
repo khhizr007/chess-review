@@ -120,3 +120,112 @@ On the larger set the app-eval oracle (our rules on Chess.com's own evals) repro
 tuning labels (87.6% with the +200 rating) against 67% with our engine's evals, so the remaining gap
 is still the engine's search noise, larger in titled games, where the steep EP curve at rating 2500
 turns small eval differences into grade changes.
+
+### Exact Chess.com review data (2026-10-18)
+
+The review page's own `/v2/game-review` responses were captured for all 59 games
+(`tests/calibration/cc-reviews/`, protocol in `chesscom-review-protocol.md`). They give, per move,
+Chess.com's played-move score, best move and best-move score, with the engine and depth of each score.
+Findings:
+
+- The dataset is the Stockfish review: all 4,081 scored labels match the captures exactly (the 9
+  `uncertain` labels are now filled from them, `label_source: "chesscom-capture"`).
+- **"Stockfish 16" is scored by Stockfish 18** (`Score.engine` = `ENGINE_SF18_NNUE`). The site
+  default engine is Torch (`ENGINE_TORCH_3` scores), which a Stockfish clone cannot match.
+- **Best = the engine's move**: a best alternative is attached exactly when the played move is not
+  the engine's choice.
+- Search: fresh searches reach depth 12-23 (mean 17.4), so "Fast" is a node or time budget; positions
+  on an earlier principal variation inherit its score one ply shallower; opening positions carry
+  cached depth 26-35 scores.
+
+**Decomposition of our disagreement** (`b2-default` + `holdout-b2`, 4,090 plies, 66.9% exact):
+precision grade 14.3 points, best-move identity 11.2 (our best move equals Chess.com's on 70% of
+plies), Great/Brilliant 2.9, Book 2.4, Miss 1.9. Median score difference 11 cp (p90 46).
+
+**Exact-score oracle** (`tools/calibrate/cc_oracle.py`): our precision rules applied to Chess.com's
+own scores reproduce 82.0% of Excellent…Blunder labels with the recovered rating rule (max Elo,
+1000-2500), 85.1% with the calibrated +200, and **87.4-87.8%** with +100…+200 and the upper clamp
+raised to 3000 (titled games 81.2% → 88.1%). Thresholds 0.02/0.05/0.10 are confirmed; no rating,
+per-game rating, curve family (Stockfish WDL, material-scaled logistic) or threshold change gets
+above about 88%. The remaining errors go both ways within a game, so the displayed scores are not
+exactly the inputs Chess.com graded: about one graded label in eight cannot be reproduced even
+with Chess.com's own numbers.
+
+**Search emulation** (`tools/calibrate/emulate_search.py`, 59 games, precision labels):
+
+| engine / procedure | best move = Chess.com | score error med / p90 | precision-label agreement |
+|---|---:|---:|---:|
+| SF 17.1, depth 18 (as now) | 70.4% | 11 / 43 cp | 66.9% |
+| SF 18, depth 18 | 73.1% | 9 / 37 | 68.5% (68.8% clamp 3000) |
+| SF 18, PV-inheriting tree, depth 18 | 72.7% | 9 / 37 | 69.5% (clamp 3200) |
+| SF 18, tree, 400k nodes (median depth 18) | 73.2% | 9 / 32 | 69.5% (clamp 3200) |
+
+**Full pipeline with Stockfish 18** (runs `sf18-b2`, `holdout-sf18-b2`, `*-rmax3000`):
+
+| run | change | exact | within-one | Brilliant P / R | Great P / R | acc MAD (bias) |
+|---|---|---:|---:|---|---|---|
+| `sf18-b2` | Stockfish 18, defaults | 66.8% | 89.7% | 1.00 / 0.25 | 0.54 / 0.09 | 3.73 (+3.19) |
+| `holdout-sf18-b2` | holdout | 68.0% | 87.9% | 0.50 / 0.33 | 0.71 / 0.12 | 3.65 (+2.63) |
+| `sf18-b2-rmax3000` | + `rating_max` 3000 | 67.2% | 89.9% | 1.00 / 0.25 | 0.65 / 0.14 | 3.72 (+3.18) |
+| `holdout-sf18-b2-rmax3000` | holdout | 68.8% | 88.1% | 0.50 / 0.33 | 0.71 / 0.12 | 3.64 (+2.62) |
+
+All 59 games: 66.9% (SF 17.1) → 67.2% (SF 18) → 67.7% (SF 18 + clamp 3000). `rating_max` is now
+3000 by default. Re-labelling the cached outputs with other rule ideas (Great: no captures and gap
+≥ 0.13; Brilliant without the bucket shortcut; no Book for Inaccuracy or worse) moved agreement by at
+most ±0.2 points: with our engine's scores, rule changes are below the search noise.
+
+**Conclusion.** 95% exact agreement is out of reach for an independent reimplementation: even fed
+Chess.com's own scores, the recovered rules reproduce about 88% of graded labels, and our own search
+(best move equal on about 73% of plies at best) cannot replay Chess.com's server search. Realistic
+targets are about 68-70% exact and about 90% within one step, unless Chess.com's own review data is
+used directly.
+
+### Brilliant rebuilt on Chess.com's published definition (2026-10-18)
+
+Owner report: game 185058622904 (khhizr7, Traxler counter-attack) got no Brilliant from us; Chess.com
+gives two. The captured `/v2/game-review` response (`cc-reviews/185058622904.sf.txt`; the Stockfish
+and Torch reviews agree) marks **8...Nxg3** and **15...d5** Brilliant. The game is now in the tuning
+set (batch 3).
+
+The old rule was stricter than Chess.com's own help article ("How are moves classified?"), which
+says a Brilliant is the best move and "a good piece sacrifice", the player must not be in a bad
+position after it, must not be completely winning even without it, and newer players get a more
+generous sacrifice test. Against the 9 Chess.com Brilliants in the 60 games, the old rule failed on:
+
+| move | why it was rejected |
+|---|---|
+| 8...Nxg3 (185058622904) | "disguised trade": leaving e4 uncovers the queen's attack on c4 |
+| 15...d5 (185058622904) | a pawn, not a piece (both players about 950) |
+| 5.Nxe5 (Legal's trap), 19.O-O-O | the piece given up is left behind (queen; bishop after castling), not moved |
+| 5.Nxe5, 19.O-O-O, 18...Nxd4 | second-best move within 0.06 EP (rule asked for 0.10) |
+| 20...Bxh2+ | mating move, EP before 1.0 |
+| 21...gxf3 | not our engine's best move |
+
+New rule (`implementation-notes.md`): engine's best move; net material given up ≥ 100 by exchange and
+the exchange wins ≥ 200 (or the whole pawn); the moved piece, a piece left newly en prise (castling
+included), or a moved pawn when both players are below 1000; EP after ≥ 0.50; second-best not
+completely winning (EP < 0.90, mates excepted); no gap requirement; mating moves allowed.
+The "missed brilliant" Miss subtype keeps its own EP threshold (0.20).
+
+| run | change | exact | within-one | Brilliant P / R | Great P / R | acc MAD (bias) |
+|---|---|---:|---:|---|---|---|
+| `sf18-b2-rmax3000` | reference (41 tuning games) | 67.2% | 89.9% | 1.00 / 0.25 | 0.65 / 0.14 | 3.72 (+3.18) |
+| `brilliant-v2` | new rule without the 200 exchange floor | 67.0% | 89.7% | 0.38 / 0.75 | 0.65 / 0.14 | 3.72 (+3.18) |
+| `brilliant-v3` | final rule, 42 tuning games (+185058622904) | 67.3% | 89.8% | 0.62 / 0.83 | 0.65 / 0.13 | 3.66 (+3.08) |
+| `holdout-sf18-b2-rmax3000` | reference holdout | 68.8% | 88.1% | 0.50 / 0.33 | 0.71 / 0.12 | 3.64 (+2.62) |
+| `holdout-brilliant-v3` | **holdout check** of the final rule | 68.8% | 88.1% | 0.50 / 0.67 | 0.67 / 0.10 | 3.64 (+2.62) |
+
+All 60 games: Chess.com 9 Brilliants; we now give 12, 7 of them right (before: 3 given, 2 right).
+Exact and within-one agreement are unchanged. Both of the owner's game's Brilliants are found and
+nothing else in that game. Remaining differences:
+
+- Missed: 21...gxf3 (not our engine's best move); 20...Bxh2+ (the recovered material gate: Black is up
+  exactly a bishop after it and the opponent is mated, so `balance < piece value` fails by equality).
+- Extra: 12.Nd5 (1041474766), 8...Nxg3 (185438343298), 15.Bxh7+ (185468614210), 14.Bxg5 (185476493194)
+  rated Best, and 20.Bh7+ (185151408586) rated Great by Chess.com. 8...Nxg3 is the same position,
+  move and score as the owner's Brilliant 8...Nxg3; there the opponent declined the knight (9.d3). The
+  review data does not show what separates the two.
+- Rejected variants (offline, on the cached engine output): counting pieces that were already en prise
+  (gives false reasons, such as a rook hanging since move 5); pawns left behind at low ratings (+4
+  false); "the opponent takes the piece next move" (Chess.com Brilliants 28...Bxc2, 27...Ncxb3+ and
+  19.O-O-O were not taken).

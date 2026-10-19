@@ -597,11 +597,12 @@
     {
       "ply": 70,
       "san": "Qb1+",
-      "label": "uncertain:best/great",
+      "label": "great",
       "app_best_san": null,
       "app_best_uci": null,
       "app_eval": "-3.65",
-      "hidden": "Skill"
+      "hidden": "Skill",
+      "label_source": "chesscom-capture"
     },
     {
       "ply": 71,
@@ -614,11 +615,12 @@
     {
       "ply": 72,
       "san": "Qxe4+",
-      "label": "uncertain:best/great",
+      "label": "best",
       "app_best_san": null,
       "app_best_uci": null,
       "app_eval": "-3.65",
-      "hidden": "Skill"
+      "hidden": "Skill",
+      "label_source": "chesscom-capture"
     },
     {
       "ply": 73,
@@ -695,11 +697,12 @@
     {
       "ply": 82,
       "san": "Nf1+",
-      "label": "uncertain:best/great",
+      "label": "great",
       "app_best_san": null,
       "app_best_uci": null,
       "app_eval": "-7.11",
-      "hidden": "Skill"
+      "hidden": "Skill",
+      "label_source": "chesscom-capture"
     },
     {
       "ply": 83,
@@ -792,11 +795,12 @@
     {
       "ply": 94,
       "san": "e1=Q",
-      "label": "uncertain:best/great",
+      "label": "best",
       "app_best_san": null,
       "app_best_uci": null,
       "app_eval": "-M2",
-      "hidden": "Skill"
+      "hidden": "Skill",
+      "label_source": "chesscom-capture"
     },
     {
       "ply": 95,

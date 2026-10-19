@@ -16,6 +16,8 @@ pub struct ReviewConfig {
     /// Expected-outcome bucket boundaries. Recovered: `[0.10, 0.20, 0.35, 0.65, 0.80, 0.90]`.
     pub outcome_thresholds: [f64; 6],
     /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
+    /// Calibrated upper bound: 3000. On Chess.com's own scores the 2500 cap makes
+    /// titled games too lenient (see `docs/calibration/log.md`, exact-score oracle).
     pub rating_min: i32,
     pub rating_max: i32,
     /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
@@ -43,35 +45,50 @@ pub struct ReviewConfig {
     pub book_requires_unbroken: bool,
 }
 
-/// Brilliant detection: a static sacrifice (SEE) by the engine's best move,
-/// plus the recovered gates. Thresholds marked *fallback* are starting values
-/// to calibrate.
+/// Brilliant detection after Chess.com's published definition ("a good piece
+/// sacrifice": the best move, not in a bad position after it, not completely
+/// winning without it), with a static sacrifice test (SEE) and the recovered
+/// gates. Thresholds are calibrated on Chess.com reviews (`docs/calibration/log.md`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export)]
 pub struct BrilliantConfig {
     pub enabled: bool,
-    /// Minimum material (cp) the opponent wins, by static exchange, by capturing
-    /// the sacrificed piece.
+    /// Minimum net material (cp) given up: what the opponent wins by static
+    /// exchange on the sacrificed piece's square, minus what the move captured.
     pub min_sacrifice_cp: i32,
-    /// Minimum value (cp) of the piece given up (excludes pawns).
+    /// The opponent's exchange must also win at least this much (cp) in total, or
+    /// the whole piece when it is worth less (a pawn). Calibrated: 200; every
+    /// Chess.com Brilliant in the dataset gives up at least a minor piece for a pawn.
+    pub min_exchange_gain_cp: i32,
+    /// Minimum value (cp) of the piece given up (excludes pawns, but see
+    /// `pawn_sacrifice_below_elo`).
     pub min_piece_value_cp: i32,
+    /// Chess.com is "more generous in defining a piece sacrifice for newer
+    /// players": below this `max(WhiteElo, BlackElo)` a pawn the move puts en
+    /// prise also counts. 0 turns it off. Calibrated: 1000.
+    pub pawn_sacrifice_below_elo: i32,
     /// The second-best move must lose at least this much EP against the played
-    /// move, or fall into a lower outcome bucket (fallback).
+    /// move, or fall into a lower outcome bucket. 0 turns the test off (the
+    /// default): Chess.com requires the opposite, that a non-sacrificing move
+    /// was available, and most of its Brilliants have a near-equal second best.
     pub min_gap_to_second_best: f64,
-    /// No Brilliant for a move that forces mate itself (the reference excludes them).
+    /// No Brilliant for a move that forces mate itself. Off: Chess.com rates
+    /// mating sacrifices Brilliant.
     pub exclude_mating_moves: bool,
-    /// The mover's EP before the move must be in `[min_ep_before, max_ep_before)`
-    /// (fallback; neither greatly winning nor greatly losing).
-    pub min_ep_before: f64,
-    pub max_ep_before: f64,
-    /// Also count a piece the move leaves en prise without moving it (for example
-    /// the queen in Legal's trap), not only the moved piece (fallback extension).
+    /// "You should not be completely winning even if you hadn't found the move":
+    /// the second-best move's EP must be below this (Completely Winning starts
+    /// at 0.90). A forced mate on the second-best line does not count.
+    pub max_alternative_ep: f64,
+    /// Also count a piece the move leaves newly en prise without moving it (the
+    /// queen in Legal's trap, a bishop left behind by castling), not only the
+    /// moved piece.
     pub count_pieces_left_hanging: bool,
     /// In the endgame a sacrifice also needs this much material gain along the
     /// line, unless the second-best move drops an outcome bucket. Recovered: 200.
     pub endgame_min_gain_cp: i32,
-    /// The mover must not be losing after the move (EP below this) (fallback).
+    /// "You should not be in a bad position after a Brilliant move": the mover's
+    /// EP after the move must be at least this.
     pub min_ep_after: f64,
 }
 
@@ -107,6 +124,8 @@ pub struct MissConfig {
     pub tactic_min_gain_cp: i32,
     /// Opponent's previous EP loss that counts as an opportunity to punish.
     pub opportunity_min_opponent_ep_lost: f64,
+    /// "Missed brilliant": the best move is a sacrifice and its EP is at least this.
+    pub brilliant_min_best_ep: f64,
 }
 
 impl Default for ReviewConfig {
@@ -115,7 +134,7 @@ impl Default for ReviewConfig {
             precision_thresholds: [0.02, 0.05, 0.10, 0.20],
             outcome_thresholds: [0.10, 0.20, 0.35, 0.65, 0.80, 0.90],
             rating_min: 1000,
-            rating_max: 2500,
+            rating_max: 3000,
             rating_offset: 200,
             blunder_material_threshold_cp: 100,
             forgiving_material_lost_cp: 200,
@@ -135,14 +154,15 @@ impl Default for BrilliantConfig {
         Self {
             enabled: true,
             min_sacrifice_cp: 100,
+            min_exchange_gain_cp: 200,
             min_piece_value_cp: 300,
-            min_gap_to_second_best: 0.10,
-            exclude_mating_moves: true,
-            min_ep_before: 0.10,
-            max_ep_before: 0.90,
-            count_pieces_left_hanging: false,
+            pawn_sacrifice_below_elo: 1000,
+            min_gap_to_second_best: 0.0,
+            exclude_mating_moves: false,
+            max_alternative_ep: 0.90,
+            count_pieces_left_hanging: true,
             endgame_min_gain_cp: 200,
-            min_ep_after: 0.20,
+            min_ep_after: 0.50,
         }
     }
 }
@@ -166,6 +186,7 @@ impl Default for MissConfig {
             free_piece_min_value_cp: 300,
             tactic_min_gain_cp: 200,
             opportunity_min_opponent_ep_lost: 0.10,
+            brilliant_min_best_ep: 0.20,
         }
     }
 }

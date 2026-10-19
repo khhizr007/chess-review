@@ -402,38 +402,42 @@ fn build_review(
         let mover_completely_winning_before =
             oc(mover_value_before) == ExpectedOutcome::CompletelyWinning;
 
-        // Brilliant: the engine's best move gives up a piece (static exchange), the
-        // next-best move is clearly worse, and the recovered gates hold.
+        // Brilliant (Chess.com: "a good piece sacrifice"): the engine's best move
+        // gives up material (static exchange), the mover is not in a bad position
+        // after it and would not be completely winning without it, and the
+        // recovered gates hold.
         let bc = &cfg.brilliant;
         let second_value = lines
             .get(1)
             .map(|l| Value::after_move(eval_after_first_move(l, mover), mover));
         let second_drops_bucket = second_value.is_some_and(|v| oc(v) < oc(played_value));
-        let second_clearly_worse = second_value.is_some_and(|v| {
-            ep_played - node_expected_points(v, false, rating) >= bc.min_gap_to_second_best
-        }) || second_drops_bucket;
+        let second_clearly_worse = bc.min_gap_to_second_best <= 0.0
+            || second_drops_bucket
+            || second_value.is_some_and(|v| {
+                ep_played - node_expected_points(v, false, rating) >= bc.min_gap_to_second_best
+            });
+        // A forced mate on the second line is not "winning anyway": Chess.com rates
+        // mating sacrifices Brilliant even when other moves mate too.
+        let winning_without_it = second_value.is_some_and(|v| {
+            !v.mate_moves().is_some_and(|n| n > 0)
+                && node_expected_points(v, false, rating) >= bc.max_alternative_ep
+        });
         let played_mate = played_value.mate_moves();
+        let pawns =
+            bc.pawn_sacrifice_below_elo > 0 && (highest_elo as i32) < bc.pawn_sacrifice_below_elo;
         let sacrifice = played_is_best
-            .then(|| static_sacrifice(before, m, bc))
+            .then(|| static_sacrifice(before, m, bc, pawns))
             .flatten();
-        let opponent_reply_captures = played_pv
-            .get(1)
-            .and_then(|uci| board::parse_uci(after, uci))
-            .is_some_and(|reply| reply.is_capture());
         let balance_after = board::balance(after.board(), mover_color);
         facts.events.brilliant = bc.enabled
             && played_is_best
             && second_clearly_worse
+            && !winning_without_it
             && !played_mate.is_some_and(|n| n < 0)
             && !(bc.exclude_mating_moves && played_mate.is_some_and(|n| n >= 0))
-            && ep_before >= bc.min_ep_before
-            && ep_before < bc.max_ep_before
             && ep_played >= bc.min_ep_after
             && sacrifice.is_some_and(|s| {
-                // Material is really lost (implied by the SEE threshold, kept explicit).
-                (opponent_reply_captures || s.see_gain >= 100)
-                    && (material_gate(balance_after, see::value(s.role))
-                        || opponent_ep_before >= 0.10)
+                material_gate(balance_after, see::value(s.role)) || opponent_ep_before >= 0.10
             })
             && (endgame_gain_ok(&played_walk, bc.endgame_min_gain_cp) || second_drops_bucket);
 
@@ -477,8 +481,9 @@ fn build_review(
             comeback: oc(mover_value_before) <= ExpectedOutcome::Worse
                 && oc(best_value) >= ExpectedOutcome::Equal
                 && oc(played_value) <= ExpectedOutcome::Worse,
-            brilliant: best_move.is_some_and(|bm| static_sacrifice(before, bm, bc).is_some())
-                && ep_best >= bc.min_ep_after,
+            brilliant: best_move
+                .is_some_and(|bm| static_sacrifice(before, bm, bc, pawns).is_some())
+                && ep_best >= cfg.miss.brilliant_min_best_ep,
             opportunity: opponent_previous_ep_lost
                 .is_some_and(|l| l >= cfg.miss.opportunity_min_opponent_ep_lost),
         };

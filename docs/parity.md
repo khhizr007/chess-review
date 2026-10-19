@@ -31,7 +31,7 @@ checked against what the recovered rules predict.
 
 | Fixture | Observed | Rule exercised |
 |---|---|---|
-| `opera_game.pgn` | 10.Nxb5 → **Brilliant**; 16…Nxb8 **Forced**; 17.Rd8# **Best**; 6…Nf6 **Mistake** (best 6…Qf6); White accuracy > Black. Since the calibration rebuild (Stockfish 17.1, depths 14 and 18), 13.Rxd7 is **Best** because White's EP before it is 0.97 (≥ 0.90), and 16.Qb8+ is **Best** because it forces mate. The earlier line-walk detector called all three Brilliant. | Sacrifice detector + gates; forced; precision |
+| `opera_game.pgn` | 10.Nxb5 → **Brilliant**; 16…Nxb8 **Forced**; 17.Rd8# **Best**; 6…Nf6 **Mistake** (best 6…Qf6); White accuracy > Black. Since the calibration rebuild, 13.Rxd7 and 16.Qb8+ are **Best**: at this rating the quiet alternatives (13.Rd5 +3.99, 16.Qc3 +3.53 with Stockfish 18 at depth 18) already leave White completely winning, which Chess.com's Brilliant definition excludes. The earlier line-walk detector called all three Brilliant. | Sacrifice detector + gates; forced; precision |
 | `scholars_mate.pgn` | 3…Nf6 **Blunder**; 4.Qxf7# **Best**, CAPS2 100 | Mate against the mover; mate delivered = 100 |
 | `missed_mate.pgn` | 4.Qf3 **Miss (mate)** with "Qxf7# forces mate in 1 move" | Mate rule: missed mate |
 | `back_rank.pgn` (FEN start) | 1.Rd7 **Miss (mate)**; …Kh7 **Forced** | Mate rule; forced |

@@ -15,4 +15,8 @@ tactic_min_gain_cp: number,
 /**
  * Opponent's previous EP loss that counts as an opportunity to punish.
  */
-opportunity_min_opponent_ep_lost: number, };
+opportunity_min_opponent_ep_lost: number, 
+/**
+ * "Missed brilliant": the best move is a sacrifice and its EP is at least this.
+ */
+brilliant_min_best_ep: number, };

@@ -67,28 +67,47 @@ async fn sacrifice_that_is_not_the_best_move_is_not_brilliant() {
 }
 
 #[tokio::test]
-async fn sacrifice_when_already_winning_big_is_not_brilliant() {
+async fn sacrifice_when_completely_winning_anyway_is_not_brilliant() {
+    // Chess.com: "You should not be completely winning even if you hadn't found
+    // the move". The quiet alternative already keeps +7.
     let engine = ScriptedEngine::default().script(
         GREEK_GIFT,
         &[
-            (500, &["d3h7", "g8h7", "f3g5"]),
-            (200, &["c1d2"]),
-            (150, &["e1g1"]),
+            (900, &["d3h7", "g8h7", "f3g5"]),
+            (700, &["c1d2"]),
+            (650, &["e1g1"]),
         ],
     );
     let r = review("8. Bxh7+ Kxh7", engine).await;
-    assert!(r.plies[0].ep_before >= 0.90);
     assert_eq!(first_move(&r), Some(Classification::Best));
 }
 
 #[tokio::test]
-async fn sacrifice_without_a_clearly_worse_alternative_is_not_brilliant() {
+async fn sacrifice_with_a_safe_alternative_is_still_brilliant() {
+    // Most of Chess.com's Brilliants have a second-best move almost as good; a
+    // sacrifice that is the only good move is not required.
     let engine = ScriptedEngine::default().script(
         GREEK_GIFT,
         &[(150, &["d3h7", "g8h7"]), (140, &["c1d2"]), (130, &["e1g1"])],
     );
     let r = review("8. Bxh7+ Kxh7", engine).await;
-    assert_eq!(first_move(&r), Some(Classification::Best));
+    assert_eq!(first_move(&r), Some(Classification::Brilliant));
+}
+
+#[tokio::test]
+async fn sacrifice_that_leaves_a_bad_position_is_not_brilliant() {
+    // "You should not be in a bad position after a Brilliant move."
+    let engine = ScriptedEngine::default().script(
+        GREEK_GIFT,
+        &[
+            (-150, &["d3h7", "g8h7"]),
+            (-300, &["c1d2"]),
+            (-320, &["e1g1"]),
+        ],
+    );
+    let r = review("8. Bxh7+ Kxh7", engine).await;
+    assert!(r.plies[0].ep_after < 0.50);
+    assert_ne!(first_move(&r), Some(Classification::Brilliant));
 }
 
 #[tokio::test]

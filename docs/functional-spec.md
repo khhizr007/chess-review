@@ -84,6 +84,9 @@ The inverse, `expected_points_to_centipawns` [`0x1138a3c`], is `cp = ln(1/EP −
   clamped to `[1000, 2500]`.
   - **This project (calibrated).** 200 is added before the clamp (`rating_offset`): Chess.com's grades
     match a rating above the PGN's game-time ratings (see `parity.md`). Set it to 0 for the recovered rule.
+  - **This project (calibrated).** The upper clamp is 3000 (`rating_max`), not 2500: applied to
+    Chess.com's own captured scores, the 2500 cap grades titled games too leniently (81% → 88% of
+    labels reproduced; `calibration/log.md`). Set it to 2500 for the recovered rule.
   - Missing ratings count as 0 and therefore become **1000**.
   - With no game context at all, R is **2000**.
 - **EP of a node** (`node_lib::expected_points` [`0x130c9c8`]) is `0.5` if the position is a draw by
@@ -184,16 +187,21 @@ Brilliant, Tricky and Great Find are events in circumstances 13, 14 and 15 (`TEP
 - **Confirmed.** If that gate fails, the event is still allowed when the opponent was not already lost
   (EP ≥ 0.10 at R = 2000).
 - **Inferred.** The exact sacrifice definition was not decoded.
-- **This project.** A static sacrifice (static exchange evaluation, not a line walk): the moved knight,
-  bishop, rook or queen can be won by the opponent by exchange on its new square; it is not a disguised
-  trade (capture plus discovered attack); a piece already threatened had a safe square and no mutual
-  threat existed (optionally, a piece left newly en prise also counts). In addition the move must be the
-  engine's best move, the second-best move clearly worse (≥ 0.10 EP or a lower bucket), the mover not
-  mated and not forcing mate, and the mover's EP before the move in [0.10, 0.90). See
-  `implementation-notes.md`.
-- **Calibrated.** Against Chess.com on 20 games (October 2026) this gives Brilliant precision 1.00 on
-  the tuning set (1 of the app's 3 found, no false ones); the earlier line-walk test gave 60 Brilliants
-  for the app's 3.
+- **Published.** Chess.com's help article ("How are moves classified?", Classification V2): a Brilliant
+  move is the best or nearly best move and "a good piece sacrifice"; the player must not be in a bad
+  position after it and must not be completely winning even without it; the sacrifice test is more
+  generous for newer players.
+- **This project.** The published conditions with a static sacrifice (static exchange evaluation, not a
+  line walk). The move is the engine's best move and gives up at least 100 cp net: the moved piece
+  (knight, bishop, rook or queen, or a pawn when both players are below 1000), or a piece it leaves newly
+  en prise (castling included), can be won by exchange for more than the move captured. The mover's EP
+  after the move is at least 0.50, and the second-best move is not completely winning (EP < 0.90; a
+  forced mate there does not count). No gap to the second-best move is required, and mating sacrifices
+  qualify. See `implementation-notes.md`.
+- **Calibrated.** Against Chess.com's Stockfish reviews of 60 games (October 2026): the earlier rule
+  (second-best ≥ 0.10 EP worse, EP before in [0.10, 0.90), moved piece only, no mating moves) found 2 of
+  the 9 Brilliants; this rule finds 7 of 9 and gives 5 others (see `calibration/log.md`). The earlier
+  line-walk test gave 60 Brilliants for the app's 3.
 
 **Great Find** (`is_great_find_candidate_core` [`0x1071764`], `compute_board_event<15>`):
 - **Confirmed.** Candidate requires: the parent and grandparent are scored, precision is Best or Excellent,

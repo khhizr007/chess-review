@@ -80,26 +80,43 @@ softened Blunders that lose material through a later tactic, such as a fork. See
 
 ### Event detectors
 
-- **Brilliant** requires all of (`brilliant.*` in the config):
+- **Brilliant** follows Chess.com's published definition (help article "How are moves classified?":
+  a Brilliant move is "a good piece sacrifice"; the mover must not be in a bad position after it,
+  must not be completely winning even without it, and newer players get a more generous sacrifice
+  test). It requires all of (`brilliant.*` in the config):
   - the played move is the engine's best move (line 1);
-  - the second-best line is clearly worse: at least `min_gap_to_second_best` (0.10) EP below, or in
-    a lower outcome bucket;
-  - the mover is not mated after the move, and (with `exclude_mating_moves`, on) the move does not
-    force mate itself;
-  - the mover's EP before the move is in `[0.10, 0.90)`, and after it at least 0.20;
-  - a **static sacrifice**: the moved knight, bishop, rook or queen can be won by the opponent by
-    exchange (SEE ≥ 100) on its new square, and
-    - it is not a disguised trade: what the move captures plus the largest value hit by a discovered
-      attack is less than the piece's value;
-    - if it was already threatened before the move, it had a safe square, and no other own piece
-      and no opponent piece of at least its value was threatened;
-    - optionally (`count_pieces_left_hanging`, off), a piece the move leaves newly en prise without
-      moving it also counts, under the same trade test. With the gap lowered to 0.05 this catches
-      Legal's trap (5.Nxe5 leaves the queen), which the app rates Brilliant, but that tuning did not
-      survive the holdout check (see `docs/calibration/log.md`);
+  - **no** gap to the second-best move is required (`min_gap_to_second_best`, 0 = off). Chess.com
+    requires the opposite (a sacrifice that is the only good move is a Great move): 4 of its 7
+    Brilliants in the 59-game dataset had a second-best move within 0.06 EP;
+  - not completely winning anyway: the second-best line's EP is below `max_alternative_ep` (0.90,
+    where Completely Winning starts). A forced mate on the second line does not count: Chess.com rated
+    a mating bishop sacrifice Brilliant although other moves mated too;
+  - the mover is not mated after the move and its EP after it is at least `min_ep_after` (0.50);
+    mating moves are allowed (`exclude_mating_moves`, off);
+  - a **static sacrifice** (`static_sacrifice`): the net material given up, what the opponent wins by
+    exchange (SEE) on the piece's square minus what the move captured, is at least
+    `min_sacrifice_cp` (100), so an even trade is not a sacrifice, and the exchange itself wins at
+    least `min_exchange_gain_cp` (200), or the whole pawn when a pawn is given up. (The 200 drops
+    rook "sacrifices" that lose only an exchange's worth; every Chess.com Brilliant in the dataset
+    gives up at least a minor piece for a pawn.) The piece is
+    - the moved knight, bishop, rook or queen. If it was already threatened before the move, it had a
+      safe square, and no other own piece and no opponent piece of at least its value was threatened;
+    - or a knight, bishop, rook or queen the move leaves newly en prise without moving it
+      (`count_pieces_left_hanging`, on): the queen in Legal's trap (5.Nxe5), a bishop left behind by
+      castling. A piece that was already en prise before the move does not count;
+    - or, when both players are below `pawn_sacrifice_below_elo` (1000), the moved pawn
+      (Chess.com: 15...d5 in game 185058622904, both players rated about 950);
+    - never a promotion.
+    The earlier "disguised trade" test (capture plus discovered attack) is gone: it rejected the
+    Traxler sacrifice 8...Nxg3, whose discovered attack on c4 wins nothing;
   - the recovered gates: the mover's balance after the move is below the sacrificed piece's value,
     **or** the opponent's EP before the move is ≥ 0.10; in the endgame a gain of at least 200 along
     the line, unless the second-best move drops an outcome bucket.
+  - Calibration (`docs/calibration/log.md`): the rule finds 7 of the 9 Chess.com Brilliants in 60
+    games and gives 5 others. The misses: 21...gxf3 is not our engine's best move, and 20...Bxh2+
+    fails the recovered material gate by equality. One identical position (the Traxler
+    8...Nxg3 in games 185058622904 and 185438343298, same score) is Brilliant in one review and Best in
+    the other, so part of Chess.com's decision is not visible in the review data.
 - **Great Find** requires all of:
   - precision Best or Excellent, and the played move is line 1;
   - an EP gap to line 2 of at least `min_gap_to_second_best` (0.20): a proxy for the unrecovered
@@ -127,7 +144,7 @@ These are only consulted when precision is Mistake or Blunder, under the recover
 | tactic | the best line gains ≥ 200 |
 | win | best outcome bucket ≥ Winning and played ≤ Equal |
 | comeback | mover ≤ Worse before the move, best ≥ Equal, played ≤ Worse |
-| brilliant | the best line is a sacrifice and EP(best) ≥ 0.20 |
+| brilliant | the best move is a sacrifice (the Brilliant test above) and EP(best) ≥ 0.20 (`miss.brilliant_min_best_ep`) |
 | opportunity | the opponent's previous move lost ≥ 0.10 EP |
 
 ### Other fallbacks
