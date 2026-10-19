@@ -91,3 +91,10 @@ eng 10 acc <white> <black> cee <version>
 Scores are White-relative: `123@18` is +1.23 at depth 18, `M3@40` White mates in 3, `-M2@30` Black
 mates in 2, `S@` stalemate. `K` marks a key moment. `tools/calibrate/cc_oracle.py` applies our
 precision rules to these scores; `tools/calibrate/emulate_search.py` emulates the search procedure.
+
+## Coach speech
+
+The same `GameReview` carries the coach's speech, show-moves buttons and board markings per move.
+[`coach-log.md`](coach-log.md) describes how they are captured (`tools/calibrate/coach_capture.js`)
+and mapped to event tags for the Phase 0 coach comparison. The captures hold Chess.com text and stay
+outside the repository.
