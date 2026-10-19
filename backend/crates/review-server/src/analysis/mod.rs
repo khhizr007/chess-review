@@ -66,6 +66,9 @@ struct PositionInfo {
     is_draw: bool,
     /// Best move of a shallow search, where the played move is the best move.
     shallow_best: Option<String>,
+    /// Best line of the null-move threat search: this position with the other
+    /// side to move (for the coach).
+    threat: Option<EngineLine>,
 }
 
 pub async fn run_review(
@@ -79,18 +82,41 @@ pub async fn run_review(
     if game.moves.is_empty() {
         return Err(ReviewError::NoMoves);
     }
-    let positions = analyse_positions(&request, evaluator.as_ref(), &cancel, progress).await?;
+    let book = book_flags(game, &openings, &request.config);
+    let positions =
+        analyse_positions(&request, &book, evaluator.as_ref(), &cancel, progress).await?;
     Ok(build_review(
         &request,
         &positions,
         &openings,
+        &book,
         &evaluator.name(),
     ))
 }
 
-/// Searches every non-terminal position (in parallel up to the evaluator's limit).
+/// Per move: the position after it is a book position.
+fn book_flags(game: &ParsedGame, openings: &OpeningBook, cfg: &ReviewConfig) -> Vec<bool> {
+    let mut in_book = true;
+    game.positions[1..]
+        .iter()
+        .map(|after| {
+            in_book = in_book && openings.contains(after);
+            // The reference also marks a later move Book when play transposes back
+            // into the book; `book_requires_unbroken` keeps the stricter fallback.
+            if cfg.book_requires_unbroken {
+                in_book
+            } else {
+                openings.contains(after)
+            }
+        })
+        .collect()
+}
+
+/// Searches every non-terminal position (in parallel up to the evaluator's
+/// limit), and the null-move threat searches the coach needs.
 async fn analyse_positions(
     request: &ReviewRequest,
+    book: &[bool],
     evaluator: &dyn Evaluator,
     cancel: &CancellationToken,
     progress: ProgressFn,
@@ -117,11 +143,45 @@ async fn analyse_positions(
         .enumerate()
         .map(|(i, pos)| !pos.legal_moves().is_empty() && !(i == last && draws[i]))
         .collect();
-    let total = needs_search.iter().filter(|n| **n).count() as u32;
+    let chess960 = game.castling_mode == shakmaty::CastlingMode::Chess960;
+
+    // The coach's null-move threat search, on the positions before and after
+    // every move that is neither book nor forced: the position after move i
+    // with its mover to move again (THREATENS for move i), which is also the
+    // position before move i + 1 with its mover's opponent to move (PREVENTS).
+    let threat_depth = request.config.coach.threat_search_depth;
+    let coached: Vec<bool> = game.positions[..game.moves.len()]
+        .iter()
+        .zip(book)
+        .map(|(pos, book)| !book && pos.legal_moves().len() > 1)
+        .collect();
+    let threat_work: Vec<Option<AnalysisRequest>> = game
+        .positions
+        .iter()
+        .enumerate()
+        .map(|(j, pos)| {
+            let wanted = threat_depth > 0
+                && needs_search[j]
+                && (j.checked_sub(1).is_some_and(|p| coached[p])
+                    || coached.get(j).copied().unwrap_or(false));
+            let null = board::null_move(pos).filter(|_| wanted)?;
+            Some(AnalysisRequest {
+                fen: board::fen(&null),
+                limit: SearchLimit::Depth {
+                    depth: threat_depth,
+                },
+                multipv: 1,
+                chess960,
+                searchmoves: None,
+            })
+        })
+        .collect();
+
+    let total =
+        (needs_search.iter().filter(|n| **n).count() + threat_work.iter().flatten().count()) as u32;
     let done = AtomicU32::new(0);
     progress(0, total);
 
-    let chess960 = game.castling_mode == shakmaty::CastlingMode::Chess960;
     let work: Vec<Option<AnalysisRequest>> = game
         .positions
         .iter()
@@ -138,27 +198,38 @@ async fn analyse_positions(
         .collect();
     let done = &done;
     let progress = &progress;
-    let searches = futures::stream::iter(work.into_iter().map(|req| async move {
-        let Some(req) = req else { return Ok(None) };
-        let analysis = evaluator.analyze(&req, cancel).await?;
-        let n = done.fetch_add(1, Ordering::SeqCst) + 1;
-        progress(n, total);
-        Ok::<_, EngineError>(Some(analysis))
-    }))
-    .buffered(evaluator.parallelism().max(1))
-    .collect::<Vec<_>>()
-    .await;
-
-    let mut infos = Vec::with_capacity(searches.len());
-    for (i, result) in searches.into_iter().enumerate() {
-        let analysis = match result {
-            Ok(a) => a,
+    let searched = work.len();
+    let searches =
+        futures::stream::iter(work.into_iter().chain(threat_work).map(|req| async move {
+            let Some(req) = req else { return Ok(None) };
+            let analysis = evaluator.analyze(&req, cancel).await?;
+            let n = done.fetch_add(1, Ordering::SeqCst) + 1;
+            progress(n, total);
+            Ok::<_, EngineError>(Some(analysis))
+        }))
+        .buffered(evaluator.parallelism().max(1))
+        .collect::<Vec<_>>()
+        .await;
+    let mut results = Vec::with_capacity(searches.len());
+    for (k, result) in searches.into_iter().enumerate() {
+        match result {
+            Ok(a) => results.push(a),
             Err(EngineError::Cancelled) => return Err(ReviewError::Cancelled),
+            // A failed threat search only costs the coach a sentence.
+            Err(e) if k >= searched => {
+                tracing::warn!(error = %e, "null-move threat search failed");
+                results.push(None);
+            }
             Err(e) => return Err(ReviewError::Engine(e)),
-        };
-        if cancel.is_cancelled() {
-            return Err(ReviewError::Cancelled);
         }
+    }
+    if cancel.is_cancelled() {
+        return Err(ReviewError::Cancelled);
+    }
+    let threats = results.split_off(searched);
+
+    let mut infos = Vec::with_capacity(results.len());
+    for (i, (analysis, threat)) in results.into_iter().zip(threats).enumerate() {
         let pos = &game.positions[i];
         let eval = match &analysis {
             Some(a) => a.best().map(|l| l.eval).unwrap_or(Eval::DRAW),
@@ -173,6 +244,7 @@ async fn analyse_positions(
             analysis,
             is_draw: draws[i],
             shallow_best: None,
+            threat: threat.and_then(|a| a.best().cloned()),
         });
     }
 
@@ -277,6 +349,7 @@ fn build_review(
     request: &ReviewRequest,
     infos: &[PositionInfo],
     openings: &OpeningBook,
+    book: &[bool],
     engine: &str,
 ) -> ReviewResult {
     let game = &request.game;
@@ -290,7 +363,6 @@ fn build_review(
 
     let mut caps = Caps2State::default();
     let mut outcomes: Vec<MoveOutcome> = Vec::with_capacity(game.moves.len());
-    let mut in_book = true;
     let mut opponent_previous_ep_lost: Option<f64> = None;
 
     for (i, parsed) in game.moves.iter().enumerate() {
@@ -335,14 +407,7 @@ fn build_review(
             node_expected_points(opponent_value_before, infos[i].is_draw, rating);
 
         let is_forced = before.legal_moves().len() == 1;
-        in_book = in_book && openings.contains(after);
-        // The reference also marks a later move Book when play transposes back into
-        // the book; `book_requires_unbroken` keeps the stricter fallback.
-        let is_book = if cfg.book_requires_unbroken {
-            in_book
-        } else {
-            openings.contains(after)
-        };
+        let is_book = book[i];
 
         // Material along the engine lines.
         let played_pv: Vec<String> = match played_rank {
@@ -544,18 +609,30 @@ fn build_review(
             .analysis
             .as_ref()
             .and_then(PositionAnalysis::best);
+        // The played line from `before`: a mate the mover gives after the reply
+        // search is one move longer from here.
+        let played_line_eval = match played_rank {
+            Some(k) => lines[k].eval,
+            None => match infos[i + 1].eval {
+                Eval::Mate { winner, moves } if winner == mover => Eval::Mate {
+                    winner,
+                    moves: moves + 1,
+                },
+                other => other,
+            },
+        };
         let coach = coach::coach_move(&coach::CoachInput {
             before,
             played: m,
             previous: previous_move,
-            reply: reply_line.map(|l| coach::LineInput {
-                pv: &l.pv,
-                eval: l.eval,
+            reply: reply_line.map(line_input),
+            best: Some(line_input(best_line)),
+            played_line: Some(coach::LineInput {
+                pv: &played_pv,
+                eval: played_line_eval,
             }),
-            best: Some(coach::LineInput {
-                pv: &best_line.pv,
-                eval: best_line.eval,
-            }),
+            threat: infos[i + 1].threat.as_ref().map(line_input),
+            prev_threat: infos[i].threat.as_ref().map(line_input),
             classification: outcome.classification,
             style: coach::Style::Neutral,
             horizon,
@@ -623,6 +700,13 @@ fn build_review(
     }
 
     summarise(request, infos, outcomes, openings, engine, rating)
+}
+
+fn line_input(l: &EngineLine) -> coach::LineInput<'_> {
+    coach::LineInput {
+        pv: &l.pv,
+        eval: l.eval,
+    }
 }
 
 fn move_flags(m: Move, after: &Chess) -> MoveFlags {

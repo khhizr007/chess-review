@@ -73,7 +73,8 @@ tagged `PgnError` (`illegal_move` with game, ply and SAN; `invalid_start_positio
 
 ### `GET /api/reviews/{id}`
 Returns the status with `state` (`queued | running | completed | failed | cancelled`) and `progress`
-(positions analysed out of the total). Poll it every 0.5–1 s.
+(searches done out of the total: one per position, plus the coach's null-move threat searches). Poll
+it every 0.5–1 s.
 
 ### `DELETE /api/reviews/{id}`
 Requests cancellation. Running searches receive `stop`, and the job ends as `cancelled`.
@@ -105,7 +106,7 @@ Each `PlyReview` contains:
 | `accuracy` | CAPS2 move score |
 | `phase`, `is_book`, `is_key_moment`, `is_critical`, `material_lost_cp` | Context flags |
 | `explanation[]` | Generated facts (shown in the details drawer) |
-| `coach` | The coach note for Inaccuracies, Mistakes, Blunders and Misses (empty otherwise): `sentences[]` (each a list of `fragments` with `text`, `arrows` and `squares`, plus the index of the `event` it says), `show_lines[]` (`label`, `start_fen`, `moves`, one `narration` per move) and `events[]` (`chain` of circumstances, `tag`, `piece`, `square`, `actor`, `geometry`, `line` in UCI, `ply`, `gain_cp`, `mate_in`). See `docs/implementation-notes.md`, "Coach". |
+| `coach` | The coach note for every classified move except Book and Forced (empty for those): `sentences[]` (each a list of `fragments` with `text`, `arrows` and `squares`, plus the index of the `event` it says), `show_lines[]` (`label`, `start_fen`, `moves`, one `narration` per move) and `events[]` (`chain` of circumstances, `tag`, `piece`, `square`, `actor`, `geometry`, `line` in UCI, `ply`, `gain_cp`, `mate_in`). See `docs/implementation-notes.md`, "Coach". |
 | `pgn_comment` | The comment from the imported PGN |
 
 ### `GET /api/reviews/{id}/plies/{ply}`

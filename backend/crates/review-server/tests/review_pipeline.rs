@@ -118,6 +118,7 @@ async fn stalemate_final_position_is_not_searched() {
     let mut req = request("stalemate.pgn");
     // Count only the main searches, not the shallow Great Find ones.
     req.config.great_find.easy_search_depth = 0;
+    req.config.coach.threat_search_depth = 0;
     let positions = req.game.positions.len() as u32;
     let r = run_review(
         req,
