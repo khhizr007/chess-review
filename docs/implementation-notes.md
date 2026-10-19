@@ -223,7 +223,8 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
     `ForcedMate`. If the line wins at least a pawn, the highest-priority tactic among that side's moves
     up to the gain ply is chosen: WINS_MATERIAL when it is the first move, LEADS_TO when it comes later.
     If no tactic is found, the fallback is `MaterialGain`. A line that wins nothing reports a tactic of
-    its first move, if any.
+    its first move, if any. The gain is placed on the winning side's last capture before the material
+    settles, never on the other side's move after it (10...cxb5 Bxb5+ "cxb5 wins a pawn").
   - THREATENS: N's line, read the same way, kept only when it is a threat: its first move mates or
     carries out the tactic, and the material falls by the mover's next move (an idea that needs a
     quiet move first is a plan, not a threat). It is also dropped

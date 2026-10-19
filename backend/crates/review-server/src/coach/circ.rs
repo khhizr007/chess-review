@@ -181,11 +181,16 @@ fn gain_of(line: &Line) -> Option<Gain> {
     if line.net() < MIN_GAIN || ply >= line.moves.len() {
         return None;
     }
-    // What the first mover took last on the way to the gain.
-    let role = (0..=ply)
+    // What the first mover took last on the way to the gain, and where: the
+    // material settles on that capture, not on the other side's move after it.
+    let (ply, role) = (0..=ply)
         .rev()
         .filter(|k| k % 2 == 0)
-        .find_map(|k| line.moves[k].capture().or(line.moves[k].promotion()));
+        .find_map(|k| {
+            let m = line.moves[k];
+            m.capture().or(m.promotion()).map(|r| (k, Some(r)))
+        })
+        .unwrap_or((ply - ply % 2, None));
     Some(Gain {
         cp: line.net(),
         role,
