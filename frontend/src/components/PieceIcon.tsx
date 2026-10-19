@@ -1,5 +1,5 @@
-import { defaultPieces } from "react-chessboard";
 import type { Side } from "../api/generated/Side";
+import { Piece } from "./pieces";
 
 interface PieceProps {
   /** Lower-case piece letter: p, n, b, r, q, k. */
@@ -11,11 +11,9 @@ interface PieceProps {
 
 /** A single piece glyph, drawn with the board's own piece set. */
 export function PieceIcon({ kind, side, size = 16, className }: PieceProps) {
-  const render = defaultPieces[`${side === "white" ? "w" : "b"}${kind.toUpperCase()}`];
-  if (!render) return null;
   return (
     <span className={`piece-icon ${className ?? ""}`} style={{ width: size, height: size }} aria-hidden="true">
-      {render({ svgStyle: { width: "100%", height: "100%" } })}
+      <Piece kind={kind} colour={side === "white" ? "w" : "b"} />
     </span>
   );
 }

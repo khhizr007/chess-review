@@ -17,7 +17,7 @@ export function PlayerStrip({ side, name, elo, material, toMove }: Props) {
   return (
     <div className={`player-strip ${toMove ? "is-to-move" : ""}`}>
       <span className={`avatar avatar--${side}`} aria-hidden="true">
-        <PieceIcon kind="p" side={side} size={26} />
+        <PieceIcon kind="p" side={side} size={34} />
       </span>
       <div className="player-strip__info">
         <div className="player-strip__name">
@@ -30,7 +30,7 @@ export function PlayerStrip({ side, name, elo, material, toMove }: Props) {
               key={i}
               kind={k}
               side={opponent}
-              size={17}
+              size={20}
               className={`captured__piece ${material.captured[i - 1] === k ? "is-stacked" : ""}`}
             />
           ))}

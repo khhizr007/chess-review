@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Side } from "../api/generated/Side";
 import { ClassificationIcon } from "./ClassificationIcon";
+import { boardPieces } from "../lib/boardPieces";
 
 export interface BoardBadge {
   square: string;
@@ -35,7 +36,7 @@ function corner(square: string, flipped: boolean): { left: string; top: string }
   return { left: `${(col + 1) * 12.5}%`, top: `${row * 12.5}%` };
 }
 
-const NOTATION: CSSProperties = { fontSize: "clamp(9px, 1.6cqw, 14px)", fontWeight: 700 };
+const NOTATION: CSSProperties = { fontSize: "clamp(10px, 2.05cqw, 17px)", fontWeight: 600, lineHeight: 1 };
 
 /** Read-only board (draggable only in retry mode); positions and annotations come from the backend. */
 export function BoardView({ fen, flipped, arrows, squareStyles, badge, retry }: Props) {
@@ -45,6 +46,7 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, retry }: 
         <Chessboard
           options={{
             id: "review-board",
+            pieces: boardPieces,
             position: fen,
             boardOrientation: flipped ? "black" : "white",
             allowDragging: !!retry,
@@ -60,8 +62,10 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, retry }: 
             lightSquareStyle: { backgroundColor: "var(--board-light)" },
             darkSquareNotationStyle: { color: "var(--board-light)" },
             lightSquareNotationStyle: { color: "var(--board-dark)" },
-            alphaNotationStyle: { ...NOTATION, right: "4%", bottom: "1%" },
-            numericNotationStyle: { ...NOTATION, left: "4%", top: "2%" },
+            alphaNotationStyle: { ...NOTATION, right: "5%", bottom: "4%" },
+            numericNotationStyle: { ...NOTATION, left: "5%", top: "4%" },
+            draggingPieceStyle: { transform: "scale(1.12)", filter: "drop-shadow(0 6px 6px rgba(0,0,0,.35))" },
+            dropSquareStyle: { boxShadow: "inset 0 0 0 4px rgba(255,255,255,.65)" },
           }}
         />
       </div>

@@ -12,6 +12,7 @@ rules and PGN libraries below are GPL-3.0.
 | [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) | Opening names and book positions (`backend/data/openings/*.tsv`) | CC0 (public domain) | Yes (data files) |
 | React, React DOM | UI | MIT | Bundled into the frontend build |
 | [react-chessboard](https://github.com/Clariity/react-chessboard) | Board rendering, arrows, highlights | MIT | Bundled into the frontend build |
+| Piece outlines by Colin M.L. Burnett ("cburnett", as shipped in react-chessboard) | Piece geometry in `frontend/src/components/pieces.tsx`; the shading and colours are this project's own | GPL-2.0-or-later / BSD / GFDL | Bundled into the frontend build |
 
 ## Reference application
 
@@ -22,6 +23,8 @@ The review rules were recovered by analysing a commercial Android application. T
   independently in `backend/crates/review-core`.
 - Book moves use the public-domain opening list above, not the reference app's embedded book.
 - The UI uses its own styling and symbols.
+- The web UI's colour values and spacing follow the reference website's published dark theme, observed in its
+  public stylesheets. No images, piece sets, logos, fonts or code from it are included.
 
 The sample game in the frontend and `tests/fixtures/opera_game.pgn` (Morphy, 1858) and
 `stalemate.pgn` (Loyd's composition) are public domain. The other fixtures are hand-written.

@@ -9,7 +9,7 @@ import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format"
 import { materialFromFen } from "../lib/material";
 import { FILTERS, fenAt, nextPlyAt, plyAt, stepFiltered, type MoveFilter } from "../lib/review";
 import { BoardView, type BoardBadge, type BoardRetry } from "./BoardView";
-import { ClassificationIcon, ClassificationIconDefs } from "./ClassificationIcon";
+import { ClassificationIcon } from "./ClassificationIcon";
 import {
   CoachActions,
   CoachBubble,
@@ -21,6 +21,7 @@ import {
 } from "./Coach";
 import { EvalBar } from "./EvalBar";
 import { Icons } from "./icons";
+import { LogoMark } from "./Logo";
 import { EvalGraph } from "./EvalGraph";
 import { MoveList } from "./MoveList";
 import { San } from "./PieceIcon";
@@ -436,7 +437,6 @@ export function ReviewScreen({ review, onNewGame }: Props) {
 
   return (
     <div className="review">
-      <ClassificationIconDefs />
       <section className="board-col" aria-label="Board">
         {strip(top)}
         <div className="board-row">
@@ -465,9 +465,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
             <span className="icon-btn-spacer" />
           )}
           <h1 className="panel__title">
-            <span className="panel__logo" aria-hidden="true">
-              <ClassificationIcon value="best" size={22} />
-            </span>
+            <LogoMark size={26} />
             Game Review
           </h1>
           <button
