@@ -19,7 +19,9 @@ pub fn rating_for_expected_points(
 ) -> i32 {
     let highest = white.unwrap_or(0).max(black.unwrap_or(0));
     let highest = i32::try_from(highest).unwrap_or(i32::MAX);
-    highest.clamp(cfg.rating_min, cfg.rating_max)
+    highest
+        .saturating_add(cfg.rating_offset)
+        .clamp(cfg.rating_min, cfg.rating_max)
 }
 
 /// Slope of the logistic curve per centipawn for a rating.
@@ -119,7 +121,12 @@ mod tests {
 
     #[test]
     fn rating_rule_uses_higher_rating_and_clamps() {
-        let cfg = ReviewConfig::default();
+        // The recovered rule, without the calibrated offset and upper clamp.
+        let cfg = ReviewConfig {
+            rating_offset: 0,
+            rating_max: 2500,
+            ..ReviewConfig::default()
+        };
         assert_eq!(
             rating_for_expected_points(Some(1200), Some(1850), &cfg),
             1850

@@ -12,4 +12,15 @@ min_gap_to_second_best: number,
 /**
  * `TEP::is_high_rated`: `max(WhiteElo, BlackElo) >= 1000`. Recovered.
  */
-require_high_rated: boolean, high_rated_min: number, };
+require_high_rated: boolean, high_rated_min: number, 
+/**
+ * "Easy to find" proxy for the reference's move-probability model: a search
+ * this deep already picks the move as best. 0 turns it off (the default:
+ * on the calibration games depths 4 to 8 found nearly every Great move).
+ */
+easy_search_depth: number, 
+/**
+ * A quiet retreat is "obvious" unless it wins at least this much material
+ * along the line (`is_quiet_obvious_retreat`; 200 recovered).
+ */
+quiet_retreat_min_stake_cp: number, };

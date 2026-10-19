@@ -150,13 +150,14 @@ impl UciEngine {
             .await?;
             self.chess960 = request.chess960;
         }
+        // A fresh hash and history for every search: with one thread the result
+        // then depends only on the request, not on which process ran it or what
+        // it searched before.
+        self.send("ucinewgame").await?;
+        self.send("setoption name Clear Hash").await?;
         self.sync(deadline).await?;
         self.send(&format!("position fen {}", request.fen)).await?;
-        let go = match request.limit {
-            SearchLimit::Depth { depth } => format!("go depth {}", depth.max(1)),
-            SearchLimit::MoveTime { millis } => format!("go movetime {}", millis.max(10)),
-        };
-        self.send(&go).await?;
+        self.send(&go_command(request)).await?;
 
         let mut lines: BTreeMap<u8, EngineLine> = BTreeMap::new();
         loop {
@@ -217,6 +218,18 @@ impl UciEngine {
         let _ = self.send("quit").await;
         let _ = tokio::time::timeout(Duration::from_secs(1), self.child.wait()).await;
     }
+}
+
+fn go_command(request: &AnalysisRequest) -> String {
+    let mut go = match request.limit {
+        SearchLimit::Depth { depth } => format!("go depth {}", depth.max(1)),
+        SearchLimit::MoveTime { millis } => format!("go movetime {}", millis.max(10)),
+    };
+    if let Some(moves) = request.searchmoves.as_ref().filter(|m| !m.is_empty()) {
+        go.push_str(" searchmoves ");
+        go.push_str(&moves.join(" "));
+    }
+    go
 }
 
 fn side_to_move(fen: &str) -> Result<Side, EngineError> {
@@ -292,6 +305,23 @@ mod tests {
         assert_eq!(info.depth, 18);
         assert_eq!(info.eval, Eval::Cp { cp: 34 });
         assert_eq!(info.pv, vec!["e7e5", "g1f3", "b8c6"]);
+    }
+
+    #[test]
+    fn go_command_with_and_without_searchmoves() {
+        let mut request = AnalysisRequest {
+            fen: "8/8/8/8/8/8/8/K6k w - - 0 1".to_owned(),
+            limit: SearchLimit::Depth { depth: 18 },
+            multipv: 1,
+            chess960: false,
+            searchmoves: None,
+        };
+        assert_eq!(go_command(&request), "go depth 18");
+        request.searchmoves = Some(vec!["a1b1".to_owned(), "a1a2".to_owned()]);
+        assert_eq!(go_command(&request), "go depth 18 searchmoves a1b1 a1a2");
+        request.limit = SearchLimit::MoveTime { millis: 500 };
+        request.searchmoves = Some(Vec::new());
+        assert_eq!(go_command(&request), "go movetime 500");
     }
 
     #[test]

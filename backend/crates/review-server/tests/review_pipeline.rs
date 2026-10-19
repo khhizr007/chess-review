@@ -45,7 +45,10 @@ async fn scholars_mate_review() {
     let r = review("scholars_mate.pgn").await;
     assert_eq!(r.plies.len(), 7);
     assert_eq!(r.graph.len(), 8, "one graph point per position");
-    assert_eq!(r.rating_used, 1200, "max(WhiteElo, BlackElo), clamped");
+    assert_eq!(
+        r.rating_used, 1400,
+        "max(WhiteElo, BlackElo) + offset 200, clamped"
+    );
 
     // Opening moves are in the public opening list.
     assert_eq!(r.plies[0].classification, Some(Classification::Book));
@@ -112,7 +115,9 @@ async fn missed_mate_in_one_is_a_miss() {
 async fn stalemate_final_position_is_not_searched() {
     let engine = Arc::new(FakeEngine::default());
     let evaluator: Arc<dyn Evaluator> = engine.clone();
-    let req = request("stalemate.pgn");
+    let mut req = request("stalemate.pgn");
+    // Count only the main searches, not the shallow Great Find ones.
+    req.config.great_find.easy_search_depth = 0;
     let positions = req.game.positions.len() as u32;
     let r = run_review(
         req,

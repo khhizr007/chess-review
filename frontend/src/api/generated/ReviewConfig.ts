@@ -15,8 +15,16 @@ precision_thresholds: [number, number, number, number],
 outcome_thresholds: [number, number, number, number, number, number], 
 /**
  * Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
+ * Calibrated upper bound: 3000. On Chess.com's own scores the 2500 cap makes
+ * titled games too lenient (see `docs/calibration/log.md`, exact-score oracle).
  */
 rating_min: number, rating_max: number, 
+/**
+ * Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
+ * recovered rule is 0; Chess.com grades match a higher rating than the PGN's
+ * (see `docs/parity.md`).
+ */
+rating_offset: number, 
 /**
  * Material (cp) a Blunder must actually lose to stay a Blunder (fallback for
  * `is_losing_material_or_getting_mated`).
@@ -39,4 +47,9 @@ caps_exclude_completely_lost: boolean,
 /**
  * Plies of the principal variation inspected for material changes (fallback).
  */
-material_horizon_plies: number, };
+material_horizon_plies: number, 
+/**
+ * Book moves must form an unbroken run from the start. Off by default: Chess.com
+ * also marks a move Book when play transposes back into the book (calibration).
+ */
+book_requires_unbroken: boolean, };

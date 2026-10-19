@@ -29,6 +29,14 @@ experiments.
   This keeps both scores from one search, as the reference compares sibling nodes. Otherwise the
   played move is scored from the next position's search. If the played move is line 1, its value
   equals the best value by construction, which gives **Best**.
+  - *Confirmed by calibration data:* scoring a played move outside the lines with a search of the
+    same position restricted to it (`go … searchmoves`) matched Chess.com worse (26 labels worse,
+    12 better on the tuning set). The restricted search rates the move higher than the next
+    position's own search, which finds the refutation at full depth. `searchmoves` is supported by
+    the engine layer but not used by the pipeline.
+- **Determinism.** Every search starts with `ucinewgame` and `setoption name Clear Hash`, and engines
+  run with one thread, so a search depends only on its request. Without this, hash tables carried over
+  between searches in the engine pool changed about 14% of labels between two runs of the same games.
 - **Repetition.** Threefold repetition is tracked along the game (EPD counts). A position drawn by
   rule has EP 0.5, matching the reference `Position::draw()`.
 
@@ -42,8 +50,18 @@ All horizons and thresholds are in `ReviewConfig`.
 - It then **extends while captures, promotions or checks continue**, up to 6 more plies, so material
   is measured at a quiet point. Without this, a horizon that cut an exchange in half graded near-best
   moves as Mistakes. See `docs/parity.md` for the Opera Game case.
-- **Reported quantities:** start, end, min and max balance; the most valuable mover piece captured by
-  the opponent; and what the first move captured.
+- **Reported quantities:** start, end, min and max balance, and what the first move captured.
+
+### Static exchange evaluation (`analysis/see.rs`)
+
+- The standard swap list on one square: each side captures with its least valuable piece and may stop
+  when going on loses material. Attackers are recomputed as pieces leave the board, so x-ray
+  attackers join in.
+- Pieces pinned to their king capture only along the pin line, a king never captures a defended
+  piece, and promotions during the exchange are ignored. The king is valued at 99999, as in the
+  reference sacrifice gates.
+- `capture_gain` also requires a legal first capture, so a piece the opponent cannot take (for
+  example because they are in check) is not counted as threatened.
 
 ### Facts derived from the walks
 
@@ -53,24 +71,67 @@ All horizons and thresholds are in `ReviewConfig`.
 | `is_losing_material_or_getting_mated` | material lost ≥ `blunder_material_threshold_cp` (100), or the played score is a mate against the mover |
 | `loses_more_material_than_best` | the played line ends at least `forgiving_material_lost_cp` (200) below the best line. The margin was added after parity runs: in lost positions every line sheds material, and tiny PV differences between runs flipped the verdict. |
 | Guard A ("drops material") | the move is not the best move, it loses ≥ 100, and it loses more than the best line gains |
-| Sacrifice (`is_sacrifice`) | a mover piece worth ≥ 300 is captured, and the balance dips ≥ 200 below the start |
+| Sacrifice (`is_sacrifice`) | static test, not a line walk: see Brilliant below |
+
+The line-based material facts were kept after calibration. Replacing them with the material the
+opponent can win immediately (static exchange) lowered agreement with Chess.com in two variants: it
+softened Blunders that lose material through a later tactic, such as a fork. See
+`docs/calibration/log.md`.
 
 ### Event detectors
 
-- **Brilliant** requires all of:
-  - precision Best or Excellent;
-  - a sacrifice on the played line;
-  - mover EP after the move ≥ 0.20;
-  - the recovered gate: the mover's balance after the move is below the sacrificed piece's value, **or**
-    the opponent's EP before the move is ≥ 0.10;
-  - the recovered endgame gate: a gain of at least 200 along the line.
+- **Brilliant** follows Chess.com's published definition (help article "How are moves classified?":
+  a Brilliant move is "a good piece sacrifice"; the mover must not be in a bad position after it,
+  must not be completely winning even without it, and newer players get a more generous sacrifice
+  test). It requires all of (`brilliant.*` in the config):
+  - the played move is the engine's best move (line 1);
+  - **no** gap to the second-best move is required (`min_gap_to_second_best`, 0 = off). Chess.com
+    requires the opposite (a sacrifice that is the only good move is a Great move): 4 of its 7
+    Brilliants in the 59-game dataset had a second-best move within 0.06 EP;
+  - not completely winning anyway: the second-best line's EP is below `max_alternative_ep` (0.90,
+    where Completely Winning starts). A forced mate on the second line does not count: Chess.com rated
+    a mating bishop sacrifice Brilliant although other moves mated too;
+  - the mover is not mated after the move and its EP after it is at least `min_ep_after` (0.50);
+    mating moves are allowed (`exclude_mating_moves`, off);
+  - a **static sacrifice** (`static_sacrifice`): the net material given up, what the opponent wins by
+    exchange (SEE) on the piece's square minus what the move captured, is at least
+    `min_sacrifice_cp` (100), so an even trade is not a sacrifice, and the exchange itself wins at
+    least `min_exchange_gain_cp` (200), or the whole pawn when a pawn is given up. (The 200 drops
+    rook "sacrifices" that lose only an exchange's worth; every Chess.com Brilliant in the dataset
+    gives up at least a minor piece for a pawn.) The piece is
+    - the moved knight, bishop, rook or queen. If it was already threatened before the move, it had a
+      safe square, and no other own piece and no opponent piece of at least its value was threatened;
+    - or a knight, bishop, rook or queen the move leaves newly en prise without moving it
+      (`count_pieces_left_hanging`, on): the queen in Legal's trap (5.Nxe5), a bishop left behind by
+      castling. A piece that was already en prise before the move does not count;
+    - or, when both players are below `pawn_sacrifice_below_elo` (1000), the moved pawn
+      (Chess.com: 15...d5 in game 185058622904, both players rated about 950);
+    - never a promotion.
+    The earlier "disguised trade" test (capture plus discovered attack) is gone: it rejected the
+    Traxler sacrifice 8...Nxg3, whose discovered attack on c4 wins nothing;
+  - the recovered gates: the mover's balance after the move is below the sacrificed piece's value,
+    **or** the opponent's EP before the move is ≥ 0.10; in the endgame a gain of at least 200 along
+    the line, unless the second-best move drops an outcome bucket.
+  - Calibration (`docs/calibration/log.md`): the rule finds 7 of the 9 Chess.com Brilliants in 60
+    games and gives 5 others. The misses: 21...gxf3 is not our engine's best move, and 20...Bxh2+
+    fails the recovered material gate by equality. One identical position (the Traxler
+    8...Nxg3 in games 185058622904 and 185438343298, same score) is Brilliant in one review and Best in
+    the other, so part of Chess.com's decision is not visible in the review data.
 - **Great Find** requires all of:
   - precision Best or Excellent, and the played move is line 1;
-  - an EP gap to line 2 of at least 0.20 (a proxy for the unrecovered difficulty and
-    move-probability models);
-  - the recovered gates: `max(Elo) ≥ 1000`, not simply taking a free piece, not a recapture;
+  - an EP gap to line 2 of at least `min_gap_to_second_best` (0.20): a proxy for the unrecovered
+    difficulty and move-probability models. 0.12–0.14 matched the tuning games better but gave
+    mostly wrong Great Finds on the holdout games, so the default stays;
+  - the recovered gates: `max(Elo) ≥ 1000` (but see `docs/parity.md`), not simply taking a free
+    piece, not a recapture;
+  - the recovered exclusions: not easy to find (the moved piece's only safe square; a free capture
+    by static exchange; a pawn reaching the seventh rank or promoting) and not an obvious quiet retreat
+    (a backward, non-capturing, non-checking piece move that wins less than 200 along the line);
   - the mover was not already completely winning;
   - the same endgame gate as Brilliant.
+  - An optional proxy for the move-probability model, `easy_search_depth`, excludes moves that a
+    shallow search already picks. It is **off** (0): at depths 4, 6 and 8 it removed every Great
+    Find on the tuning set.
 - **Tricky** is not implemented (it needs ML models, and the reference client drops it).
 
 ### Miss subtypes
@@ -83,7 +144,7 @@ These are only consulted when precision is Mistake or Blunder, under the recover
 | tactic | the best line gains ≥ 200 |
 | win | best outcome bucket ≥ Winning and played ≤ Equal |
 | comeback | mover ≤ Worse before the move, best ≥ Equal, played ≤ Worse |
-| brilliant | the best line is a sacrifice and EP(best) ≥ 0.20 |
+| brilliant | the best move is a sacrifice (the Brilliant test above) and EP(best) ≥ 0.20 (`miss.brilliant_min_best_ep`) |
 | opportunity | the opponent's previous move lost ≥ 0.10 EP |
 
 ### Other fallbacks
@@ -99,8 +160,10 @@ These are only consulted when precision is Mistake or Blunder, under the recover
   - Plus a trigger: the line wins ≥ 200 material, the move keeps or delivers mate, it is a promotion,
     or it takes a free piece.
   - Critical moments are Blunder, Mistake, Miss, Brilliant and Great Find.
-- **Book.** A move is Book while every earlier move was Book and the position after it appears in the
-  Lichess openings data (any position along a named line). The lookup is position-based, so
-  transpositions count.
+- **Book.** A move is Book when the position after it appears in the Lichess openings data (any
+  position along a named line), even after earlier non-book moves: Chess.com marks moves that
+  transpose back into the book as Book (calibration: +0.5 points on tuning, +0.7 on holdout).
+  `book_requires_unbroken` restores the stricter "every earlier move was Book" rule. Chess.com's
+  book is also larger than this one: in several games it continues 3–8 plies longer.
 - **Explanations.** Only computed facts are stated: mate distance, the best move, material along the
   engine line, and expected score. They are labelled "generated" in the UI.

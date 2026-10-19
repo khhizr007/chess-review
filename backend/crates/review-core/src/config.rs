@@ -16,8 +16,14 @@ pub struct ReviewConfig {
     /// Expected-outcome bucket boundaries. Recovered: `[0.10, 0.20, 0.35, 0.65, 0.80, 0.90]`.
     pub outcome_thresholds: [f64; 6],
     /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
+    /// Calibrated upper bound: 3000. On Chess.com's own scores the 2500 cap makes
+    /// titled games too lenient (see `docs/calibration/log.md`, exact-score oracle).
     pub rating_min: i32,
     pub rating_max: i32,
+    /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
+    /// recovered rule is 0; Chess.com grades match a higher rating than the PGN's
+    /// (see `docs/parity.md`).
+    pub rating_offset: i32,
     /// Material (cp) a Blunder must actually lose to stay a Blunder (fallback for
     /// `is_losing_material_or_getting_mated`).
     pub blunder_material_threshold_cp: i32,
@@ -34,21 +40,55 @@ pub struct ReviewConfig {
     pub caps_exclude_completely_lost: bool,
     /// Plies of the principal variation inspected for material changes (fallback).
     pub material_horizon_plies: u32,
+    /// Book moves must form an unbroken run from the start. Off by default: Chess.com
+    /// also marks a move Book when play transposes back into the book (calibration).
+    pub book_requires_unbroken: bool,
 }
 
-/// Brilliant detection. Gates are recovered; the sacrifice test is a fallback.
+/// Brilliant detection after Chess.com's published definition ("a good piece
+/// sacrifice": the best move, not in a bad position after it, not completely
+/// winning without it), with a static sacrifice test (SEE) and the recovered
+/// gates. Thresholds are calibrated on Chess.com reviews (`docs/calibration/log.md`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export)]
 pub struct BrilliantConfig {
     pub enabled: bool,
-    /// Minimum material dip (cp) along the PV that counts as a sacrifice (fallback).
+    /// Minimum net material (cp) given up: what the opponent wins by static
+    /// exchange on the sacrificed piece's square, minus what the move captured.
     pub min_sacrifice_cp: i32,
-    /// Minimum value (cp) of the piece given up (fallback; excludes pawns).
+    /// The opponent's exchange must also win at least this much (cp) in total, or
+    /// the whole piece when it is worth less (a pawn). Calibrated: 200; every
+    /// Chess.com Brilliant in the dataset gives up at least a minor piece for a pawn.
+    pub min_exchange_gain_cp: i32,
+    /// Minimum value (cp) of the piece given up (excludes pawns, but see
+    /// `pawn_sacrifice_below_elo`).
     pub min_piece_value_cp: i32,
-    /// In the endgame a sacrifice also needs this much material gain. Recovered: 200.
+    /// Chess.com is "more generous in defining a piece sacrifice for newer
+    /// players": below this `max(WhiteElo, BlackElo)` a pawn the move puts en
+    /// prise also counts. 0 turns it off. Calibrated: 1000.
+    pub pawn_sacrifice_below_elo: i32,
+    /// The second-best move must lose at least this much EP against the played
+    /// move, or fall into a lower outcome bucket. 0 turns the test off (the
+    /// default): Chess.com requires the opposite, that a non-sacrificing move
+    /// was available, and most of its Brilliants have a near-equal second best.
+    pub min_gap_to_second_best: f64,
+    /// No Brilliant for a move that forces mate itself. Off: Chess.com rates
+    /// mating sacrifices Brilliant.
+    pub exclude_mating_moves: bool,
+    /// "You should not be completely winning even if you hadn't found the move":
+    /// the second-best move's EP must be below this (Completely Winning starts
+    /// at 0.90). A forced mate on the second-best line does not count.
+    pub max_alternative_ep: f64,
+    /// Also count a piece the move leaves newly en prise without moving it (the
+    /// queen in Legal's trap, a bishop left behind by castling), not only the
+    /// moved piece.
+    pub count_pieces_left_hanging: bool,
+    /// In the endgame a sacrifice also needs this much material gain along the
+    /// line, unless the second-best move drops an outcome bucket. Recovered: 200.
     pub endgame_min_gain_cp: i32,
-    /// The mover must not be losing after the move (EP below this) (fallback).
+    /// "You should not be in a bad position after a Brilliant move": the mover's
+    /// EP after the move must be at least this.
     pub min_ep_after: f64,
 }
 
@@ -64,6 +104,13 @@ pub struct GreatFindConfig {
     /// `TEP::is_high_rated`: `max(WhiteElo, BlackElo) >= 1000`. Recovered.
     pub require_high_rated: bool,
     pub high_rated_min: i32,
+    /// "Easy to find" proxy for the reference's move-probability model: a search
+    /// this deep already picks the move as best. 0 turns it off (the default:
+    /// on the calibration games depths 4 to 8 found nearly every Great move).
+    pub easy_search_depth: u32,
+    /// A quiet retreat is "obvious" unless it wins at least this much material
+    /// along the line (`is_quiet_obvious_retreat`; 200 recovered).
+    pub quiet_retreat_min_stake_cp: i32,
 }
 
 /// Miss-subtype detection (fallback heuristics; guards recovered).
@@ -77,6 +124,8 @@ pub struct MissConfig {
     pub tactic_min_gain_cp: i32,
     /// Opponent's previous EP loss that counts as an opportunity to punish.
     pub opportunity_min_opponent_ep_lost: f64,
+    /// "Missed brilliant": the best move is a sacrifice and its EP is at least this.
+    pub brilliant_min_best_ep: f64,
 }
 
 impl Default for ReviewConfig {
@@ -85,7 +134,8 @@ impl Default for ReviewConfig {
             precision_thresholds: [0.02, 0.05, 0.10, 0.20],
             outcome_thresholds: [0.10, 0.20, 0.35, 0.65, 0.80, 0.90],
             rating_min: 1000,
-            rating_max: 2500,
+            rating_max: 3000,
+            rating_offset: 200,
             blunder_material_threshold_cp: 100,
             forgiving_material_lost_cp: 200,
             allow_tricky: false,
@@ -94,6 +144,7 @@ impl Default for ReviewConfig {
             miss: MissConfig::default(),
             caps_exclude_completely_lost: true,
             material_horizon_plies: 6,
+            book_requires_unbroken: false,
         }
     }
 }
@@ -102,10 +153,16 @@ impl Default for BrilliantConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_sacrifice_cp: 200,
+            min_sacrifice_cp: 100,
+            min_exchange_gain_cp: 200,
             min_piece_value_cp: 300,
+            pawn_sacrifice_below_elo: 1000,
+            min_gap_to_second_best: 0.0,
+            exclude_mating_moves: false,
+            max_alternative_ep: 0.90,
+            count_pieces_left_hanging: true,
             endgame_min_gain_cp: 200,
-            min_ep_after: 0.20,
+            min_ep_after: 0.50,
         }
     }
 }
@@ -117,6 +174,8 @@ impl Default for GreatFindConfig {
             min_gap_to_second_best: 0.20,
             require_high_rated: true,
             high_rated_min: 1000,
+            easy_search_depth: 0,
+            quiet_retreat_min_stake_cp: 200,
         }
     }
 }
@@ -127,6 +186,7 @@ impl Default for MissConfig {
             free_piece_min_value_cp: 300,
             tactic_min_gain_cp: 200,
             opportunity_min_opponent_ep_lost: 0.10,
+            brilliant_min_best_ep: 0.20,
         }
     }
 }

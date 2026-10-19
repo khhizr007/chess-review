@@ -3,6 +3,7 @@
 pub mod detectors;
 pub mod explain;
 pub mod model;
+pub mod see;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -28,7 +29,8 @@ use crate::engine::{
 use crate::openings::OpeningBook;
 use crate::pgn::ParsedGame;
 use detectors::{
-    LineMaterial, is_recapture, is_sacrifice, material_gate, takes_free_piece, walk_line,
+    LineMaterial, captures_free_piece, is_only_escape, is_quiet_retreat, is_recapture,
+    material_gate, static_sacrifice, takes_free_piece, threatens_promotion, walk_line,
 };
 use model::*;
 
@@ -61,6 +63,8 @@ struct PositionInfo {
     eval: Eval,
     analysis: Option<PositionAnalysis>,
     is_draw: bool,
+    /// Best move of a shallow search, where the played move is the best move.
+    shallow_best: Option<String>,
 }
 
 pub async fn run_review(
@@ -116,6 +120,7 @@ async fn analyse_positions(
     let done = AtomicU32::new(0);
     progress(0, total);
 
+    let chess960 = game.castling_mode == shakmaty::CastlingMode::Chess960;
     let work: Vec<Option<AnalysisRequest>> = game
         .positions
         .iter()
@@ -125,7 +130,8 @@ async fn analyse_positions(
                 fen: board::fen(pos),
                 limit: request.limit,
                 multipv: request.multipv.max(1),
-                chess960: game.castling_mode == shakmaty::CastlingMode::Chess960,
+                chess960,
+                searchmoves: None,
             })
         })
         .collect();
@@ -165,7 +171,56 @@ async fn analyse_positions(
             eval,
             analysis,
             is_draw: draws[i],
+            shallow_best: None,
         });
+    }
+
+    // "Easy to find" proxy for Great Find: where the played move is the engine's
+    // best move, does a shallow search already choose it?
+    let easy_depth = request.config.great_find.easy_search_depth;
+    if request.config.great_find.enabled && easy_depth > 0 {
+        let shallow: Vec<(usize, AnalysisRequest)> = game
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(i, parsed)| {
+                infos[*i]
+                    .analysis
+                    .as_ref()
+                    .and_then(PositionAnalysis::best)
+                    .is_some_and(|l| l.pv.first() == Some(&parsed.uci))
+            })
+            .map(|(i, _)| {
+                (
+                    i,
+                    AnalysisRequest {
+                        fen: board::fen(&game.positions[i]),
+                        limit: SearchLimit::Depth { depth: easy_depth },
+                        multipv: 1,
+                        chess960,
+                        searchmoves: None,
+                    },
+                )
+            })
+            .collect();
+        let results = futures::stream::iter(shallow.into_iter().map(|(i, req)| async move {
+            Ok::<_, EngineError>((i, evaluator.analyze(&req, cancel).await?))
+        }))
+        .buffered(evaluator.parallelism().max(1))
+        .collect::<Vec<_>>()
+        .await;
+        for result in results {
+            match result {
+                Ok((i, analysis)) => {
+                    infos[i].shallow_best = analysis.best().and_then(|l| l.pv.first().cloned());
+                }
+                Err(EngineError::Cancelled) => return Err(ReviewError::Cancelled),
+                Err(e) => return Err(ReviewError::Engine(e)),
+            }
+        }
+        if cancel.is_cancelled() {
+            return Err(ReviewError::Cancelled);
+        }
     }
     Ok(infos)
 }
@@ -280,7 +335,13 @@ fn build_review(
 
         let is_forced = before.legal_moves().len() == 1;
         in_book = in_book && openings.contains(after);
-        let is_book = in_book;
+        // The reference also marks a later move Book when play transposes back into
+        // the book; `book_requires_unbroken` keeps the stricter fallback.
+        let is_book = if cfg.book_requires_unbroken {
+            in_book
+        } else {
+            openings.contains(after)
+        };
 
         // Material along the engine lines.
         let played_pv: Vec<String> = match played_rank {
@@ -337,18 +398,48 @@ fn build_review(
         };
         let previous_move = i.checked_sub(1).map(|p| game.moves[p].mv);
         let recapture = is_recapture(previous_move, m);
+        let oc = |v: Value| expected_outcome(v, rating, cfg);
         let mover_completely_winning_before =
-            expected_outcome(mover_value_before, rating, cfg) == ExpectedOutcome::CompletelyWinning;
+            oc(mover_value_before) == ExpectedOutcome::CompletelyWinning;
 
-        // Brilliant: a sound sacrifice (recovered gates + fallback sacrifice test).
+        // Brilliant (Chess.com: "a good piece sacrifice"): the engine's best move
+        // gives up material (static exchange), the mover is not in a bad position
+        // after it and would not be completely winning without it, and the
+        // recovered gates hold.
+        let bc = &cfg.brilliant;
+        let second_value = lines
+            .get(1)
+            .map(|l| Value::after_move(eval_after_first_move(l, mover), mover));
+        let second_drops_bucket = second_value.is_some_and(|v| oc(v) < oc(played_value));
+        let second_clearly_worse = bc.min_gap_to_second_best <= 0.0
+            || second_drops_bucket
+            || second_value.is_some_and(|v| {
+                ep_played - node_expected_points(v, false, rating) >= bc.min_gap_to_second_best
+            });
+        // A forced mate on the second line is not "winning anyway": Chess.com rates
+        // mating sacrifices Brilliant even when other moves mate too.
+        let winning_without_it = second_value.is_some_and(|v| {
+            !v.mate_moves().is_some_and(|n| n > 0)
+                && node_expected_points(v, false, rating) >= bc.max_alternative_ep
+        });
+        let played_mate = played_value.mate_moves();
+        let pawns =
+            bc.pawn_sacrifice_below_elo > 0 && (highest_elo as i32) < bc.pawn_sacrifice_below_elo;
+        let sacrifice = played_is_best
+            .then(|| static_sacrifice(before, m, bc, pawns))
+            .flatten();
         let balance_after = board::balance(after.board(), mover_color);
-        facts.events.brilliant = cfg.brilliant.enabled
-            && good_grade
-            && is_sacrifice(&played_walk, &cfg.brilliant)
-            && ep_played >= cfg.brilliant.min_ep_after
-            && (material_gate(balance_after, played_walk.lost_piece_value)
-                || opponent_ep_before >= 0.10)
-            && endgame_gain_ok(&played_walk, cfg.brilliant.endgame_min_gain_cp);
+        facts.events.brilliant = bc.enabled
+            && played_is_best
+            && second_clearly_worse
+            && !winning_without_it
+            && !played_mate.is_some_and(|n| n < 0)
+            && !(bc.exclude_mating_moves && played_mate.is_some_and(|n| n >= 0))
+            && ep_played >= bc.min_ep_after
+            && sacrifice.is_some_and(|s| {
+                material_gate(balance_after, see::value(s.role)) || opponent_ep_before >= 0.10
+            })
+            && (endgame_gain_ok(&played_walk, bc.endgame_min_gain_cp) || second_drops_bucket);
 
         // Great Find: the only good move in a position that is not already won.
         let other_ep = if played_is_best {
@@ -359,21 +450,29 @@ fn build_review(
         } else {
             None
         };
-        facts.events.great_find = cfg.great_find.enabled
+        // Recovered exclusions: easy to find (only escape, free capture, promoting
+        // pawn, or a shallow search already finds it) and obvious quiet retreats.
+        let gf = &cfg.great_find;
+        let easy_to_find = is_only_escape(before, m)
+            || captures_free_piece(before, m, 100)
+            || threatens_promotion(before, m)
+            || infos[i].shallow_best.as_ref() == Some(&parsed.uci);
+        let obvious_retreat = is_quiet_retreat(before, m)
+            && played_walk.max - played_walk.start < gf.quiet_retreat_min_stake_cp;
+        facts.events.great_find = gf.enabled
             && !facts.events.brilliant
             && good_grade
             && i > 0
-            && other_ep
-                .is_some_and(|other| ep_played - other >= cfg.great_find.min_gap_to_second_best)
-            && (!cfg.great_find.require_high_rated
-                || highest_elo as i32 >= cfg.great_find.high_rated_min)
+            && other_ep.is_some_and(|other| ep_played - other >= gf.min_gap_to_second_best)
+            && (!gf.require_high_rated || highest_elo as i32 >= gf.high_rated_min)
             && !takes_free_piece(&played_walk, 100)
+            && !easy_to_find
+            && !obvious_retreat
             && !recapture
             && !mover_completely_winning_before
             && endgame_gain_ok(&played_walk, cfg.brilliant.endgame_min_gain_cp);
 
         // What the best line would have achieved (used only for Mistake/Blunder).
-        let oc = |v: Value| expected_outcome(v, rating, cfg);
         facts.missed = MissedChances {
             free_piece: takes_free_piece(&best_walk, cfg.miss.free_piece_min_value_cp),
             tactic: best_gain >= cfg.miss.tactic_min_gain_cp,
@@ -382,8 +481,9 @@ fn build_review(
             comeback: oc(mover_value_before) <= ExpectedOutcome::Worse
                 && oc(best_value) >= ExpectedOutcome::Equal
                 && oc(played_value) <= ExpectedOutcome::Worse,
-            brilliant: is_sacrifice(&best_walk, &cfg.brilliant)
-                && ep_best >= cfg.brilliant.min_ep_after,
+            brilliant: best_move
+                .is_some_and(|bm| static_sacrifice(before, bm, bc, pawns).is_some())
+                && ep_best >= cfg.miss.brilliant_min_best_ep,
             opportunity: opponent_previous_ep_lost
                 .is_some_and(|l| l >= cfg.miss.opportunity_min_opponent_ep_lost),
         };

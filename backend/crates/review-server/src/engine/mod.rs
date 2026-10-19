@@ -28,6 +28,8 @@ pub struct AnalysisRequest {
     pub multipv: u8,
     /// Chess960 castling semantics (`UCI_Chess960`).
     pub chess960: bool,
+    /// Restrict the search to these moves (UCI `go ... searchmoves`).
+    pub searchmoves: Option<Vec<String>>,
 }
 
 /// One principal variation. `eval` is the evaluation of the *searched*
