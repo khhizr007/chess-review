@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
-import { coachMessage, reportSummary } from "./coach";
+import { coachArrows, coachMessage, reportSummary } from "./coach";
 import { materialFromFen } from "./material";
 
 function ply(overrides: Partial<PlyReview> = {}): PlyReview {
@@ -19,6 +19,7 @@ function ply(overrides: Partial<PlyReview> = {}): PlyReview {
     best_move: { san: "Bxb7", uci: "e4b7", fen: "x" },
     played_is_best: false,
     explanation: ["The engine's top choice was Bxb7.", "Expected score for White: 51% before the move, 41% after."],
+    coach: { sentences: [], show_lines: [], events: [] },
     ...overrides,
   } as PlyReview;
 }
@@ -60,6 +61,40 @@ describe("coachMessage", () => {
     const good = coachMessage(review, ply({ classification: "good", explanation: [fact] }), undefined);
     expect(good.advice).not.toContain(fact);
     expect(good.facts).toEqual([fact]);
+  });
+
+  it("says the backend coach's sentences instead of the generic advice when it explains the move", () => {
+    const fact = "In the engine line after this move, Black loses about 5.0 pawns of material.";
+    const fork = {
+      text: "Nc7+",
+      arrows: [
+        { from: "b5", to: "c7", kind: "move" as const },
+        { from: "c7", to: "a8", kind: "attack" as const },
+      ],
+      squares: ["a8"],
+    };
+    const coach = {
+      sentences: [
+        {
+          fragments: [{ text: "Ke8 allows ", arrows: [], squares: [] }, fork, { text: ", which forks Black's king and rook on a8.", arrows: [], squares: [] }],
+          event: 0,
+        },
+        { fragments: [{ text: "Better was Kc8.", arrows: [], squares: [] }], event: null },
+      ],
+      show_lines: [],
+      events: [],
+    };
+    const blunder = ply({ classification: "blunder", explanation: [fact], coach });
+    const m = coachMessage(review, blunder, undefined);
+    expect(m.sentences).toHaveLength(2);
+    expect(m.advice).toEqual([]);
+    expect(m.facts).toEqual([fact]);
+    expect(coachArrows(blunder)).toEqual([
+      { from: "b5", to: "c7", kind: "move" },
+      { from: "c7", to: "a8", kind: "attack" },
+    ]);
+    // Good moves keep their own advice (the coach does not explain them yet).
+    expect(coachMessage(review, ply({ classification: "good", coach }), undefined).sentences).toEqual([]);
   });
 });
 

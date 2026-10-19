@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { Arrow } from "react-chessboard";
+import type { ArrowKind } from "../api/generated/ArrowKind";
 import type { MoveRef } from "../api/generated/MoveRef";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
-import { LEARNABLE, coachMessage, playerName } from "../lib/coach";
+import { LEARNABLE, coachArrows, coachMessage, playerName } from "../lib/coach";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
 import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format";
 import { materialFromFen } from "../lib/material";
@@ -47,6 +48,12 @@ interface Retry {
 const BEST_ARROW = "rgba(129, 182, 76, 0.9)";
 const SUGGEST_ARROW = "rgba(92, 139, 176, 0.85)";
 const PREVIEW_TINT = "rgba(255, 196, 64, 0.5)";
+const COACH_ARROW: Record<ArrowKind, string> = {
+  move: "rgba(255, 164, 89, 0.9)",
+  attack: "rgba(250, 65, 45, 0.85)",
+  defence: SUGGEST_ARROW,
+  best: BEST_ARROW,
+};
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
@@ -235,6 +242,12 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       if (current.show_best_move && current.best_move && !current.played_is_best) {
         const sq = uciSquares(current.best_move.uci);
         if (sq) arrows.push({ startSquare: sq.from, endSquare: sq.to, color: BEST_ARROW });
+      }
+      // What the coach's main sentence is about: the reply or idea and its targets.
+      for (const a of coachArrows(current)) {
+        if (!arrows.some((b) => b.startSquare === a.from && b.endSquare === a.to)) {
+          arrows.push({ startSquare: a.from, endSquare: a.to, color: COACH_ARROW[a.kind] });
+        }
       }
       if (current.flags.check) {
         const king = kingSquareToMove(current.fen_after);

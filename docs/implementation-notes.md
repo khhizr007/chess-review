@@ -12,7 +12,8 @@ else is used instead.
 | Engine-facing score model (White-relative `Eval`, mover-relative reference `Value`) | `review-core/src/value.rs` |
 | Facts computed from board + engine lines (material walks, sacrifices, free pieces, recaptures) | `review-server/src/analysis/detectors.rs` |
 | Orchestration: searches, perspective conversion, facts → `MoveFacts`, CAPS2, summary | `review-server/src/analysis/mod.rs` |
-| Generated explanations | `review-server/src/analysis/explain.rs` |
+| Generated explanations (facts for the details drawer) | `review-server/src/analysis/explain.rs` |
+| Coach: position facts, tag detectors, circumstances, prioritiser, realiser, English text | `review-server/src/coach/` (`text/en.toml`) |
 | Phase heuristic, material values, FEN helpers | `review-server/src/board.rs` |
 
 Every recovered constant is a default in `ReviewConfig` and is pinned by a unit test in `review-core`.
@@ -50,7 +51,9 @@ All horizons and thresholds are in `ReviewConfig`.
 - It then **extends while captures, promotions or checks continue**, up to 6 more plies, so material
   is measured at a quiet point. Without this, a horizon that cut an exchange in half graded near-best
   moves as Mistakes. See `docs/parity.md` for the Opera Game case.
-- **Reported quantities:** start, end, min and max balance, and what the first move captured.
+- **Reported quantities:** start, end, min and max balance, what the first move captured, and the
+  *gain ply*: the first settled ply (one not followed by a capture) from which the balance stays at
+  its final level. The coach looks for the tactic behind a gain at or before it.
 
 ### Static exchange evaluation (`analysis/see.rs`)
 
@@ -167,3 +170,83 @@ These are only consulted when precision is Mistake or Blunder, under the recover
   book is also larger than this one: in several games it continues 3–8 plies longer.
 - **Explanations.** Only computed facts are stated: mate distance, the best move, material along the
   engine line, and expected score. They are labelled "generated" in the UI.
+
+## Coach (phase 1: bad moves)
+
+`review-server/src/coach/` implements phase 1 of [`coach-analysis.md`](coach-analysis.md) §6–7. It
+explains Inaccuracies, Mistakes, Blunders and Misses by naming a tactic and showing the line. It is
+pure: it reads the engine lines the review already has and makes no engine calls (no null-move
+search yet, so no THREATENS or PREVENTS). The output is `PlyReview.coach`; `explanation` stays for
+the details drawer. Good moves get an empty note.
+
+- **Nodes.** P is the played move. R is the opponent's best reply: line 1 of the next position and its
+  PV. B is the best alternative: line 1 of this position. B is skipped when it is P.
+- **Facts** (`facts.rs`): attackers, SEE (`analysis/see.rs`), hanging pieces, absolute and relative
+  pins, x-rays, pinned guards, and trapped pieces. A piece is trapped when the opponent wins it where
+  it stands and on every square it can reach, unless it captures something at least as valuable.
+- **Tags** (`detect/`): our own `Tag` enum, whose declaration order is the priority order. Groups 1–7
+  of §6.4 are written from chess semantics and the lichess tagger *description*
+  (`coach-research-notes.md` §2.1), not from its code. Choices that differ from that description:
+  - fork targets include pawns only when they are hanging;
+  - a line piece also forks through a friendly piece in front of it (a battery) when the piece
+    behind becomes newly lost (6...Nf6 7.Qb3 hits b7, and f7 through the c4 bishop);
+  - `FreePiece` counts only on the first move of a line (later captures collect what a tactic won),
+    and gives way to `ExploitsPin` when the only defender is pinned to its king;
+  - the bad-move tags (`HangsPiece`, `IgnoresThreat`, ...) also need R's line to take the piece in
+    its first two moves, so a poisoned "hanging" piece is not called hanging.
+- **Circumstances** (`circ.rs`):
+  - BASE: the bad-move tags on P.
+  - PERMITS / MISSES: R's or B's line. If its first mover mates, the event is a mate tag:
+    `BackRankMate` when the mating move fits the pattern, else `Checkmate` (mate in one) or
+    `ForcedMate`. If the line wins at least a pawn, the highest-priority tactic among that side's moves
+    up to the gain ply is chosen: WINS_MATERIAL when it is the first move, LEADS_TO when it comes later.
+    If no tactic is found, the fallback is `MaterialGain`. A line that wins nothing reports a tactic of
+    its first move, if any.
+  - Gains are counted from **before** the move that led to the line, when that move captured. So a
+    recapture is not a gain: after 4...Bxf3, 5.Qxf3 wins nothing.
+  - MISSES_SAME: B takes, for free, the piece on the square the opponent's last move went to.
+- **Prioritiser** (`priority.rs`, §6.5):
+  - The Permits block: mate; a bad BASE tag (unless R's tactic wins 200 cp more than it puts at
+    stake); a named tactic with a gain; a free piece; `MaterialGain`; any PERMITS event.
+  - The Misses block: mate; MISSES_SAME; a named tactic with a gain; a free piece; `MaterialGain`; any
+    MISSES event.
+  - A Miss runs the Misses block first, every other bad move the Permits block first. When the main
+    event comes from the Permits side, the Misses block gives the best-move sentence. Without one, the
+    sentence is a plain "Better was …".
+  - A non-Miss explained only by B is phrased as "Better was …", never "missed".
+- **Realiser** (`realise.rs`, `text/en.toml`):
+  - A sentence is a frame (by circumstance chain and style) with the tag's phrase spliced in.
+  - Styles `you`, `opponent` and `neutral`. The pipeline uses `neutral` ("White", "Black's knight"),
+    because the API does not know which side the user played.
+  - Placeholders: `{move} {reply} {line} {best} {mover} {piece} {piece_role} {square} {targets}
+    {gain} {n}`.
+  - Fragments for moves and pieces carry the event's arrows and squares. Moves keep their SAN
+    capitalisation.
+  - The wording varies by ply (the seed).
+  - Lead-in lines longer than four plies are not spelled out in the sentence.
+  - Show-lines replay the event's line through the gain (or the mate), plus two plies, with one
+    narration per move: the move's best tag, or a capture, recapture, check, forced or quiet move.
+- **Text.** Every sentence in `en.toml` was written for this project. None of it is the reference
+  app's text.
+- **Frontend.** `Coach.tsx` shows the sentences in place of the generic advice, with the named moves
+  and pieces in bold. The board draws the arrows of the main sentence's first marked fragment.
+  Show-line buttons and fragment hover are phase 3.
+- **Tests.** `tests/coach_detect.rs` has hand-built positions per tag. `tests/coach_note.rs` checks
+  circumstances, priority, styles and wording. `tests/coach_pipeline.rs` runs the fake and scripted
+  engines. `cargo run --release --example coach_report -- game.pgn [depth]` (with `STOCKFISH_PATH`)
+  prints the coach's notes for a real game.
+- **Sample game** (Morphy, Paris 1858; Stockfish 16.1, depth 18). Five of the seven non-book bad
+  moves get an event with geometry and a line:
+
+  | Move | Coach sentence |
+  |---|---|
+  | 6...Nf6 | After Nf6, Qb3 forks Black's pawns on b7 and f7, winning a pawn. |
+  | 9...b5 | After b5, Nxb5 wins a pawn. |
+  | 10...cxb5 | cxb5 allows a sequence that ends with Bxd7+, which uncovers an attack by White's queen on Black's rook on b8, winning two pawns. |
+  | 14...Qe6 | After Qe6, Bxd7+ wins Black's rook on d7. |
+  | 15...Nxd7 | After Nxd7, Qb8+ starts a back-rank mate in 2. |
+
+  - 9...b5 gets only the `MaterialGain` fallback, not a named motif.
+  - 4...Bxf3 and 6.Bc4 are positional inaccuracies. All three engine lines keep material level within
+    the horizon, so there is no tactic to name, and the bubble falls back to the old text. They need
+    phase 2: a null-move THREATENS (6.Bc4: "Qb3 attacks b7") and positional tags.

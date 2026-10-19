@@ -24,6 +24,12 @@ pub struct LineMaterial {
     /// Value captured by the first move of the line, if it is a capture.
     pub first_capture_value: Option<i32>,
     pub plies: u32,
+    /// When the line ends up ahead (`end > start`): the ply (0-based) whose
+    /// move wins that material. Only settled points count (a ply whose next
+    /// move is not a capture, so an exchange in progress is not mistaken for
+    /// a gain or a loss): it is the first settled ply from which the balance
+    /// stays at or above `end`. The tactic behind the gain is at or before it.
+    pub gain_ply: Option<u32>,
 }
 
 impl LineMaterial {
@@ -52,7 +58,10 @@ pub fn walk_line(start: &Chess, mover: Color, pv: &[String], horizon: u32) -> Li
         max: initial,
         first_capture_value: None,
         plies: 0,
+        gain_ply: None,
     };
+    // (balance after the ply, whether the ply's move captured)
+    let mut balances: Vec<(i32, bool)> = Vec::new();
     let mut last_was_forcing = false;
     for (i, text) in pv.iter().enumerate() {
         // Stop at the horizon, but only at a quiet point (not mid-exchange or in check).
@@ -67,6 +76,7 @@ pub fn walk_line(start: &Chess, mover: Color, pv: &[String], horizon: u32) -> Li
         if i == 0 {
             walk.first_capture_value = m.capture().map(board::role_value);
         }
+        let captures = m.is_capture();
         pos.play_unchecked(m);
         last_was_forcing = last_was_forcing || pos.is_check();
         let b = board::balance(pos.board(), mover);
@@ -74,6 +84,23 @@ pub fn walk_line(start: &Chess, mover: Color, pv: &[String], horizon: u32) -> Li
         walk.min = walk.min.min(b);
         walk.max = walk.max.max(b);
         walk.plies += 1;
+        balances.push((b, captures));
+    }
+    if walk.end > walk.start {
+        let end = walk.end;
+        let settled: Vec<(usize, i32)> = (0..balances.len())
+            .filter(|&k| {
+                balances
+                    .get(k + 1)
+                    .is_none_or(|(_, next_captures)| !next_captures)
+            })
+            .map(|k| (k, balances[k].0))
+            .collect();
+        let first_kept = settled
+            .iter()
+            .rposition(|(_, b)| *b < end)
+            .map_or(0, |last_below| last_below + 1);
+        walk.gain_ply = settled.get(first_kept).map(|(k, _)| *k as u32);
     }
     walk
 }
@@ -534,6 +561,20 @@ mod tests {
         let walk = walk_line(&p, Color::White, &line(&["f3e5", "d7d6", "e5f3"]), 1);
         assert_eq!(walk.plies, 2);
         assert_eq!(walk.net(), 100);
+        assert_eq!(walk.gain_ply, Some(0), "the pawn is won by the first move");
+    }
+
+    #[test]
+    fn gain_ply_is_where_the_material_is_won() {
+        // 1.Nc7+ Kd8 2.Nxa8: the fork comes first, the rook falls on ply 2.
+        let p = pos("r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1");
+        let walk = walk_line(&p, Color::White, &line(&["b5c7", "e8d8", "c7a8"]), 6);
+        assert_eq!(walk.net(), 500);
+        assert_eq!(walk.gain_ply, Some(2));
+        // Rxd5 exd5 gives the exchange: no gain, no gain ply.
+        let p = pos("4k3/8/4p3/3n4/8/8/8/3RK3 w - - 0 1");
+        let walk = walk_line(&p, Color::White, &line(&["d1d5", "e6d5"]), 6);
+        assert_eq!(walk.gain_ply, None);
     }
 
     #[test]

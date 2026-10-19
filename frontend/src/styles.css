@@ -1260,6 +1260,11 @@ select option {
   margin: 3px 0 0;
 }
 
+/* A move or piece the coach's sentence names; its arrows are on the board. */
+.coach__ref {
+  font-weight: 700;
+}
+
 .coach__body--report {
   margin-top: 0;
   color: var(--bubble-text);

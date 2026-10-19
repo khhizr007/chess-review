@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod api;
 pub mod board;
+pub mod coach;
 pub mod config;
 pub mod engine;
 pub mod jobs;

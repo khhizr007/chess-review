@@ -81,6 +81,8 @@ npm test && npm run typecheck && npm run lint && npm run build
 | [`docs/implementation-notes.md`](docs/implementation-notes.md) | How the spec maps to code; fallback heuristics |
 | [`docs/parity.md`](docs/parity.md) | Parity evidence and expected differences |
 | [`docs/configuration.md`](docs/configuration.md) | Environment variables, engine installation |
+| [`docs/coach-analysis.md`](docs/coach-analysis.md) | How the reference coach explains moves, and the design for ours |
+| [`docs/coach-research-notes.md`](docs/coach-research-notes.md) | Research on chess commentary, tactic detection and feedback |
 | [`tests/fixtures/`](tests/fixtures/README.md) | Sample PGNs and the test corpus |
 
 ## License
