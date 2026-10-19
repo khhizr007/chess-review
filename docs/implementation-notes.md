@@ -191,7 +191,9 @@ the details drawer. Good moves get an empty note.
   - a line piece also forks through a friendly piece in front of it (a battery) when the piece
     behind becomes newly lost (6...Nf6 7.Qb3 hits b7, and f7 through the c4 bishop);
   - `FreePiece` counts only on the first move of a line (later captures collect what a tactic won),
-    and gives way to `ExploitsPin` when the only defender is pinned to its king;
+    never on a recapture (taking back on the square the opponent just captured on; what the exchange
+    nets is reported as the line's gain, e.g. 13.Rxd7 Nxd7 "wins the exchange", not "wins White's
+    rook"), and gives way to `ExploitsPin` when the only defender is pinned to its king;
   - the bad-move tags (`HangsPiece`, `IgnoresThreat`, ...) also need R's line to take the piece in
     its first two moves, so a poisoned "hanging" piece is not called hanging.
 - **Circumstances** (`circ.rs`):

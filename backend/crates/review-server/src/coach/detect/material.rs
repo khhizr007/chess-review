@@ -8,19 +8,19 @@ use crate::coach::facts::{self, PieceAt, value};
 use crate::coach::geometry::Geometry;
 
 /// The first move of a line captures a piece that the other side cannot win
-/// back by exchange (undefended, or defended too little). A recapture of an
-/// equal or bigger capture is a trade, not a free piece, and a capture that
-/// works only because the defender is pinned is left to `ExploitsPin`.
+/// back by exchange (undefended, or defended too little). Taking back on the
+/// square where the other side just captured is never a free piece, whatever
+/// the values: it ends an exchange, and what the exchange nets (say, the
+/// exchange for a rook taken back with a knight) is the line's gain. A capture
+/// that works only because the defender is pinned is left to `ExploitsPin`.
 pub fn free_piece(ctx: &MoveCtx<'_>) -> Option<Found> {
     if !ctx.first || ctx.m.is_en_passant() {
         return None;
     }
     let captured = ctx.m.capture().filter(|r| *r != Role::King)?;
     let to = ctx.to();
-    let trade = ctx
-        .previous
-        .is_some_and(|p| p.to() == to && p.capture().is_some_and(|c| value(c) >= value(captured)));
-    if trade || !facts::pinned_guards(ctx.before.board(), to, ctx.mover().other()).is_empty() {
+    let recapture = ctx.previous.is_some_and(|p| p.to() == to && p.is_capture());
+    if recapture || !facts::pinned_guards(ctx.before.board(), to, ctx.mover().other()).is_empty() {
         return None;
     }
     let net = value(captured) - see::capture_gain(ctx.after, to);
