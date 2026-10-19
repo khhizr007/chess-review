@@ -112,12 +112,15 @@ export function coachMessage(review: ReviewResult, ply: PlyReview, next: PlyRevi
   const delta = ply.ep_after - ply.ep_before;
   const swing = Math.abs(delta) >= 0.02 && c !== "book" ? { before: ply.ep_before, after: ply.ep_after } : null;
   let facts = ply.explanation.filter((s) => !RESTATED.some((p) => s.startsWith(p)));
-  const sentences = c && LEARNABLE.has(c) ? (ply.coach?.sentences ?? []) : [];
-  if (sentences.length > 0) {
+  // The backend coach explains bad moves (what they allow and miss) and good
+  // ones (what they do, threaten and stop).
+  const sentences = ply.coach?.sentences ?? [];
+  const learnable = c !== null && LEARNABLE.has(c);
+  if (sentences.length > 0 && learnable) {
     // The coach names the motif and the better move: its sentences replace the
     // generic advice, and the engine facts stay in the details drawer.
     advice.length = 0;
-  } else if (c && LEARNABLE.has(c)) {
+  } else if (sentences.length === 0 && learnable) {
     // Without a coach explanation, the engine facts are the "why": say them in the bubble.
     advice.push(...facts);
     facts = [];

@@ -22,8 +22,11 @@ piece: PieceKind | null, square: string | null,
  */
 actor: Side, geometry: GeometryView, 
 /**
- * The line that shows it (UCI): the opponent's best reply line for BASE
- * and PERMITS events, the best line for MISSES events.
+ * The line that shows it (UCI): the opponent's best reply line for a bad
+ * move's BASE and PERMITS events, the best line for MISSES events, the
+ * played move's own line for a good move's BASE events, and the null-move
+ * line for THREATENS and PREVENTS events (it starts from the position with
+ * the side to move flipped; the event's show-line has its FEN).
  */
 line: Array<string>, 
 /**

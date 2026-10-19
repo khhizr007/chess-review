@@ -28,6 +28,10 @@ The defaults are the recovered constants (`GET /api/config/defaults`). A review 
 `config` to override them, for example `{"great_find": {"min_gap_to_second_best": 0.15}}` merged over
 the defaults. The fields are documented in `backend/crates/review-core/src/config.rs`.
 
+`coach.threat_search_depth` (default 10) sets the depth of the coach's null-move threat search, which
+finds what a move threatens and what threat it stops. `{"coach": {"threat_search_depth": 0}}` turns it
+off; classifications do not change, only the coach's notes.
+
 ## Frontend
 
 | Variable | Default | Meaning |

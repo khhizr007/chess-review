@@ -93,8 +93,10 @@ describe("coachMessage", () => {
       { from: "b5", to: "c7", kind: "move" },
       { from: "c7", to: "a8", kind: "attack" },
     ]);
-    // Good moves keep their own advice (the coach does not explain them yet).
-    expect(coachMessage(review, ply({ classification: "good", coach }), undefined).sentences).toEqual([]);
+    // A good move shows the coach's sentences and keeps its own short advice.
+    const good = coachMessage(review, ply({ classification: "good", coach }), undefined);
+    expect(good.sentences).toHaveLength(2);
+    expect(good.advice).not.toEqual([]);
   });
 });
 

@@ -2,18 +2,23 @@
 //! showing the line that proves it (`docs/coach-analysis.md` §6).
 //!
 //! The pipeline is pure (no engine calls; it reads the engine lines the review
-//! already has):
+//! already has, including the null-move threat searches):
 //!
 //! 1. [`facts`]: attackers, defenders, exchanges, pins, hanging and trapped pieces.
 //! 2. [`detect`]: tags such as Fork or HangsPiece for one move in one position.
 //! 3. [`circ`]: each tag in its circumstance: the move itself does it (BASE), it
-//!    allows the opponent's reply to do it (PERMITS), the best move would have
-//!    done it (MISSES), later in the line (LEADS_TO), winning material.
-//! 4. [`priority`]: one main event, plus at most one about the best move.
+//!    threatens to do it next (THREATENS), it stops the opponent's threat to do
+//!    it (PREVENTS), it allows the opponent's reply to do it (PERMITS), the best
+//!    move would have done it (MISSES), later in the line (LEADS_TO), winning
+//!    material.
+//! 4. [`priority`]: one main event, plus, for a bad move, at most one about the
+//!    best move.
 //! 5. [`realise`]: sentences from `text/en.toml`, with board marks per fragment
 //!    and show-lines narrated move by move.
 //!
-//! Phase 1 explains bad moves (Inaccuracy, Mistake, Blunder, Miss) only.
+//! Bad moves (Inaccuracy, Mistake, Blunder, Miss) are explained by what they
+//! allow and miss; good moves (Brilliant, Great Find, Best, Excellent, Good) by
+//! what they do, threaten and stop.
 
 pub mod circ;
 pub mod detect;
@@ -124,8 +129,11 @@ pub struct CoachEvent {
     /// Whose idea it is.
     pub actor: Side,
     pub geometry: GeometryView,
-    /// The line that shows it (UCI): the opponent's best reply line for BASE
-    /// and PERMITS events, the best line for MISSES events.
+    /// The line that shows it (UCI): the opponent's best reply line for a bad
+    /// move's BASE and PERMITS events, the best line for MISSES events, the
+    /// played move's own line for a good move's BASE events, and the null-move
+    /// line for THREATENS and PREVENTS events (it starts from the position with
+    /// the side to move flipped; the event's show-line has its FEN).
     pub line: Vec<String>,
     /// Index in `line` of the move that carries it out (BASE: the reviewed move,
     /// before the line).
@@ -152,6 +160,14 @@ pub struct CoachInput<'a> {
     pub reply: Option<LineInput<'a>>,
     /// B: the best line from `before`.
     pub best: Option<LineInput<'a>>,
+    /// The played move's own line from `before` (the played move first).
+    pub played_line: Option<LineInput<'a>>,
+    /// N: the null-move threat search after the played move (its mover to move
+    /// again; see [`board::null_move`]).
+    pub threat: Option<LineInput<'a>>,
+    /// N_prev: the null-move threat search before the played move (the
+    /// opponent to move).
+    pub prev_threat: Option<LineInput<'a>>,
     pub classification: Option<Classification>,
     pub style: Style,
     /// Plies of a line to inspect for material (extended through exchanges).
@@ -160,8 +176,8 @@ pub struct CoachInput<'a> {
     pub seed: u32,
 }
 
-/// Classifications the coach explains in phase 1.
-pub fn explains(classification: Option<Classification>) -> bool {
+/// Bad moves: explained by what they allow and miss.
+pub fn is_bad(classification: Option<Classification>) -> bool {
     matches!(
         classification,
         Some(
@@ -171,6 +187,25 @@ pub fn explains(classification: Option<Classification>) -> bool {
                 | Classification::Miss
         )
     )
+}
+
+/// Good moves: explained by what they do, threaten and stop.
+pub fn is_good(classification: Option<Classification>) -> bool {
+    matches!(
+        classification,
+        Some(
+            Classification::Brilliant
+                | Classification::GreatFind
+                | Classification::Best
+                | Classification::Excellent
+                | Classification::Good
+        )
+    )
+}
+
+/// Classifications the coach explains (not Book, Forced or unclassified moves).
+pub fn explains(classification: Option<Classification>) -> bool {
+    is_bad(classification) || is_good(classification)
 }
 
 /// Moves to mate for `solver` when `eval` is its forced mate.
@@ -209,20 +244,76 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
             )
         })
         .filter(|l| l.moves.first().is_some_and(|m| *m != input.played));
+    let own = input
+        .played_line
+        .map(|p| {
+            Line::parse(
+                before,
+                p.pv,
+                mate_for(p.eval, mover),
+                input.horizon,
+                input.previous,
+            )
+        })
+        .filter(|l| l.moves.first() == Some(&input.played));
+    // Null-move lines start from the position with the side to move flipped.
+    let null_line = |pos: &Chess, line: Option<LineInput<'_>>, solver: Color| {
+        let line = line?;
+        let start = board::null_move(pos)?;
+        Some(Line::parse(
+            &start,
+            line.pv,
+            mate_for(line.eval, solver),
+            input.horizon,
+            None,
+        ))
+        .filter(|l| !l.moves.is_empty())
+    };
+    let threat = null_line(&after, input.threat, mover);
+    let prev_threat = null_line(before, input.prev_threat, mover.other());
 
-    let mut events = circ::base_events(
-        before,
-        input.played,
-        &after,
-        input.previous,
-        reply.as_ref(),
-        best.as_ref(),
+    let good = is_good(input.classification);
+    let mut events = Vec::new();
+    if good {
+        events.extend(own.as_ref().and_then(|o| circ::own_line(o, input.previous)));
+        events.extend(circ::defence_events(
+            before,
+            input.played,
+            &after,
+            input.previous,
+            own.as_ref(),
+            prev_threat.as_ref(),
+        ));
+        events.extend(
+            prev_threat
+                .as_ref()
+                .zip(reply.as_ref())
+                .and_then(|(p, r)| circ::prevents(p, r)),
+        );
+    } else {
+        events.extend(circ::base_events(
+            before,
+            input.played,
+            &after,
+            input.previous,
+            reply.as_ref(),
+            best.as_ref(),
+        ));
+        events.extend(reply.as_ref().and_then(|r| circ::permits(r, input.played)));
+        events.extend(best.as_ref().and_then(|b| circ::misses(b, input.previous)));
+    }
+    events.extend(
+        threat
+            .as_ref()
+            .and_then(|t| circ::threatens(t, before, input.played, reply.as_ref())),
     );
-    events.extend(reply.as_ref().and_then(|r| circ::permits(r, input.played)));
-    events.extend(best.as_ref().and_then(|b| circ::misses(b, input.previous)));
 
-    let selection =
-        priority::select_bad(&events, input.classification == Some(Classification::Miss));
+    let miss = input.classification == Some(Classification::Miss);
+    let selection = if good {
+        priority::select_good(&events)
+    } else {
+        priority::select_bad(&events, miss)
+    };
     let ctx = realise::Context {
         voice: realise::Voice {
             style: input.style,
@@ -234,13 +325,19 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
         previous: input.previous,
         reply: reply.as_ref(),
         best: best.as_ref(),
-        miss: input.classification == Some(Classification::Miss),
+        own: own.as_ref(),
+        threat: threat.as_ref(),
+        prev_threat: prev_threat.as_ref(),
+        miss,
+        good,
+        special: match input.classification {
+            Some(Classification::Brilliant) => Some(realise::Special::Brilliant),
+            Some(Classification::GreatFind) => Some(realise::Special::GreatFind),
+            _ => None,
+        },
     };
     let (sentences, show_lines) = realise::realise(&events, selection, &ctx);
-    let line_of = |kind: LineKind| match kind {
-        LineKind::Reply => reply.as_ref(),
-        LineKind::Best => best.as_ref(),
-    };
+    let line_of = |kind: LineKind| ctx.line(kind);
     CoachNote {
         sentences,
         show_lines,

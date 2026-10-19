@@ -75,6 +75,64 @@ neutral = ["Better was {best}: after {line}, {reply} {pred}."]
 [frame.best_long]
 neutral = ["Better was {best}, starting a sequence that ends with {reply}, which {pred}."]
 
+# A good move: what it does by itself or on its own line. {reply} is the move
+# that does it ({move} itself when the event is on the first move).
+[frame.good]
+neutral = ["{reply} {pred}."]
+
+[frame.good_line]
+neutral = ["After {line}, {reply} {pred}.", "{line}, and then {reply} {pred}."]
+
+[frame.good_long]
+neutral = ["{move} starts a sequence that ends with {reply}, which {pred}."]
+
+# What the move threatens: the mover's next move if the other side did nothing.
+[frame.threatens]
+neutral = ["{move} threatens {reply}, which {pred}.", "{move} sets up a threat: {reply} {pred}."]
+
+# What the move stops: the other side's threat before it.
+[frame.prevents]
+neutral = ["{move} stops {reply}, which {pred}.", "{move} defends against {reply}, which {pred}."]
+
+# Brilliant and Great moves. `brilliant` and `great_find` stand alone (before a
+# frame with no wording of its own); the others replace the frame named after
+# the prefix.
+[frame.brilliant]
+neutral = ["{move} gives up material, and it pays off."]
+
+[frame.brilliant_good]
+neutral = ["{move} is a sacrifice that works: it {pred}."]
+
+[frame.brilliant_good_line]
+neutral = ["{move} is a sacrifice that works: after {line}, {reply} {pred}."]
+
+[frame.brilliant_good_long]
+neutral = ["{move} is a sacrifice that works: it starts a sequence that ends with {reply}, which {pred}."]
+
+[frame.brilliant_threatens]
+neutral = ["{move} is a sacrifice that works: it threatens {reply}, which {pred}."]
+
+[frame.brilliant_prevents]
+neutral = ["{move} is a sacrifice that works: it stops {reply}, which {pred}."]
+
+[frame.great_find]
+neutral = ["{move} is the one strong move here: the others are clearly worse."]
+
+[frame.great_find_good]
+neutral = ["{move} is the one strong move here: it {pred}."]
+
+[frame.great_find_good_line]
+neutral = ["{move} is the one strong move here: after {line}, {reply} {pred}."]
+
+[frame.great_find_good_long]
+neutral = ["{move} is the one strong move here: it starts a sequence that ends with {reply}, which {pred}."]
+
+[frame.great_find_threatens]
+neutral = ["{move} is the one strong move here: it threatens {reply}, which {pred}."]
+
+[frame.great_find_prevents]
+neutral = ["{move} is the one strong move here: it stops {reply}, which {pred}."]
+
 # ---------------------------------------------------------------- tags
 #
 # vp      phrase after the move that does it ("Nd4 forks your queen and rook")
@@ -181,6 +239,22 @@ label = "Show the punishment"
 vp = "leaves {piece} hanging"
 label = "Show the punishment"
 
+[tag.defends_piece]
+vp = "defends {piece}"
+label = "Show the line"
+
+[tag.escapes_threat]
+vp = "moves {piece_role} out of danger"
+label = "Show the line"
+
+[tag.blocks_check]
+vp = "blocks the check"
+label = "Show the line"
+
+[tag.counter_threat]
+vp = "hits back at {piece} instead of saving {targets}"
+label = "Show the line"
+
 [tag.material_gain]
 vp = "wins {gain}"
 wins = "wins {gain}"
@@ -200,6 +274,7 @@ quiet = "{san}."
 
 [label]
 best = "Show the best line"
+threat = "Show the threat"
 
 # ---------------------------------------------------------------- words
 

@@ -43,6 +43,7 @@ pub struct ReviewConfig {
     /// Book moves must form an unbroken run from the start. Off by default: Chess.com
     /// also marks a move Book when play transposes back into the book (calibration).
     pub book_requires_unbroken: bool,
+    pub coach: CoachConfig,
 }
 
 /// Brilliant detection after Chess.com's published definition ("a good piece
@@ -128,6 +129,18 @@ pub struct MissConfig {
     pub brilliant_min_best_ep: f64,
 }
 
+/// Engine work done for the move coach only (it never changes a classification).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(default)]
+#[ts(export)]
+pub struct CoachConfig {
+    /// Depth of the null-move threat search (MultiPV 1) on the positions before
+    /// and after each move with the side to move flipped: what a move threatens,
+    /// and which threat it stops. Book and forced moves are skipped. 0 turns it
+    /// off.
+    pub threat_search_depth: u32,
+}
+
 impl Default for ReviewConfig {
     fn default() -> Self {
         Self {
@@ -145,6 +158,7 @@ impl Default for ReviewConfig {
             caps_exclude_completely_lost: true,
             material_horizon_plies: 6,
             book_requires_unbroken: false,
+            coach: CoachConfig::default(),
         }
     }
 }
@@ -176,6 +190,14 @@ impl Default for GreatFindConfig {
             high_rated_min: 1000,
             easy_search_depth: 0,
             quiet_retreat_min_stake_cp: 200,
+        }
+    }
+}
+
+impl Default for CoachConfig {
+    fn default() -> Self {
+        Self {
+            threat_search_depth: 10,
         }
     }
 }

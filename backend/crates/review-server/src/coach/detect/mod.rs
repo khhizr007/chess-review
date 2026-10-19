@@ -5,6 +5,7 @@
 //! written from those descriptions, not from its code.
 
 mod bad;
+mod defence;
 mod defender;
 mod double;
 mod lines;
@@ -20,6 +21,7 @@ use super::facts::PieceAt;
 use super::geometry::Geometry;
 
 pub use bad::bad_tags;
+pub use defence::defence_tags;
 
 /// Our board-event vocabulary. **Declaration order is priority order**: when
 /// several tags apply, the earlier one is said.
@@ -68,12 +70,21 @@ pub enum Tag {
     BadTrade,
     HangsPiece,
     HangsPawn,
+    // 8. Defence (said about a good move itself).
+    /// Guards a threatened piece, or blocks the attack on it.
+    DefendsPiece,
+    /// Moves a threatened piece to a safe square.
+    EscapesThreat,
+    /// Puts a piece between a checking piece and the king.
+    BlocksCheck,
+    /// Leaves a threatened piece and attacks a piece worth at least as much.
+    CounterThreat,
     /// Fallback: the line wins material through no named tactic.
     MaterialGain,
 }
 
 impl Tag {
-    pub const ALL: [Tag; 25] = [
+    pub const ALL: [Tag; 29] = [
         Tag::BackRankMate,
         Tag::Checkmate,
         Tag::ForcedMate,
@@ -98,6 +109,10 @@ impl Tag {
         Tag::BadTrade,
         Tag::HangsPiece,
         Tag::HangsPawn,
+        Tag::DefendsPiece,
+        Tag::EscapesThreat,
+        Tag::BlocksCheck,
+        Tag::CounterThreat,
         Tag::MaterialGain,
     ];
 
@@ -128,6 +143,10 @@ impl Tag {
             Tag::BadTrade => "bad_trade",
             Tag::HangsPiece => "hangs_piece",
             Tag::HangsPawn => "hangs_pawn",
+            Tag::DefendsPiece => "defends_piece",
+            Tag::EscapesThreat => "escapes_threat",
+            Tag::BlocksCheck => "blocks_check",
+            Tag::CounterThreat => "counter_threat",
             Tag::MaterialGain => "material_gain",
         }
     }
@@ -147,6 +166,14 @@ impl Tag {
                 | Tag::BadTrade
                 | Tag::HangsPiece
                 | Tag::HangsPawn
+        )
+    }
+
+    /// Group 8: said about a good move itself (BASE).
+    pub fn is_defence(self) -> bool {
+        matches!(
+            self,
+            Tag::DefendsPiece | Tag::EscapesThreat | Tag::BlocksCheck | Tag::CounterThreat
         )
     }
 }

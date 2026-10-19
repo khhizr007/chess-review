@@ -1,19 +1,22 @@
 //! Circumstances: whose idea an event is and when it happens.
 //!
-//! The nodes per played move are P (the move itself), R (the opponent's best
-//! reply: the next position's engine line 1 and its PV) and B (the best
-//! alternative: this position's engine line 1). Detectors run on P for BASE,
-//! along R's PV for PERMITS and along B's PV for MISSES. On a line that wins
-//! material, the tactic is looked for at every move of its side up to the
-//! ply where the material is won: found on the first move it WINS_MATERIAL,
-//! found later the line LEADS_TO it.
+//! The nodes per played move are P (the move itself, with its own line), R
+//! (the opponent's best reply: the next position's engine line 1 and its PV),
+//! B (the best alternative: this position's engine line 1), N (the null-move
+//! threat after P: what the mover would play if the opponent passed) and
+//! N_prev (the opponent's null-move threat before P). Detectors run on P for
+//! BASE, along R's PV for PERMITS, along B's PV for MISSES, along N's for
+//! THREATENS and along N_prev's for PREVENTS. On a line that wins material, the
+//! tactic is looked for at every move of its side up to the ply where the
+//! material is won: found on the first move it WINS_MATERIAL, found later the
+//! line LEADS_TO it.
 
 use serde::Serialize;
 use shakmaty::{Chess, Color, Move, Position, Role};
 use ts_rs::TS;
 
 use super::detect::{self, Found, MoveCtx, Tag};
-use super::facts::PieceAt;
+use super::facts::{self, PieceAt};
 use super::geometry::Geometry;
 use crate::analysis::detectors::{LineMaterial, walk_line};
 use crate::board;
@@ -24,6 +27,10 @@ use crate::board;
 pub enum Circ {
     /// The move itself does it.
     Base,
+    /// The move threatens it: the mover would do it next if the opponent passed.
+    Threatens,
+    /// The move stops the opponent's threat to do it.
+    Prevents,
     /// The move allows the opponent's best reply to do it.
     Permits,
     /// The best move would have done it.
@@ -43,6 +50,12 @@ pub enum LineKind {
     Reply,
     /// B's PV, from the position before it.
     Best,
+    /// The played move's own line, from the position before it (the move first).
+    Played,
+    /// N's PV: the position after the played move with its mover to move again.
+    Threat,
+    /// N_prev's PV: the position before the played move with the opponent to move.
+    PrevThreat,
 }
 
 /// Smallest material gain (cp) that counts as winning material.
@@ -168,11 +181,16 @@ fn gain_of(line: &Line) -> Option<Gain> {
     if line.net() < MIN_GAIN || ply >= line.moves.len() {
         return None;
     }
-    // What the first mover took last on the way to the gain.
-    let role = (0..=ply)
+    // What the first mover took last on the way to the gain, and where: the
+    // material settles on that capture, not on the other side's move after it.
+    let (ply, role) = (0..=ply)
         .rev()
         .filter(|k| k % 2 == 0)
-        .find_map(|k| line.moves[k].capture().or(line.moves[k].promotion()));
+        .find_map(|k| {
+            let m = line.moves[k];
+            m.capture().or(m.promotion()).map(|r| (k, Some(r)))
+        })
+        .unwrap_or((ply - ply % 2, None));
     Some(Gain {
         cp: line.net(),
         role,
@@ -323,4 +341,113 @@ pub fn misses(best: &Line, previous: Option<Move>) -> Option<Event> {
         e.chain = vec![Circ::MissesSame];
     }
     Some(e)
+}
+
+/// The played move's own line (for good moves): a mate, the tactic behind the
+/// material it wins, or else a tactic of the move itself.
+pub fn own_line(line: &Line, previous: Option<Move>) -> Option<Event> {
+    line_event(line, LineKind::Played, Circ::Base, previous)
+}
+
+/// BASE defence events of the played move (good moves). `own` is its own line;
+/// `prev_threat` is N_prev, the opponent's null-move line before it.
+pub fn defence_events(
+    before: &Chess,
+    played: Move,
+    after: &Chess,
+    previous: Option<Move>,
+    own: Option<&Line>,
+    prev_threat: Option<&Line>,
+) -> Vec<Event> {
+    let rest = own.and_then(|l| l.moves.get(1..)).unwrap_or(&[]);
+    let ctx = MoveCtx {
+        before,
+        m: played,
+        after,
+        previous,
+        rest,
+        first: true,
+    };
+    detect::defence_tags(&ctx, prev_threat.map(|l| &l.moves[..]))
+        .into_iter()
+        .map(|found| Event {
+            chain: vec![Circ::Base],
+            found,
+            actor: before.turn(),
+            line: LineKind::Played,
+            ply: 0,
+            gain: None,
+            mate_in: None,
+        })
+        .collect()
+}
+
+/// Where a line makes its gain: the square of the move at the gain ply.
+fn gain_square(line: &Line, gain: &Gain) -> shakmaty::Square {
+    line.moves[gain.ply].to()
+}
+
+/// A threat is its first move: it mates, or its tactic is that move and the
+/// material falls by the threatening side's next move. Ideas that need a
+/// quiet move first are plans, not threats.
+fn immediate(e: &Event) -> bool {
+    e.ply == 0 && e.gain.is_none_or(|g| g.ply <= 2)
+}
+
+/// THREATENS: what the mover would play next if the opponent passed (N, the
+/// null-move line after the move), when it mates or wins material. Winning a
+/// piece the mover could already win before the move is no new threat, and
+/// nothing is threatened when the opponent's best reply simply takes the
+/// moved piece (a trade, or a piece given up).
+pub fn threatens(
+    threat: &Line,
+    before: &Chess,
+    played: Move,
+    reply: Option<&Line>,
+) -> Option<Event> {
+    let taken = reply
+        .and_then(|r| r.moves.first())
+        .is_some_and(|m| m.is_capture() && m.to() == played.to());
+    if taken {
+        return None;
+    }
+    let e = line_event(threat, LineKind::Threat, Circ::Threatens, None)?;
+    if !immediate(&e) {
+        return None;
+    }
+    if e.mate_in.is_none() {
+        let gain = e.gain?;
+        let sq = gain_square(threat, &gain);
+        let same_piece =
+            before.board().piece_at(sq) == threat.positions[gain.ply].board().piece_at(sq);
+        if same_piece && facts::threat(before.board(), sq, threat.solver()) > 0 {
+            return None;
+        }
+    }
+    Some(e)
+}
+
+/// PREVENTS: the opponent's threat before the move (N_prev, the null-move line
+/// before it), a mate or material won, that is gone after the move: the
+/// opponent's best reply no longer mates, or no longer wins that much and
+/// does not take on the threatened square.
+pub fn prevents(prev_threat: &Line, reply: &Line) -> Option<Event> {
+    let e = line_event(prev_threat, LineKind::PrevThreat, Circ::Prevents, None)?;
+    if !immediate(&e) {
+        return None;
+    }
+    let gone = if e.mate_in.is_some() {
+        reply.mate_in.is_none()
+    } else {
+        let gain = e.gain?;
+        let sq = gain_square(prev_threat, &gain);
+        reply.net() < gain.cp
+            && !reply
+                .moves
+                .iter()
+                .step_by(2)
+                .take(2)
+                .any(|m| m.to() == sq && m.is_capture())
+    };
+    gone.then_some(e)
 }

@@ -62,6 +62,19 @@ pub fn is_board_draw(pos: &Chess) -> bool {
     pos.is_stalemate() || pos.is_insufficient_material() || pos.halfmoves() >= 100
 }
 
+/// The position with the other side to move and no en passant square (a null
+/// move). `None` when the side to move is in check, when the result is not a
+/// legal position, or when the new side to move has no legal move.
+pub fn null_move(pos: &Chess) -> Option<Chess> {
+    if pos.is_check() {
+        return None;
+    }
+    pos.clone()
+        .swap_turn()
+        .ok()
+        .filter(|p| !p.legal_moves().is_empty())
+}
+
 /// Non-pawn, non-king pieces on the board (both colours).
 fn piece_count(board: &Board) -> u32 {
     (board.knights() | board.bishops() | board.rooks() | board.queens()).count() as u32

@@ -69,6 +69,7 @@ pub struct Narrate {
 #[derive(Debug, Deserialize)]
 pub struct Labels {
     pub best: String,
+    pub threat: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -359,6 +360,23 @@ fn san(pos: &Chess, m: Move) -> String {
     SanPlus::from_move_and_play_unchecked(&mut p, m).to_string()
 }
 
+/// Classifications with wording of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Special {
+    Brilliant,
+    GreatFind,
+}
+
+impl Special {
+    /// Prefix of its frames in `text/en.toml`.
+    fn key(self) -> &'static str {
+        match self {
+            Special::Brilliant => "brilliant",
+            Special::GreatFind => "great_find",
+        }
+    }
+}
+
 /// Everything the realiser needs about one reviewed move.
 pub struct Context<'a> {
     pub voice: Voice,
@@ -368,24 +386,41 @@ pub struct Context<'a> {
     pub previous: Option<Move>,
     pub reply: Option<&'a Line>,
     pub best: Option<&'a Line>,
+    /// The played move's own line.
+    pub own: Option<&'a Line>,
+    /// N: the null-move line after the played move.
+    pub threat: Option<&'a Line>,
+    /// N_prev: the null-move line before it.
+    pub prev_threat: Option<&'a Line>,
     /// The move is a Miss: a missed idea is said as "missed", not "better was".
     pub miss: bool,
+    /// The move is good: no "better was" sentence.
+    pub good: bool,
+    pub special: Option<Special>,
 }
 
 impl Context<'_> {
-    fn line(&self, kind: LineKind) -> Option<&Line> {
+    pub fn line(&self, kind: LineKind) -> Option<&Line> {
         match kind {
             LineKind::Reply => self.reply,
             LineKind::Best => self.best,
+            LineKind::Played => self.own,
+            LineKind::Threat => self.threat,
+            LineKind::PrevThreat => self.prev_threat,
         }
     }
 
-    /// The move before a line's first move.
+    /// The move before a line's first move (none after a null move).
     fn previous_for(&self, kind: LineKind) -> Option<Move> {
         match kind {
             LineKind::Reply => Some(self.played),
-            LineKind::Best => self.previous,
+            LineKind::Best | LineKind::Played => self.previous,
+            LineKind::Threat | LineKind::PrevThreat => None,
         }
+    }
+
+    fn has_frame(&self, key: &str) -> bool {
+        corpus().frame.contains_key(key)
     }
 
     fn frame(&self, key: &str) -> &'static str {
@@ -440,16 +475,16 @@ impl Context<'_> {
         let mut v = self.common_values();
         let sans = sans(line);
         let mut marks = e.found.geometry.marks();
-        if e.first() != Circ::Base
-            && let Some(m) = line.moves.get(e.ply)
-        {
+        // A bad move's BASE event is about the move before its (reply) line.
+        let before_line = e.first() == Circ::Base && e.line == LineKind::Reply;
+        if !before_line && let Some(m) = line.moves.get(e.ply) {
             let mut with_move = Marks::of_move(*m, ArrowKind::Move);
             with_move.add(&marks);
             marks = with_move;
         }
-        let reply_ply = if e.first() == Circ::Base { 0 } else { e.ply };
+        let reply_ply = if before_line { 0 } else { e.ply };
         if let Some(s) = sans.get(reply_ply) {
-            let reply_marks = if e.first() == Circ::Base {
+            let reply_marks = if before_line {
                 Marks::of_move(line.moves[0], ArrowKind::Move)
             } else {
                 marks.clone()
@@ -577,9 +612,18 @@ const LONG_LEAD_PLIES: usize = 4;
 
 fn main_frame(e: &Event) -> &'static str {
     let long = e.ply > LONG_LEAD_PLIES;
+    if e.line == LineKind::Played {
+        return match e.chain.as_slice() {
+            [_, Circ::LeadsTo, ..] if long => "good_long",
+            [_, Circ::LeadsTo, ..] => "good_line",
+            _ => "good",
+        };
+    }
     match e.chain.as_slice() {
         [Circ::Base] if e.gain.is_some() => "base_refuted",
         [Circ::Base, ..] => "base",
+        [Circ::Threatens, ..] => "threatens",
+        [Circ::Prevents, ..] => "prevents",
         [Circ::Permits, Circ::LeadsTo, ..] if long => "permits_long",
         [Circ::Permits, Circ::LeadsTo, ..] => "permits_line",
         [Circ::Permits, ..] => "permits",
@@ -606,11 +650,29 @@ pub fn realise(
 ) -> (Vec<Sentence>, Vec<ShowLine>) {
     let mut sentences = Vec::new();
     let mut show_lines = Vec::new();
-    let Some(main_index) = selection.main else {
-        return (sentences, show_lines);
+    // A Brilliant or Great move said in a sentence of its own, when the
+    // event's frame has no wording for it.
+    let special_sentence = |sentences: &mut Vec<Sentence>| {
+        if let Some(s) = ctx.special {
+            let mut values = ctx.common_values();
+            values.insert(
+                "move",
+                Value::marked(
+                    san(ctx.before, ctx.played),
+                    Marks::of_move(ctx.played, ArrowKind::Move),
+                ),
+            );
+            sentences.push(Sentence {
+                fragments: render(ctx.frame(s.key()), &values, None),
+                event: None,
+            });
+        }
     };
-    let main = &events[main_index];
-    let Some(main_line) = ctx.line(main.line) else {
+    let main = selection
+        .main
+        .and_then(|i| ctx.line(events[i].line).map(|line| (i, &events[i], line)));
+    let Some((main_index, main, main_line)) = main else {
+        special_sentence(&mut sentences);
         return (sentences, show_lines);
     };
     // Only a Miss is told it "missed" something; otherwise the idea is what was better.
@@ -620,13 +682,23 @@ pub fn realise(
     } else {
         main_frame(main)
     };
-    sentences.push(ctx.sentence(frame, main, main_line, main_index));
-    show_lines.extend(ctx.show_line(
-        &tag_text(main.tag()).label,
-        Some(main),
-        main.line,
-        Some(main_index),
-    ));
+    let special_frame = ctx
+        .special
+        .map(|s| format!("{}_{frame}", s.key()))
+        .filter(|k| ctx.has_frame(k));
+    match special_frame {
+        Some(key) => sentences.push(ctx.sentence(&key, main, main_line, main_index)),
+        None => {
+            special_sentence(&mut sentences);
+            sentences.push(ctx.sentence(frame, main, main_line, main_index));
+        }
+    }
+    let label = if matches!(main.first(), Circ::Threatens | Circ::Prevents) {
+        &corpus().label.threat
+    } else {
+        &tag_text(main.tag()).label
+    };
+    show_lines.extend(ctx.show_line(label, Some(main), main.line, Some(main_index)));
 
     let main_is_miss = matches!(main.first(), Circ::Misses | Circ::MissesSame);
     let best_label = &corpus().label.best;
@@ -638,7 +710,7 @@ pub fn realise(
                 show_lines.extend(ctx.show_line(best_label, Some(e), e.line, Some(i)));
             }
         }
-        None if !main_is_miss && ctx.best.is_some() => {
+        None if !ctx.good && !main_is_miss && ctx.best.is_some() => {
             let values = ctx.common_values();
             if values.contains_key("best") {
                 sentences.push(Sentence {

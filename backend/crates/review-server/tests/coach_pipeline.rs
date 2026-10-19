@@ -3,6 +3,7 @@
 mod common;
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use common::{FakeEngine, ScriptedEngine};
 use review_core::{Classification, ReviewConfig};
@@ -10,19 +11,23 @@ use review_server::analysis::model::ReviewResult;
 use review_server::analysis::{ReviewRequest, run_review};
 use review_server::coach::circ::Circ;
 use review_server::coach::detect::Tag;
-use review_server::coach::explains;
+use review_server::coach::{explains, is_good};
 use review_server::engine::{Evaluator, SearchLimit};
 use review_server::pgn::parse_pgn;
 use tokio_util::sync::CancellationToken;
 
 async fn review_pgn(pgn: &str, engine: Arc<dyn Evaluator>) -> ReviewResult {
+    review_with(pgn, engine, ReviewConfig::default()).await
+}
+
+async fn review_with(pgn: &str, engine: Arc<dyn Evaluator>, config: ReviewConfig) -> ReviewResult {
     let game = parse_pgn(pgn).unwrap().remove(0).unwrap();
     run_review(
         ReviewRequest {
             game,
             limit: SearchLimit::Depth { depth: 1 },
             multipv: 3,
-            config: ReviewConfig::default(),
+            config,
         },
         engine,
         common::openings(),
@@ -49,7 +54,7 @@ async fn scholars_mate_blunder_is_explained_by_the_mate_it_allows() {
     assert_eq!(nf6.coach.show_lines[0].moves[0].san, "Qxf7#");
     // The factual sentences stay for the details drawer.
     assert!(!nf6.explanation.is_empty());
-    // Good and book moves get no coach note yet.
+    // Book and forced moves get no coach note.
     for p in r.plies.iter().filter(|p| !explains(p.classification)) {
         assert!(p.coach.sentences.is_empty(), "ply {}", p.ply);
     }
@@ -136,5 +141,119 @@ async fn a_scripted_fork_is_explained_with_its_line() {
     assert_eq!(
         ke8.coach.text()[0],
         "Ke8 allows Nc7+, which forks Black's king and rook on a8, winning a rook."
+    );
+}
+
+// 6.Bc4 from the Opera game, with White's h-pawn gone so the position is out
+// of book.
+const BEFORE_BC4: &str = "rn1qkbnr/ppp2ppp/8/4p3/4P3/5Q2/PPP2PP1/RNB1KB1R w KQkq - 0 6";
+
+#[tokio::test]
+async fn a_null_move_search_finds_the_threat_of_a_good_move() {
+    let pgn = format!(
+        r#"[SetUp "1"]
+[FEN "{BEFORE_BC4}"]
+[WhiteElo "1500"]
+[BlackElo "1500"]
+
+6. Bc4 Nf6 *"#
+    );
+    // The null-move search after Bc4 (White to move again) is left to the
+    // fake engine, which finds Qxf7#.
+    let engine = ScriptedEngine::default()
+        .script(BEFORE_BC4, &[(150, &["f1c4", "g8f6", "f3b3"])])
+        .script(
+            "rn1qkbnr/ppp2ppp/8/4p3/2B1P3/5Q2/PPP2PP1/RNB1K2R b KQkq - 1 6",
+            &[(150, &["g8f6", "f3b3"])],
+        );
+    let r = review_pgn(&pgn, Arc::new(engine)).await;
+    let bc4 = &r.plies[0];
+    assert_eq!(bc4.classification, Some(Classification::Best));
+    let main = bc4.coach.main_event().expect("the good move is explained");
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::Checkmate, vec![Circ::Threatens])
+    );
+    assert_eq!(main.line, vec!["f3f7"]);
+    assert_eq!(
+        bc4.coach.text(),
+        vec!["Bc4 threatens Qxf7#, which is checkmate."]
+    );
+    assert_eq!(bc4.coach.show_lines[0].label, "Show the threat");
+}
+
+#[tokio::test]
+async fn a_scripted_threat_search_before_the_move_is_stopped() {
+    let fen = "3rk3/8/8/8/3N4/8/2P5/4K3 w - - 0 1";
+    let pgn = format!(
+        r#"[SetUp "1"]
+[FEN "{fen}"]
+[WhiteElo "1500"]
+[BlackElo "1500"]
+
+1. c3 Ke7 *"#
+    );
+    // The opponent's threat before c3 comes from the depth-10 null-move search.
+    let engine = ScriptedEngine::default()
+        .script(fen, &[(300, &["c2c3", "e8e7"])])
+        .script("3rk3/8/8/8/3N4/2P5/8/4K3 b - - 0 1", &[(300, &["e8e7"])])
+        .script_at_depth(
+            "3rk3/8/8/8/3N4/8/2P5/4K3 b - - 0 1",
+            10,
+            &[(-300, &["d8d4", "e1e2"])],
+        );
+    let r = review_pgn(&pgn, Arc::new(engine)).await;
+    let c3 = &r.plies[0];
+    assert!(is_good(c3.classification), "{:?}", c3.classification);
+    // The defence is said, and the stopped threat is among the events.
+    let main = c3.coach.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::DefendsPiece, vec![Circ::Base])
+    );
+    assert_eq!(c3.coach.text(), vec!["c3 defends White's knight on d4."]);
+    let stopped = c3
+        .coach
+        .events
+        .iter()
+        .find(|e| e.chain[0] == Circ::Prevents)
+        .expect("the stopped threat");
+    assert_eq!(stopped.tag, Tag::FreePiece);
+    assert_eq!(stopped.line, vec!["d8d4", "e1e2"]);
+}
+
+#[tokio::test]
+async fn the_threat_search_can_be_turned_off() {
+    let pgn = common::fixture("opera_game.pgn");
+    let mut calls = Vec::new();
+    for depth in [0, 10] {
+        let engine = Arc::new(FakeEngine::default());
+        let mut config = ReviewConfig::default();
+        config.coach.threat_search_depth = depth;
+        let r = review_with(&pgn, engine.clone(), config).await;
+        let threats = r
+            .plies
+            .iter()
+            .flat_map(|p| &p.coach.events)
+            .filter(|e| matches!(e.chain[0], Circ::Threatens | Circ::Prevents))
+            .count();
+        assert_eq!(
+            threats == 0,
+            depth == 0,
+            "depth {depth}: {threats} threat events"
+        );
+        calls.push(engine.calls.load(Ordering::SeqCst));
+    }
+    // One null-move search per position next to a move that is not book or forced.
+    assert!(calls[1] > calls[0], "{calls:?}");
+    let r = review("opera_game.pgn").await;
+    let coached = r
+        .plies
+        .iter()
+        .filter(|p| !p.is_book && p.classification != Some(Classification::Forced))
+        .count() as u32;
+    assert!(
+        calls[1] - calls[0] <= coached + 1,
+        "{calls:?} for {coached} plies"
     );
 }

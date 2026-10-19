@@ -1,9 +1,11 @@
-//! Choosing what to say about a bad move (`docs/coach-analysis.md` §6.5).
+//! Choosing what to say about a move (`docs/coach-analysis.md` §6.5).
 //!
 //! A bad move is explained first by what it allows, then by what was missed;
-//! for a Miss the order is the other way round. Inside each block the slots
-//! are tried in order, and inside a slot the tag order decides. One main event
-//! is said, plus at most one sentence about the best move.
+//! for a Miss the order is the other way round. A good move is explained by
+//! what it does on its own line, then by what it threatens or stops. Inside
+//! each block the slots are tried in order, and inside a slot the tag order
+//! decides. One main event is said, plus, for a bad move, at most one sentence
+//! about the best move.
 
 use super::circ::{Circ, Event};
 use super::detect::Tag;
@@ -66,7 +68,9 @@ fn misses_block(events: &[Event]) -> Option<usize> {
         .or_else(|| first_by_tag(events, misses))
 }
 
-/// What to say about a bad move. `miss` puts the missed chance first.
+/// What to say about a bad move. `miss` puts the missed chance first. When
+/// neither what it allows nor what it misses has a motif, what it threatens
+/// is said (and the best move after it).
 pub fn select_bad(events: &[Event], miss: bool) -> Selection {
     let permits = permits_block(events);
     let misses = misses_block(events);
@@ -74,12 +78,36 @@ pub fn select_bad(events: &[Event], miss: bool) -> Selection {
         misses.or(permits)
     } else {
         permits.or(misses)
-    };
+    }
+    .or_else(|| first_by_tag(events, |e| e.first() == Circ::Threatens));
     let best = match main {
         Some(i) if matches!(events[i].first(), Circ::Base | Circ::Permits) => misses,
         _ => None,
     };
     Selection { main, best }
+}
+
+/// What to say about a good move: a mate on its own line; the tactic that
+/// wins material there; a mate it threatens; a mate it stops; a tactic or a
+/// defence of the move itself; any threat it makes; any threat it stops; and
+/// last a plain material gain on its line.
+pub fn select_good(events: &[Event]) -> Selection {
+    let own = |e: &Event| e.first() == Circ::Base;
+    let threatens = |e: &Event| e.first() == Circ::Threatens;
+    let prevents = |e: &Event| e.first() == Circ::Prevents;
+    let main = first_by_tag(events, |e| own(e) && e.tag().is_mate())
+        .or_else(|| {
+            first_by_tag(events, |e| {
+                own(e) && e.gain.is_some() && e.tag() != Tag::MaterialGain
+            })
+        })
+        .or_else(|| first_by_tag(events, |e| threatens(e) && e.tag().is_mate()))
+        .or_else(|| first_by_tag(events, |e| prevents(e) && e.tag().is_mate()))
+        .or_else(|| first_by_tag(events, |e| own(e) && e.gain.is_none()))
+        .or_else(|| first_by_tag(events, threatens))
+        .or_else(|| first_by_tag(events, prevents))
+        .or_else(|| first_by_tag(events, own));
+    Selection { main, best: None }
 }
 
 #[cfg(test)]

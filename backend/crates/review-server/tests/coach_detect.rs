@@ -1,7 +1,7 @@
 //! Coach detectors on hand-built positions: one or more positions per tag.
 
 use review_server::board;
-use review_server::coach::detect::{MoveCtx, Tag, bad_tags, tactics};
+use review_server::coach::detect::{MoveCtx, Tag, bad_tags, defence_tags, tactics};
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Move, Position, Square};
 
@@ -379,4 +379,112 @@ fn geometry_points_at_the_targets() {
         }
     );
     assert_eq!(fork.stake, 500);
+}
+
+// ---------------------------------------------------------------- defence
+
+/// Defence tags of `uci`. `threat` is the opponent's null-move line before the
+/// move (played from `fen` with the other side to move), when known.
+fn defence(fen: &str, uci: &str, threat: Option<&[&str]>) -> Vec<Tag> {
+    let (before, m, after, _) = setup(fen, uci, &[]);
+    let threat: Option<Vec<Move>> = threat.map(|line| {
+        let mut p = board::null_move(&before).expect("the opponent can move");
+        line.iter()
+            .map(|u| {
+                let mv = board::parse_uci(&p, u).unwrap_or_else(|| panic!("{u} is legal"));
+                p.play_unchecked(mv);
+                mv
+            })
+            .collect()
+    });
+    let ctx = MoveCtx {
+        before: &before,
+        m,
+        after: &after,
+        previous: None,
+        rest: &[],
+        first: true,
+    };
+    defence_tags(&ctx, threat.as_deref())
+        .into_iter()
+        .map(|f| f.tag)
+        .collect()
+}
+
+// The rook on d8 attacks the undefended knight on d4.
+const KNIGHT_ATTACKED: &str = "3rk3/8/8/8/3N4/8/2P5/4K3 w - - 0 1";
+
+#[test]
+fn defends_piece() {
+    // c3 guards the knight: Rxd4 cxd4 loses the exchange.
+    assert_eq!(
+        defence(KNIGHT_ATTACKED, "c2c3", None),
+        vec![Tag::DefendsPiece]
+    );
+    // Confirmed by the opponent's threat line...
+    assert_eq!(
+        defence(KNIGHT_ATTACKED, "c2c3", Some(&["d8d4"])),
+        vec![Tag::DefendsPiece]
+    );
+    // ...and not claimed when that line shows no interest in the knight.
+    assert!(defence(KNIGHT_ATTACKED, "c2c3", Some(&["e8e7"])).is_empty());
+    // A pawn move that does not guard it defends nothing.
+    assert!(defence(KNIGHT_ATTACKED, "c2c4", None).is_empty());
+}
+
+#[test]
+fn defends_piece_by_blocking() {
+    // The bishop steps between the rook on d8 and the knight on d4, where the
+    // e4 pawn guards it.
+    let fen = "3rk3/8/8/8/3NP3/1B6/8/4K3 w - - 0 1";
+    assert_eq!(defence(fen, "b3d5", None), vec![Tag::DefendsPiece]);
+    // Behind the knight, the bishop neither guards nor blocks.
+    let fen = "3rk3/8/8/8/3N4/8/8/4KB2 w - - 0 1";
+    assert!(!defence(fen, "f1d3", None).contains(&Tag::DefendsPiece));
+}
+
+#[test]
+fn escapes_threat() {
+    assert_eq!(
+        defence("3rk3/8/8/8/3N4/8/8/4K3 w - - 0 1", "d4b5", None),
+        vec![Tag::EscapesThreat]
+    );
+    // Away from the rook on a4 but into the b7 pawn's reach, it is still lost.
+    let fen = "4k3/1p6/8/8/r2N4/8/8/4K3 w - - 0 1";
+    assert!(defence(fen, "d4c6", None).is_empty());
+    assert_eq!(defence(fen, "d4f5", None), vec![Tag::EscapesThreat]);
+    // A capture is not called an escape.
+    assert!(defence("3rk3/8/8/5p2/3N4/8/8/4K3 w - - 0 1", "d4f5", None).is_empty());
+}
+
+#[test]
+fn blocks_check() {
+    // The rook on a1 checks along the first rank; the bishop steps in on c1.
+    let fen = "4k3/8/8/8/8/8/3B4/r3K3 w - - 0 1";
+    assert_eq!(defence(fen, "d2c1", None), vec![Tag::BlocksCheck]);
+    // Stepping out of check is no block.
+    assert!(defence(fen, "e1e2", None).is_empty());
+}
+
+#[test]
+fn counter_threat() {
+    // The knight on d4 stays attacked; Bd3 hits the undefended queen on h7.
+    let fen = "3rk3/7q/8/8/3N4/8/8/4KB2 w - - 0 1";
+    let (before, m, after, _) = setup(fen, "f1d3", &[]);
+    let ctx = MoveCtx {
+        before: &before,
+        m,
+        after: &after,
+        previous: None,
+        rest: &[],
+        first: true,
+    };
+    let found = defence_tags(&ctx, None);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].tag, Tag::CounterThreat);
+    assert_eq!(found[0].focus.map(|p| p.square), Some(Square::H7));
+    assert_eq!(found[0].targets[0].square, Square::D4);
+    // A threat smaller than what is left hanging is no answer.
+    let fen = "3rk3/7p/8/8/3N4/8/8/4KB2 w - - 0 1";
+    assert!(defence(fen, "f1d3", None).is_empty());
 }

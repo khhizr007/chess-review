@@ -3,11 +3,12 @@
 //!
 //! ```text
 //! STOCKFISH_PATH=/path/to/stockfish \
-//!   cargo run --release -p review-server --example coach_report -- <game.pgn> [depth]
+//!   cargo run --release -p review-server --example coach_report -- <game.pgn> [depth] [threat depth]
 //! ```
 
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Instant;
 
 use review_core::ReviewConfig;
 use review_server::analysis::{ReviewRequest, run_review};
@@ -32,10 +33,16 @@ async fn main() -> ExitCode {
 
 async fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let number = |s: &String| s.parse::<u32>().map_err(|_| format!("bad depth {s}"));
+    let mut review_config = ReviewConfig::default();
     let (pgn_path, depth) = match args.as_slice() {
         [p] => (p, 18),
-        [p, d] => (p, d.parse().map_err(|_| format!("bad depth {d}"))?),
-        _ => return Err("usage: coach_report <game.pgn> [depth]".to_owned()),
+        [p, d] => (p, number(d)?),
+        [p, d, t] => {
+            review_config.coach.threat_search_depth = number(t)?;
+            (p, number(d)?)
+        }
+        _ => return Err("usage: coach_report <game.pgn> [depth] [threat depth]".to_owned()),
     };
     let pgn = std::fs::read_to_string(pgn_path).map_err(|e| format!("{pgn_path}: {e}"))?;
     let game = parse_pgn(&pgn)
@@ -54,12 +61,13 @@ async fn run() -> Result<(), String> {
             .await
             .map_err(|e| e.to_string())?,
     );
+    let started = Instant::now();
     let review = run_review(
         ReviewRequest {
             game,
             limit: SearchLimit::Depth { depth },
             multipv: 3,
-            config: ReviewConfig::default(),
+            config: review_config,
         },
         engine,
         load_openings(&config),
@@ -68,6 +76,11 @@ async fn run() -> Result<(), String> {
     )
     .await
     .map_err(|e| e.to_string())?;
+    println!(
+        "Review took {:.1} s (depth {depth}, threat search depth {}).",
+        started.elapsed().as_secs_f64(),
+        review.config.coach.threat_search_depth
+    );
 
     for p in review.plies.iter().filter(|p| explains(p.classification)) {
         let dots = if p.mover == review_core::Side::White {
