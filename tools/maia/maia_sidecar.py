@@ -13,20 +13,30 @@ Protocol: one JSON object per line.
     stdin  -> {"queries": [{"fen": "...", "moves": ["e2e4"], "elo_self": 1200, "elo_oppo": 1250}]}
     stdout <- {"odds": [[0.41]]}                                 (or {"error": "..."})
 
-Setup (not part of the build; the model weights are downloaded by the maia2 package on first
-use, from the location its authors publish):
+Setup (not part of the build; the maia2 package downloads the model weights on first use, from
+the location its authors publish, into --models-dir). maia2 0.10.0 pins torch 2.8.0, numpy 2.1.3
+and pandas 2.2.3, which need Python 3.12 or 3.13; see docs/configuration.md "Maia-2":
 
-    python3 -m venv ~/maia && ~/maia/bin/pip install maia2
-    MAIA_COMMAND="$HOME/maia/bin/python3 tools/maia/maia_sidecar.py --type rapid"
+    uv venv --python 3.12 ~/maia312
+    uv pip install --python ~/maia312/bin/python torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+    uv pip install --python ~/maia312/bin/python maia2==0.10.0 --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+    MAIA_COMMAND="$HOME/maia312/bin/python tools/maia/maia_sidecar.py --type rapid"
 
-Diagnostics go to stderr; stdout carries only protocol lines.
+The server asks only about moves from move 11 on: Maia-2 was trained without the first ten moves.
+
+Diagnostics go to stderr; stdout carries only protocol lines. The maia2 package prints progress
+with print(), so everything but the protocol is sent to stderr.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+
+# The protocol's stream; sys.stdout itself is pointed at stderr in main().
+PROTOCOL = sys.stdout
 
 
 def log(*parts: object) -> None:
@@ -34,8 +44,8 @@ def log(*parts: object) -> None:
 
 
 def reply(obj: dict) -> None:
-    sys.stdout.write(json.dumps(obj) + "\n")
-    sys.stdout.flush()
+    PROTOCOL.write(json.dumps(obj) + "\n")
+    PROTOCOL.flush()
 
 
 def main() -> int:
@@ -43,15 +53,22 @@ def main() -> int:
     p.add_argument("--type", default="rapid", choices=("rapid", "blitz"),
                    help="which Maia-2 model to load")
     p.add_argument("--device", default="cpu", choices=("cpu", "gpu"))
+    p.add_argument("--models-dir", default=os.path.expanduser("~/.cache/maia2"),
+                   help="where the weights are kept (downloaded there on first use)")
+    p.add_argument("--threads", type=int, default=2,
+                   help="CPU threads for inference (the engine needs the rest)")
     args = p.parse_args()
+    sys.stdout = sys.stderr
 
     try:
-        from maia2 import inference, model  # noqa: PLC0415 (imported late: it is slow)
+        import torch  # noqa: PLC0415 (imported late: it is slow)
+        from maia2 import inference, model  # noqa: PLC0415
     except ImportError as e:
         log(f"maia2 is not installed: {e}")
         return 1
-    log(f"loading Maia-2 ({args.type}, {args.device})")
-    net = model.from_pretrained(type=args.type, device=args.device)
+    torch.set_num_threads(max(1, args.threads))
+    log(f"loading Maia-2 ({args.type}, {args.device}) from {args.models_dir}")
+    net = model.from_pretrained(type=args.type, device=args.device, save_root=args.models_dir)
     prepared = inference.prepare()
     reply({"ready": True, "name": f"Maia-2 {args.type}"})
 

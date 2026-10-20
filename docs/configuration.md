@@ -53,14 +53,24 @@ coach says nothing about it.
 [Maia-2](https://github.com/CSSLab/maia2) (MIT) predicts the moves human players of a given rating
 make. With it, the coach says when the best move was hard to find at the player's level (P(best) below
 0.10) and leads with the safety check when a Mistake or Blunder was a natural move (P(played) at least
-0.30). It runs as a separate Python process, like Stockfish, and is not bundled:
+0.30). It runs as a separate Python process, like Stockfish, and is not bundled.
+
+`maia2` 0.10.0 pins exact versions (torch 2.8.0, numpy 2.1.3, pandas 2.2.3) that have wheels only up
+to Python 3.13, so use Python 3.12 or 3.13. Where the system Python is newer, [uv](https://docs.astral.sh/uv/)
+can provide one (installing `maia2 --no-deps` next to current torch, numpy and pandas on Python 3.14
+also works: it gave the same predictions in our check):
 
 ```
-python3 -m venv ~/maia && ~/maia/bin/pip install maia2
-MAIA_COMMAND="$HOME/maia/bin/python3 tools/maia/maia_sidecar.py --type rapid" ./target/release/review-server
+uv venv --python 3.12 ~/maia312
+uv pip install --python ~/maia312/bin/python torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+uv pip install --python ~/maia312/bin/python maia2==0.10.0 --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+MAIA_COMMAND="$HOME/maia312/bin/python tools/maia/maia_sidecar.py --type rapid" ./target/release/review-server
 ```
 
-The `maia2` package downloads its model weights on first start. If the sidecar fails to start or
+On the first start the sidecar downloads the weights (the rapid model is 280 MB, from the location
+the Maia-2 authors publish) into `~/.cache/maia2` (`--models-dir`). It uses 2 CPU threads by default
+(`--threads`). The model is asked only from move 11 on: Maia-2 was trained without the first ten
+moves of each game, and its opening predictions are not sound. If the sidecar fails to start or
 answer, reviews go on without it (a warning is logged).
 
 ## Installing Stockfish

@@ -122,10 +122,16 @@ pub async fn run_review_with_model(
 
 /// Queries per call to the human-move model.
 const HUMAN_BATCH: usize = 256;
+/// The human-move model is asked from this move number on. Maia-2 was trained
+/// without the first ten moves of each game (`first_n_moves: 10` in its
+/// config), and its predictions there are not sound (it rates 1.e4 below
+/// 1.Na3 at 1200).
+const HUMAN_FIRST_MOVE: u32 = 11;
 
-/// Per move (book moves excluded): how likely a player of the mover's rating
-/// was to play it and the engine's best move. Ratings come from the PGN,
-/// else the rating used for expected points. Empty when the model fails.
+/// Per move (book moves and the first ten moves excluded): how likely a
+/// player of the mover's rating was to play it and the engine's best move.
+/// Ratings come from the PGN, else the rating used for expected points.
+/// Empty when the model fails.
 async fn human_odds(
     request: &ReviewRequest,
     infos: &[PositionInfo],
@@ -147,7 +153,8 @@ async fn human_odds(
             .as_ref()
             .and_then(PositionAnalysis::best)
             .and_then(|l| l.pv.first());
-        let (Some(best), false) = (best, book[i]) else {
+        let early = game.positions[i].fullmoves().get() < HUMAN_FIRST_MOVE;
+        let (Some(best), false, false) = (best, book[i], early) else {
             continue;
         };
         let mover = game.positions[i].turn();

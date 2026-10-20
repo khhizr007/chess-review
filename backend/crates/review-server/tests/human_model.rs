@@ -54,12 +54,18 @@ impl HumanModel for FixedOdds {
     }
 }
 
-fn request(fixture: &str) -> ReviewRequest {
+/// Scholar's mate set up at move 20: the model is asked only from move 11
+/// on (Maia-2 was not trained on the first ten moves).
+const LATE_BLUNDER: &str = r#"[SetUp "1"]
+[FEN "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 20"]
+[WhiteElo "1200"]
+[BlackElo "1150"]
+
+20... Nf6 21. Qxf7# 1-0"#;
+
+fn request(pgn: &str) -> ReviewRequest {
     ReviewRequest {
-        game: parse_pgn(&common::fixture(fixture))
-            .unwrap()
-            .remove(0)
-            .unwrap(),
+        game: parse_pgn(pgn).unwrap().remove(0).unwrap(),
         limit: SearchLimit::Depth { depth: 1 },
         multipv: 3,
         config: ReviewConfig::default(),
@@ -67,9 +73,9 @@ fn request(fixture: &str) -> ReviewRequest {
     }
 }
 
-async fn review(model: Option<Arc<dyn HumanModel>>) -> ReviewResult {
+async fn review(pgn: &str, model: Option<Arc<dyn HumanModel>>) -> ReviewResult {
     run_review_with_model(
-        request("scholars_mate.pgn"),
+        request(pgn),
         Arc::new(FakeEngine::default()),
         model,
         common::openings(),
@@ -82,9 +88,9 @@ async fn review(model: Option<Arc<dyn HumanModel>>) -> ReviewResult {
 
 #[tokio::test]
 async fn a_natural_blunder_leads_with_the_safety_check() {
-    // 3...Nf6?? is the move most players of this level would play.
-    let r = review(Some(Arc::new(FixedOdds::new(0.5, 0.2)))).await;
-    let nf6 = &r.plies[5];
+    // 20...Nf6?? is the move most players of this level would play.
+    let r = review(LATE_BLUNDER, Some(Arc::new(FixedOdds::new(0.5, 0.2)))).await;
+    let nf6 = &r.plies[0];
     assert_eq!(nf6.classification, Some(Classification::Blunder));
     assert_eq!(
         nf6.coach.text()[0],
@@ -95,7 +101,7 @@ async fn a_natural_blunder_leads_with_the_safety_check() {
 #[tokio::test]
 async fn without_the_model_the_wording_is_unchanged() {
     let plain = run_review(
-        request("scholars_mate.pgn"),
+        request(LATE_BLUNDER),
         Arc::new(FakeEngine::default()),
         common::openings(),
         CancellationToken::new(),
@@ -104,17 +110,27 @@ async fn without_the_model_the_wording_is_unchanged() {
     .await
     .unwrap();
     assert_eq!(
-        plain.plies[5].coach.text()[0],
-        "After Nf6, Qxf7# is checkmate."
+        plain.plies[0].coach.text()[0],
+        "Nf6 allows Qxf7#, which is checkmate."
     );
     // A model that fails is logged and left out.
     let broken = Arc::new(FixedOdds {
         fail: true,
         ..FixedOdds::new(0.5, 0.2)
     });
-    let r = review(Some(broken.clone())).await;
+    let r = review(LATE_BLUNDER, Some(broken.clone())).await;
     assert_eq!(broken.calls.load(Ordering::Relaxed), 1);
-    assert_eq!(r.plies[5].coach, plain.plies[5].coach);
+    assert_eq!(r.plies[0].coach, plain.plies[0].coach);
+}
+
+#[tokio::test]
+async fn the_first_ten_moves_are_not_asked() {
+    // Scholar's mate is over by move 4: nothing to ask, and 3...Nf6 keeps
+    // its plain wording.
+    let model = Arc::new(FixedOdds::new(0.5, 0.2));
+    let r = review(&common::fixture("scholars_mate.pgn"), Some(model.clone())).await;
+    assert_eq!(model.calls.load(Ordering::Relaxed), 0);
+    assert_eq!(r.plies[5].coach.text()[0], "After Nf6, Qxf7# is checkmate.");
 }
 
 fn fake_sidecar() -> String {

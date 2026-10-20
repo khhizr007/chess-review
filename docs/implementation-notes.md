@@ -502,9 +502,11 @@ good-move exact 58.3% (44.4% before), bad-move exact 39.2% (36.0%), opening-phas
   move is gated the note is empty. `ReviewConfig.coach.rating_gates` (default `true`) turns it off.
 - **Human-move model** (`human.rs`, `tools/maia/maia_sidecar.py`): Maia-2 (MIT) as an optional
   sidecar process started from `MAIA_COMMAND`, speaking one JSON line per batch of positions. After the
-  engine searches, `run_review_with_model` asks, for every non-book move, P(played) and P(best) at the
-  mover's Elo (else `rating_used`) against the opponent's, in batches of 256. A failing model is
-  logged and left out. In the coach:
+  engine searches, `run_review_with_model` asks, for every non-book move from move 11 on, P(played)
+  and P(best) at the mover's Elo (else `rating_used`) against the opponent's, in batches of 256. A
+  failing model is logged and left out. Moves 1–10 are not asked: Maia-2's training config skips the
+  first ten moves of each game (`first_n_moves: 10`), and there it rates 1.e4 below 1.Na3 at 1200
+  and 2.Ke2 among its top moves after 1.e4 e5. In the coach:
   - P(best) < 0.10 on a bad move: the "missed" and "better was" frames take their `_hard` wording
     ("Better was Nf3, a hard move to find at this level: it …").
   - P(played) ≥ 0.30 on a Mistake or Blunder: what it allows is said with the `_natural` wording,
@@ -516,6 +518,16 @@ good-move exact 58.3% (44.4% before), bad-move exact 39.2% (36.0%), opening-phas
     not fit the zig-cc cross build used here. The sidecar runs the reference implementation
     unchanged, behind a process boundary like Stockfish, and costs nothing when it is not configured.
     It needs Python, PyTorch and the weights, installed separately (`docs/configuration.md`).
+  - **Checked against the real model** (Maia-2 rapid, torch 2.8.0 CPU, on the 142 calibration
+    games): of 1,422 bad moves from move 11 on, 282 (20%) get the "hard to find" wording and 130 of
+    619 Mistakes and Blunders (21%) the "looks natural" wording. Tags are unchanged (the comparison
+    gives the same 58.3% / 39.2%). The model adds about 0.5 s per game on 2 CPU threads. Examples:
+    "Qxa8 looks natural, but check the reply first: Qxh3 starts a forced mate in 3. Better was Qh7, a
+    hard move to find at this level: it moves White's queen out of danger."; "Kh1 allows Qf3+, which
+    starts a forced mate in 2. Better was Rf1, hard to find at this level: it stops Re2+, which starts
+    a forced mate in 3."
+  - The sidecar points `sys.stdout` at stderr: the maia2 package prints progress with `print()`,
+    which would otherwise break the line protocol.
 - **Frontend.** `lib/tags.ts` names the new tags. Development and castling are `routine` (takeaways
   do not praise them); the errors have takeaway verbs and Retry hints. Book notes show in the bubble
   above the opening name.

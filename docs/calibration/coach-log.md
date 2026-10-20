@@ -466,8 +466,9 @@ By Chess.com's group of positional tags (plies where theirs is the main event; e
   DevelopsOpening (15); pawn chains we do not name (CreatesPawnChain, 14); StrikesAtCenter where we
   say `kicks` (14); and on bad moves Chess.com's "missed a capture threat" (B1) still meets our
   best move's development idea (5).
-- **Maia-2** is not measured: the comparison reads tags and circumstances, which the human-move model
-  does not change (it only picks wordings). Its weights were not downloaded in this run.
+- **Maia-2** does not change agreement: the comparison reads tags and circumstances, and the model
+  only picks wordings. A run with the real model (rapid, local run `coach-p4-maia`) gives the same
+  58.3% / 39.2%; its wording counts and cost are in `implementation-notes.md` "Coach phase 4".
 - **Cost.** The positional detectors are static board tests. The fresh run took 2,647 s against
   2,868 s for main before on the same machine, within the noise.
 - **Tuning runs** (local only, `~/work/p4/runs`): `coach-p4-a` (first pass: good 58.0%, bad 39.0%),
