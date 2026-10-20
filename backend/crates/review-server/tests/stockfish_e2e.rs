@@ -56,6 +56,7 @@ async fn repeated_reviews_give_identical_results() {
                 limit: SearchLimit::Depth { depth: 12 },
                 multipv: 3,
                 config: ReviewConfig::default(),
+                player_side: None,
             },
             evaluator,
             common::openings(),
@@ -92,6 +93,7 @@ async fn opera_game_with_stockfish() {
         limit: SearchLimit::Depth { depth: 14 },
         multipv: 3,
         config: ReviewConfig::default(),
+        player_side: None,
     };
     let started = Instant::now();
     let evaluator: Arc<dyn Evaluator> = pool.clone();

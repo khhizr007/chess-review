@@ -301,17 +301,171 @@ fn permits_a_back_rank_mate_in_two() {
         .reply(&["d2d8", "e8d8", "d1d8"], mate(Side::White, 2))
         .run();
     assert_well_formed(&note);
+    // The pattern is named on the mating move only; the line is a forced mate.
     let main = note.main_event().unwrap();
-    assert_eq!((main.tag, main.mate_in), (Tag::BackRankMate, Some(2)));
+    assert_eq!((main.tag, main.mate_in), (Tag::ForcedMate, Some(2)));
     assert_eq!(
         note.text()[0],
-        "a6 allows Rd8, which starts a back-rank mate in 2."
+        "a6 allows Rd8, which starts a forced mate in 2."
     );
     assert_eq!(note.show_lines[0].moves.len(), 3);
     assert_eq!(
         note.show_lines[0].narration[2],
         "Rxd8# mates on the back rank."
     );
+}
+
+#[test]
+fn a_tactic_after_a_capture_in_the_reply_is_material_won() {
+    // ...a6 allows Bxc6 bxc6 Nd7, forking the queen and rook. The reply
+    // starts with a trade, so the fork two moves later is not named: the
+    // move allows White to win material.
+    let note = Case::new("5rk1/pp6/1qn5/1B2N3/8/8/8/7K b - - 0 1", "a7a6")
+        .reply(&["b5c6", "b7c6", "e5d7", "b6b5", "d7f8", "g8f8"], cp(200))
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::MaterialGain, vec![Circ::Permits, Circ::LeadsTo])
+    );
+    assert_eq!(main.ply, 4);
+    assert_eq!(
+        note.text()[0],
+        "a6 allows Bxc6 bxc6 Nd7 Qb5, and then Nxf8 wins the exchange."
+    );
+    // The show-line still narrates the fork.
+    assert_eq!(
+        note.show_lines[0].narration[2],
+        "Nd7 forks Black's queen on b6 and rook on f8."
+    );
+}
+
+#[test]
+fn a_tactic_after_a_quiet_move_in_the_reply_is_material_won() {
+    // ...h6 allows Kf2 Kg7, and then Nc7 forks the rooks: the first move of
+    // the reply forces nothing, so the fork is too far down the line.
+    let note = Case::new("r3r2k/7p/8/1N6/8/8/8/6K1 b - - 0 1", "h7h6")
+        .reply(&["g1f2", "h8g7", "b5c7", "e8e7", "c7a8"], cp(500))
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(main.tag, Tag::MaterialGain);
+    assert_eq!(main.chain, vec![Circ::Permits, Circ::LeadsTo]);
+}
+
+#[test]
+fn a_threat_ignored_is_said_as_the_free_piece_the_reply_takes() {
+    // ...h6 leaves the queen on a5 to the bishop.
+    let note = Case::new("4k3/7p/8/q7/8/8/3B4/6K1 b - - 0 1", "h7h6")
+        .reply(&["d2a5", "e8e7"], cp(900))
+        .best(&["a5a4"], cp(0))
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::FreePiece, vec![Circ::Permits, Circ::WinsMaterial])
+    );
+    assert!(
+        note.events
+            .iter()
+            .any(|e| e.tag == Tag::IgnoresThreat && e.chain == vec![Circ::Base])
+    );
+    assert_eq!(
+        note.text()[0],
+        "h6 allows Bxa5, which wins Black's queen on a5."
+    );
+}
+
+#[test]
+fn a_bad_trade_taken_back_for_free_is_a_free_piece() {
+    // ...Nxd5 takes the pawn, and Bxd5 takes the knight: the queen cannot
+    // take back, as Nxd5 would follow. The knight was simply lost.
+    let note = Case::new("3qk3/8/5n2/3P4/2B5/2N5/8/4K3 b - - 0 1", "f6d5")
+        .reply(&["c4d5", "e8e7"], cp(400))
+        .best(&["e8e7"], cp(100))
+        .class(Classification::Mistake)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::FreePiece, vec![Circ::Permits, Circ::WinsMaterial])
+    );
+    assert!(note.events.iter().any(|e| e.tag == Tag::BadTrade));
+    assert_eq!(main.gain_cp, Some(200));
+    assert_eq!(
+        note.text()[0],
+        "Nxd5 allows Bxd5, which wins Black's knight on d5."
+    );
+}
+
+#[test]
+fn a_threat_ignored_and_lost_in_a_line_is_said_as_losing_material() {
+    // ...h6 leaves the rook on a5 to the bishop, which takes it after a
+    // check: there is no free piece on the reply's first move.
+    let note = Case::new("4k3/7p/8/r7/8/8/3B4/4K2Q b - - 0 1", "h7h6")
+        .reply(&["h1e4", "e8f8", "d2a5", "f8g8"], cp(900))
+        .best(&["a5a1"], cp(0))
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::IgnoresThreat, vec![Circ::Base])
+    );
+    assert_eq!(
+        note.text()[0],
+        "h6 leaves Black's rook on a5 under attack and loses material after Qe4+."
+    );
+}
+
+#[test]
+fn a_hanging_queen_is_said_even_when_the_line_wins_more() {
+    // ...Qg5?? hangs the queen to Bxg5, and the bishop then takes the rook on
+    // d8 too. The reply wins the queen the move left hanging, so the hanging
+    // queen is said, not the reply.
+    let note = Case::new("3r3k/8/8/8/7q/8/8/K1B5 b - - 0 1", "h4g5")
+        .reply(&["c1g5", "h8g8", "g5d8"], cp(1400))
+        .best(&["h4h1"], cp(0))
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::HangsPiece, vec![Circ::Base])
+    );
+    assert!(note.text()[0].starts_with("Qg5 leaves Black's queen on g5 hanging"));
+}
+
+#[test]
+fn a_forced_move_says_so() {
+    // Ra1+ leaves the king one square.
+    let fen = "7k/8/8/8/8/8/6P1/r6K w - - 0 1";
+    let note = Case::new(fen, "h1h2").class(Classification::Forced).run();
+    assert_well_formed(&note);
+    assert_eq!(note.text(), vec!["Kh2 was the only legal move."]);
+    assert!(note.events.is_empty() && note.show_lines.is_empty());
+    assert!(!note.sentences[0].fragments[0].arrows.is_empty());
+    let you = Case::new(fen, "h1h2")
+        .class(Classification::Forced)
+        .style(Style::You)
+        .run();
+    assert_eq!(you.text(), vec!["Kh2 was your only legal move."]);
+}
+
+#[test]
+fn the_player_side_sets_the_style() {
+    assert_eq!(
+        Style::for_player(Some(Side::White), Side::White),
+        Style::You
+    );
+    assert_eq!(
+        Style::for_player(Some(Side::White), Side::Black),
+        Style::Opponent
+    );
+    assert_eq!(Style::for_player(None, Side::Black), Style::Neutral);
 }
 
 #[test]

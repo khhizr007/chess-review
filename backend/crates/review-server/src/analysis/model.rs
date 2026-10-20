@@ -181,6 +181,9 @@ impl Strength {
 pub struct ReviewSettingsUsed {
     pub limit: SearchLimit,
     pub multipv: u32,
+    /// The side the player played, when the request named it: the coach then
+    /// speaks to the player ("you allow …") instead of naming the colours.
+    pub player_side: Option<Side>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]

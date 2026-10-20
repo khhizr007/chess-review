@@ -68,6 +68,7 @@ async fn run() -> Result<(), String> {
             limit: SearchLimit::Depth { depth },
             multipv: 3,
             config: review_config,
+            player_side: None,
         },
         engine,
         load_openings(&config),

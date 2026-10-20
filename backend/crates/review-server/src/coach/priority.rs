@@ -35,19 +35,42 @@ fn named_tactic(e: &Event) -> bool {
     !matches!(e.tag(), Tag::FreePiece | Tag::MaterialGain)
 }
 
+/// The event wins the piece a base tag is about: it takes it, or attacks it.
+fn wins_same_piece(e: &Event, base: &Event) -> bool {
+    base.found.focus.is_some_and(|p| {
+        e.found.focus.is_some_and(|f| f.square == p.square)
+            || e.found.targets.iter().any(|t| t.square == p.square)
+    })
+}
+
+/// What allowing it costs: a mate; the free piece the reply takes, before a
+/// threat ignored or a bad trade (the piece is simply lost); the move's own
+/// error; a tactic of the reply; a free piece; any material; anything else.
+///
+/// The move's own error gives way to a tactic that wins much more than the
+/// error puts at stake, unless that tactic just wins the same piece.
 fn permits_block(events: &[Event]) -> Option<usize> {
     let permits = |e: &Event| e.first() == Circ::Permits;
-    let tactic_gain = events
-        .iter()
-        .filter(|e| permits(e) && !e.tag().is_mate())
-        .filter_map(|e| e.gain.map(|g| g.cp))
-        .max()
-        .unwrap_or(0);
+    let base = first_by_tag(events, |e| e.first() == Circ::Base);
+    let outweighed = |b: &Event| {
+        let tactic_gain = events
+            .iter()
+            .filter(|e| permits(e) && !e.tag().is_mate() && !wins_same_piece(e, b))
+            .filter_map(|e| e.gain.map(|g| g.cp))
+            .max()
+            .unwrap_or(0);
+        tactic_gain >= b.found.stake + BASE_OUTWEIGHED_CP
+    };
+    let piece_lost =
+        base.is_some_and(|i| matches!(events[i].tag(), Tag::IgnoresThreat | Tag::BadTrade));
     first_by_tag(events, |e| permits(e) && e.tag().is_mate())
         .or_else(|| {
-            first_by_tag(events, |e| e.first() == Circ::Base)
-                .filter(|&i| tactic_gain < events[i].found.stake + BASE_OUTWEIGHED_CP)
+            first_by_tag(events, |e| {
+                permits(e) && e.tag() == Tag::FreePiece && e.ply == 0
+            })
+            .filter(|_| piece_lost)
         })
+        .or_else(|| base.filter(|&i| !outweighed(&events[i])))
         .or_else(|| {
             first_by_tag(events, |e| {
                 permits(e) && e.gain.is_some() && named_tactic(e)
@@ -119,11 +142,25 @@ mod tests {
     use shakmaty::Color;
 
     fn event(chain: &[Circ], tag: Tag, stake: i32, gain: Option<i32>) -> Event {
+        event_on(chain, tag, None, stake, gain)
+    }
+
+    fn event_on(
+        chain: &[Circ],
+        tag: Tag,
+        square: Option<shakmaty::Square>,
+        stake: i32,
+        gain: Option<i32>,
+    ) -> Event {
         Event {
             chain: chain.to_vec(),
             found: Found {
                 tag,
-                focus: None,
+                focus: square.map(|square| crate::coach::facts::PieceAt {
+                    role: shakmaty::Role::Queen,
+                    color: Color::White,
+                    square,
+                }),
                 targets: Vec::new(),
                 geometry: Geometry::Squares(Vec::new()),
                 stake,
@@ -176,6 +213,84 @@ mod tests {
         let events = vec![
             event(&[Circ::Base], Tag::HangsPawn, 100, Some(500)),
             event(&[Circ::Permits, Circ::LeadsTo], Tag::Fork, 500, Some(500)),
+        ];
+        assert_eq!(select_bad(&events, false).main, Some(1));
+    }
+
+    #[test]
+    fn the_free_piece_comes_before_a_threat_ignored_or_a_bad_trade() {
+        use shakmaty::Square;
+        for tag in [Tag::IgnoresThreat, Tag::BadTrade] {
+            let events = vec![
+                event_on(&[Circ::Base], tag, Some(Square::A5), 900, Some(900)),
+                event_on(
+                    &[Circ::Permits, Circ::WinsMaterial],
+                    Tag::FreePiece,
+                    Some(Square::A5),
+                    900,
+                    Some(900),
+                ),
+            ];
+            assert_eq!(select_bad(&events, false).main, Some(1), "{tag:?}");
+        }
+        // Lost in an exchange, not for free: the move's own error is said.
+        let events = vec![
+            event_on(
+                &[Circ::Base],
+                Tag::IgnoresThreat,
+                Some(Square::A5),
+                200,
+                Some(200),
+            ),
+            event_on(
+                &[Circ::Permits],
+                Tag::MaterialGain,
+                Some(Square::A5),
+                200,
+                Some(200),
+            ),
+        ];
+        assert_eq!(select_bad(&events, false).main, Some(0));
+    }
+
+    #[test]
+    fn a_hanging_piece_is_not_outweighed_by_winning_that_piece() {
+        use shakmaty::Square;
+        // The line wins more than the queen (it goes on), but the reply that
+        // wins it takes the queen the move left hanging.
+        let events = vec![
+            event_on(
+                &[Circ::Base],
+                Tag::HangsPiece,
+                Some(Square::G5),
+                600,
+                Some(1200),
+            ),
+            event_on(
+                &[Circ::Permits, Circ::WinsMaterial],
+                Tag::FreePiece,
+                Some(Square::G5),
+                900,
+                Some(1200),
+            ),
+        ];
+        assert_eq!(select_bad(&events, false).main, Some(0));
+        // A tactic that wins something else still outweighs it.
+        let events = vec![
+            event_on(
+                &[Circ::Base],
+                Tag::HangsPiece,
+                Some(Square::G5),
+                300,
+                Some(1200),
+            ),
+            event_on(
+                &[Circ::Permits, Circ::WinsMaterial],
+                Tag::Fork,
+                Some(Square::D2),
+                900,
+                Some(1200),
+            ),
         ];
         assert_eq!(select_bad(&events, false).main, Some(1));
     }

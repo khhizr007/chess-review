@@ -9,7 +9,7 @@ use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use review_core::ReviewConfig;
+use review_core::{ReviewConfig, Side};
 use serde::{Deserialize, Serialize};
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Color, Position};
@@ -239,6 +239,10 @@ pub struct CreateReviewRequest {
     /// Override review rules (advanced; defaults are the recovered values).
     #[ts(optional)]
     pub config: Option<ReviewConfig>,
+    /// The side the user played. The coach then talks to them ("you allow …",
+    /// "your opponent missed …"); without it, it names the colours.
+    #[ts(optional)]
+    pub player_side: Option<Side>,
 }
 
 fn search_limit(
@@ -319,6 +323,7 @@ async fn create_review(
         limit,
         multipv,
         config: req.config.unwrap_or_default(),
+        player_side: req.player_side,
     };
     let status = state
         .jobs

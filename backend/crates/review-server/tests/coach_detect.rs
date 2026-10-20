@@ -172,6 +172,18 @@ fn fork_on_a_defended_square_is_not_a_fork() {
 }
 
 #[test]
+fn a_fork_target_is_worth_more_than_the_forker_or_undefended() {
+    // Nc7+ hits the king and the bishop on a6. The pawn on b7 defends the
+    // bishop; the rook on a1 makes it winnable, but a defended piece worth no
+    // more than the knight is not forked.
+    let defended = "4k3/1p6/b7/1N6/8/8/8/R3K3 w - - 0 1";
+    assert!(!tactic_tags(defended, "b5c7", &[]).contains(&Tag::Fork));
+    // Undefended, the same bishop is forked.
+    let undefended = "4k3/8/b7/1N6/8/8/8/4K3 w - - 0 1";
+    assert_eq!(top_tactic(undefended, "b5c7"), Some(Tag::Fork));
+}
+
+#[test]
 fn double_check() {
     let tags = tactic_tags("4k3/8/8/8/4N3/8/8/4RK2 w - - 0 1", "e4d6", &[]);
     assert_eq!(tags.first(), Some(&Tag::DoubleCheck));

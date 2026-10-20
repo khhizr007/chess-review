@@ -44,6 +44,8 @@ pub struct ReviewRequest {
     pub limit: SearchLimit,
     pub multipv: u8,
     pub config: ReviewConfig,
+    /// The side the player played, if known (the coach's voice).
+    pub player_side: Option<Side>,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -634,7 +636,7 @@ fn build_review(
             threat: infos[i + 1].threat.as_ref().map(line_input),
             prev_threat: infos[i].threat.as_ref().map(line_input),
             classification: outcome.classification,
-            style: coach::Style::Neutral,
+            style: coach::Style::for_player(request.player_side, mover),
             horizon,
             seed: i as u32,
         });
@@ -851,6 +853,7 @@ fn summarise(
         settings: ReviewSettingsUsed {
             limit: request.limit,
             multipv: u32::from(request.multipv),
+            player_side: request.player_side,
         },
         rating_used: rating,
         config: cfg.clone(),

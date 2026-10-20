@@ -50,6 +50,17 @@ pub enum Style {
     Neutral,
 }
 
+impl Style {
+    /// The style for a move by `mover` when the player is `player` (if known).
+    pub fn for_player(player: Option<Side>, mover: Side) -> Style {
+        match player {
+            Some(p) if p == mover => Style::You,
+            Some(_) => Style::Opponent,
+            None => Style::Neutral,
+        }
+    }
+}
+
 /// What the coach says about one move.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, TS)]
 #[ts(export)]
@@ -216,13 +227,24 @@ fn mate_for(eval: Eval, solver: Color) -> Option<u32> {
     }
 }
 
-/// Coaches one move. Moves the coach does not explain get an empty note.
+/// Coaches one move. A forced move is said to be the only legal move; other
+/// moves the coach does not explain get an empty note.
 pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
+    let before = input.before;
+    let mover = before.turn();
+    if input.classification == Some(Classification::Forced) {
+        let voice = realise::Voice {
+            style: input.style,
+            mover,
+        };
+        return CoachNote {
+            sentences: vec![realise::forced(before, input.played, voice, input.seed)],
+            ..CoachNote::default()
+        };
+    }
     if !explains(input.classification) {
         return CoachNote::default();
     }
-    let before = input.before;
-    let mover = before.turn();
     let mut after = before.clone();
     after.play_unchecked(input.played);
     let reply = input

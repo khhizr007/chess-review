@@ -10,7 +10,7 @@ use shakmaty::san::SanPlus;
 use shakmaty::{Chess, Color, Move, Position, Role};
 
 use super::circ::{Circ, Event, Gain, Line, LineKind};
-use super::detect::{self, Found};
+use super::detect::{self, Found, Tag};
 use super::facts::{PieceAt, value};
 use super::geometry::{ArrowKind, Marks};
 use super::priority::Selection;
@@ -424,13 +424,7 @@ impl Context<'_> {
     }
 
     fn frame(&self, key: &str) -> &'static str {
-        let variants = corpus()
-            .frame
-            .get(key)
-            .unwrap_or_else(|| panic!("frame {key} in en.toml"))
-            .get(self.voice.style);
-        let i = self.seed as usize % variants.len().max(1);
-        variants.get(i).map_or("", String::as_str)
+        frame(key, self.voice.style, self.seed)
     }
 
     fn common_values(&self) -> Values {
@@ -599,6 +593,31 @@ impl Context<'_> {
     }
 }
 
+/// One wording of a frame in a style, picked by the seed.
+fn frame(key: &str, style: Style, seed: u32) -> &'static str {
+    let variants = corpus()
+        .frame
+        .get(key)
+        .unwrap_or_else(|| panic!("frame {key} in en.toml"))
+        .get(style);
+    let i = seed as usize % variants.len().max(1);
+    variants.get(i).map_or("", String::as_str)
+}
+
+/// The note for a forced move: it was the only legal move.
+pub fn forced(before: &Chess, played: Move, voice: Voice, seed: u32) -> Sentence {
+    let mut values = Values::new();
+    values.insert(
+        "move",
+        Value::marked(san(before, played), Marks::of_move(played, ArrowKind::Move)),
+    );
+    values.insert("mover", Value::plain(voice.subject(&corpus().words)));
+    Sentence {
+        fragments: render(frame("forced", voice.style, seed), &values, None),
+        event: None,
+    }
+}
+
 fn tag_text(tag: detect::Tag) -> &'static TagText {
     corpus()
         .tag
@@ -620,6 +639,13 @@ fn main_frame(e: &Event) -> &'static str {
         };
     }
     match e.chain.as_slice() {
+        // Said when the piece is lost in an exchange, not for free (a free
+        // piece the reply takes is said instead).
+        [Circ::Base]
+            if e.gain.is_some() && matches!(e.tag(), Tag::IgnoresThreat | Tag::BadTrade) =>
+        {
+            "base_loses"
+        }
         [Circ::Base] if e.gain.is_some() => "base_refuted",
         [Circ::Base, ..] => "base",
         [Circ::Threatens, ..] => "threatens",

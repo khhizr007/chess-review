@@ -24,6 +24,7 @@ fn request(fixture: &str) -> ReviewRequest {
         limit: SearchLimit::Depth { depth: 1 },
         multipv: 3,
         config: ReviewConfig::default(),
+        player_side: None,
     }
 }
 

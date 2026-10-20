@@ -19,6 +19,7 @@ use super::detect::{self, Found, MoveCtx, Tag};
 use super::facts::{self, PieceAt};
 use super::geometry::Geometry;
 use crate::analysis::detectors::{LineMaterial, walk_line};
+use crate::analysis::see;
 use crate::board;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -231,9 +232,19 @@ pub fn base_events(
         .collect()
 }
 
+/// The line's first move gives check without capturing: the other side must
+/// answer it, so a tactic on the next move still follows from the first.
+fn quiet_check(line: &Line) -> bool {
+    line.moves.first().is_some_and(|m| !m.is_capture()) && line.positions[1].is_check()
+}
+
 /// The event a line carries for its first mover, under circumstance `circ`
 /// (PERMITS for R, MISSES for B): a mate, the highest-priority tactic behind
 /// the material it wins, or else a tactic of its first move.
+///
+/// In the opponent's reply line (PERMITS) a tactic is named only on its first
+/// move, or on its second after a quiet check. Further down, the material is
+/// said as won through no named tactic: the move "allows … to win material".
 pub fn line_event(
     line: &Line,
     kind: LineKind,
@@ -258,16 +269,15 @@ pub fn line_event(
             .step_by(2)
             .find(|k| line.positions[k + 1].is_checkmate())
             .and_then(|k| detect::mate(&line.ctx(k, previous)).map(|f| (k, f)));
+        // A mate pattern is named only on the mating move itself; a longer
+        // mate is a forced mate, whatever the final pattern.
         let found = match mate {
             Some((0, found)) => found,
-            other => {
+            _ => {
                 let first = line.ctx(0, previous);
                 let king = line.start.board().king_of(line.solver().other());
                 Found {
-                    tag: match other {
-                        Some((_, f)) if f.tag == Tag::BackRankMate => Tag::BackRankMate,
-                        _ => Tag::ForcedMate,
-                    },
+                    tag: Tag::ForcedMate,
                     focus: first.moved(),
                     targets: king
                         .and_then(|k| PieceAt::on(line.start.board(), k))
@@ -285,7 +295,8 @@ pub fn line_event(
 
     if let Some(gain) = gain_of(line) {
         let mut chosen: Option<(usize, Found)> = None;
-        for k in (0..=gain.ply).step_by(2) {
+        let named_at = |k: usize| circ != Circ::Permits || k == 0 || (k == 2 && quiet_check(line));
+        for k in (0..=gain.ply).step_by(2).filter(|k| named_at(*k)) {
             if let Some(f) = detect::best_tactic(&line.ctx(k, previous))
                 && chosen.as_ref().is_none_or(|(_, c)| f.tag < c.tag)
             {
@@ -327,8 +338,35 @@ pub fn line_event(
 }
 
 /// The opponent's reply event (PERMITS).
+///
+/// A capture that the reply simply takes back, where the piece that takes
+/// back cannot be won in turn, gave the piece away: the reply takes a free
+/// piece, although it ends an exchange.
 pub fn permits(reply: &Line, played: Move) -> Option<Event> {
-    line_event(reply, LineKind::Reply, Circ::Permits, Some(played))
+    let e = line_event(reply, LineKind::Reply, Circ::Permits, Some(played))?;
+    if e.mate_in.is_some() {
+        return Some(e);
+    }
+    let takes_back = reply
+        .moves
+        .first()
+        .filter(|r| played.is_capture() && r.is_capture() && r.to() == played.to());
+    let free = takes_back
+        .filter(|r| see::capture_gain(&reply.positions[1], r.to()) == 0)
+        .and_then(|_| detect::best_tactic(&reply.ctx(0, None)))
+        .filter(|f| f.tag == Tag::FreePiece && f.tag < e.tag());
+    match (free, gain_of(reply)) {
+        (Some(found), Some(gain)) => Some(Event {
+            chain: vec![Circ::Permits, Circ::WinsMaterial],
+            found,
+            actor: reply.solver(),
+            line: LineKind::Reply,
+            ply: 0,
+            gain: Some(gain),
+            mate_in: None,
+        }),
+        _ => Some(e),
+    }
 }
 
 /// The best move's event (MISSES). Taking a free piece on the square the

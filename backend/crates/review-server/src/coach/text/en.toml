@@ -29,6 +29,10 @@ neutral = ["{move} {pred}."]
 [frame.base_refuted]
 neutral = ["{move} {pred}, and {reply} wins {gain}.", "{move} {pred}, so {reply} wins {gain}."]
 
+# The move loses a piece in an exchange, not for free.
+[frame.base_loses]
+neutral = ["{move} {pred} and loses material after {reply}.", "{move} {pred}: after {reply}, it loses material."]
+
 # The move allows the opponent's best reply to do something.
 [frame.permits]
 neutral = ["{move} allows {reply}, which {pred}.", "After {move}, {reply} {pred}."]
@@ -61,6 +65,12 @@ neutral = ["{mover} missed a sequence that ends with {reply}, which {pred}."]
 you = ["You missed {reply}, which wins {piece}: it had just been left hanging."]
 opponent = ["Your opponent missed {reply}, which wins {piece}: it had just been left hanging."]
 neutral = ["{mover} missed {reply}, which wins {piece}: it had just been left hanging."]
+
+# A forced move: there was no other legal move.
+[frame.forced]
+you = ["{move} was your only legal move."]
+opponent = ["{move} was your opponent's only legal move."]
+neutral = ["{move} was the only legal move."]
 
 # What was better, after the main sentence.
 [frame.best]
@@ -142,7 +152,6 @@ neutral = ["{move} is the one strong move here: it stops {reply}, which {pred}."
 
 [tag.back_rank_mate]
 vp = "mates on the back rank"
-vp_long = "starts a back-rank mate in {n}"
 label = "Show the mate"
 
 [tag.checkmate]

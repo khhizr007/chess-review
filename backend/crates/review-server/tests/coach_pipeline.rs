@@ -28,6 +28,7 @@ async fn review_with(pgn: &str, engine: Arc<dyn Evaluator>, config: ReviewConfig
             limit: SearchLimit::Depth { depth: 1 },
             multipv: 3,
             config,
+            player_side: None,
         },
         engine,
         common::openings(),
@@ -54,9 +55,11 @@ async fn scholars_mate_blunder_is_explained_by_the_mate_it_allows() {
     assert_eq!(nf6.coach.show_lines[0].moves[0].san, "Qxf7#");
     // The factual sentences stay for the details drawer.
     assert!(!nf6.explanation.is_empty());
-    // Book and forced moves get no coach note.
+    // Book moves get no coach note; a forced move gets one sentence.
     for p in r.plies.iter().filter(|p| !explains(p.classification)) {
-        assert!(p.coach.sentences.is_empty(), "ply {}", p.ply);
+        let expected = usize::from(p.classification == Some(Classification::Forced));
+        assert_eq!(p.coach.sentences.len(), expected, "ply {}", p.ply);
+        assert!(p.coach.events.is_empty(), "ply {}", p.ply);
     }
 }
 
