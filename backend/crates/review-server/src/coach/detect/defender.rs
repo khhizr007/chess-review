@@ -6,8 +6,19 @@ use super::{Found, MoveCtx, Tag};
 use crate::coach::facts::{self, PieceAt};
 use crate::coach::geometry::Geometry;
 
+/// The mover takes `t` on its square with one of its next two moves in the
+/// line: what a defender tactic claims is then won is won.
+fn taken_later(ctx: &MoveCtx<'_>, t: &PieceAt) -> bool {
+    ctx.rest
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .take(2)
+        .any(|m| m.to() == t.square && m.capture() == Some(t.role))
+}
+
 /// The move captures a piece that was guarding another of the other side's
-/// pieces, which was safe before and can now be won.
+/// pieces, which was safe before, can now be won, and is won in the line.
 pub fn removes_defender(ctx: &MoveCtx<'_>) -> Option<Found> {
     let captured = ctx.m.capture().filter(|r| *r != Role::King)?;
     let to = ctx.to();
@@ -25,6 +36,7 @@ pub fn removes_defender(ctx: &MoveCtx<'_>) -> Option<Found> {
         .filter(|t| t.role != Role::King)
         .filter(|t| after.piece_at(t.square).is_some_and(|p| p.color == t.color))
         .filter(|t| facts::threat(before, t.square, mover) == 0)
+        .filter(|t| taken_later(ctx, t))
         .filter_map(|t| {
             let gain = facts::threat(after, t.square, mover);
             (gain >= 100).then_some((t, gain))
@@ -44,7 +56,7 @@ pub fn removes_defender(ctx: &MoveCtx<'_>) -> Option<Found> {
 }
 
 /// The move captures on a square whose only defender also guards another
-/// piece: if the defender takes back, that piece is lost.
+/// piece: the defender takes back, and that piece is lost in the line.
 pub fn overloaded(ctx: &MoveCtx<'_>) -> Option<Found> {
     let captured = ctx.m.capture().filter(|r| *r != Role::King)?;
     if ctx.m.is_en_passant() {
@@ -54,6 +66,13 @@ pub fn overloaded(ctx: &MoveCtx<'_>) -> Option<Found> {
     let mover = ctx.mover();
     let board = ctx.after.board();
     let defender = facts::attackers(board, x, mover.other()).single_square()?;
+    let takes_back = ctx
+        .rest
+        .first()
+        .is_some_and(|r| r.from() == Some(defender) && r.to() == x);
+    if !takes_back {
+        return None;
+    }
     let duty = PieceAt::on(board, defender).filter(|d| d.role != Role::King)?;
     // The position after the defender takes back on `x`.
     let mut recaptured = board.clone();
@@ -71,6 +90,7 @@ pub fn overloaded(ctx: &MoveCtx<'_>) -> Option<Found> {
         .filter_map(|t| PieceAt::on(board, t))
         .filter(|t| t.role != Role::King)
         .filter(|t| facts::threat(board, t.square, mover) == 0)
+        .filter(|t| taken_later(ctx, t))
         .filter_map(|t| {
             let gain = facts::threat(&recaptured, t.square, mover);
             (gain >= 100).then_some((t, gain))

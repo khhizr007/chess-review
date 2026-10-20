@@ -1,6 +1,6 @@
 //! Mates and the named mate patterns.
 
-use shakmaty::{Bitboard, Chess, Color, Position, Rank, Role, Square, attacks};
+use shakmaty::{Bitboard, Chess, Position, Rank, Role, Square, attacks};
 
 use super::{Found, MoveCtx, Tag};
 use crate::coach::facts::PieceAt;
@@ -33,8 +33,9 @@ pub fn checkmate(ctx: &MoveCtx<'_>) -> Option<Found> {
 
 /// The mated king stands on its home rank, the checker (a rook or queen)
 /// gives check along that rank, and every square in front of the king is
-/// taken by its own pieces or covered by the mating side, with at least one
-/// of its own pieces among them (the king is boxed in by its own army).
+/// taken by its own pieces: the king is boxed in by its own army. When the
+/// mating side covers a square in front, the mate is the attack's work, not
+/// the back rank's.
 pub fn is_back_rank_mate(pos: &Chess, king: Square, checkers: Bitboard) -> bool {
     let board = pos.board();
     let Some(color) = board.color_at(king) else {
@@ -52,9 +53,5 @@ pub fn is_back_rank_mate(pos: &Chess, king: Square, checkers: Bitboard) -> bool 
         return false;
     }
     let front = attacks::king_attacks(king) & Bitboard::from_rank(front_rank);
-    let own = board.by_color(color);
-    let mating: Color = color.other();
-    let covered =
-        |sq: Square| own.contains(sq) || board.attacks_to(sq, mating, board.occupied()).any();
-    front.into_iter().all(covered) && (front & own).any()
+    front.any() && (front & !board.by_color(color)).is_empty()
 }
