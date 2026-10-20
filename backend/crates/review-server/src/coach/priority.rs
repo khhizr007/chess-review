@@ -43,9 +43,9 @@ fn wins_same_piece(e: &Event, base: &Event) -> bool {
     })
 }
 
-/// What allowing it costs: a mate; the free piece the reply takes, before a
-/// threat ignored or a bad trade (the piece is simply lost); the move's own
-/// error; a tactic of the reply; a free piece; any material; anything else.
+/// What allowing it costs: a mate; for a threat ignored or a bad trade, the
+/// reply that takes the piece (a free piece, or the material won with it);
+/// the move's own error; a tactic of the reply; a free piece; any material; anything else.
 ///
 /// The move's own error gives way to a tactic that wins much more than the
 /// error puts at stake, unless that tactic just wins the same piece.
@@ -61,15 +61,19 @@ fn permits_block(events: &[Event]) -> Option<usize> {
             .unwrap_or(0);
         tactic_gain >= b.found.stake + BASE_OUTWEIGHED_CP
     };
-    let piece_lost =
-        base.is_some_and(|i| matches!(events[i].tag(), Tag::IgnoresThreat | Tag::BadTrade));
+    // A threat ignored or a bad trade is said by the reply that takes the
+    // piece: a free piece, or the material the line wins with it.
+    let lost_piece =
+        base.filter(|&i| matches!(events[i].tag(), Tag::IgnoresThreat | Tag::BadTrade));
+    let takes_it = |e: &Event| {
+        permits(e)
+            && e.ply == 0
+            && (e.tag() == Tag::FreePiece
+                || (e.tag() == Tag::MaterialGain
+                    && lost_piece.is_some_and(|b| wins_same_piece(e, &events[b]))))
+    };
     first_by_tag(events, |e| permits(e) && e.tag().is_mate())
-        .or_else(|| {
-            first_by_tag(events, |e| {
-                permits(e) && e.tag() == Tag::FreePiece && e.ply == 0
-            })
-            .filter(|_| piece_lost)
-        })
+        .or_else(|| first_by_tag(events, takes_it).filter(|_| lost_piece.is_some()))
         .or_else(|| base.filter(|&i| !outweighed(&events[i])))
         .or_else(|| {
             first_by_tag(events, |e| {
@@ -233,8 +237,8 @@ mod tests {
             ];
             assert_eq!(select_bad(&events, false).main, Some(1), "{tag:?}");
         }
-        // Lost in an exchange, not for free: the move's own error is said.
-        let events = vec![
+        // Taken in an exchange: the reply's material on that piece is said.
+        let mut events = vec![
             event_on(
                 &[Circ::Base],
                 Tag::IgnoresThreat,
@@ -250,6 +254,13 @@ mod tests {
                 Some(200),
             ),
         ];
+        assert_eq!(select_bad(&events, false).main, Some(1));
+        // The reply wins something else, or wins the piece later in its line:
+        // the move's own error is said.
+        events[1].found.focus.as_mut().unwrap().square = Square::B5;
+        assert_eq!(select_bad(&events, false).main, Some(0));
+        events[1].found.focus.as_mut().unwrap().square = Square::A5;
+        events[1].ply = 2;
         assert_eq!(select_bad(&events, false).main, Some(0));
     }
 

@@ -437,6 +437,12 @@ fn a_hanging_queen_is_said_even_when_the_line_wins_more() {
         (Tag::HangsPiece, vec![Circ::Base])
     );
     assert!(note.text()[0].starts_with("Qg5 leaves Black's queen on g5 hanging"));
+    // The line wins more than the queen, so the reply is said as material won.
+    assert!(
+        note.events
+            .iter()
+            .any(|e| e.tag == Tag::MaterialGain && e.chain == vec![Circ::Permits])
+    );
 }
 
 #[test]
@@ -986,4 +992,21 @@ fn every_tag_has_text() {
     ] {
         assert!(c.frame.contains_key(frame), "frame {frame}");
     }
+}
+
+#[test]
+fn a_piece_taken_back_is_said_as_material_won() {
+    // ...h6 leaves the rook on a5 to the bishop; the pawn takes back, so the
+    // rook is not free: Bxa5 wins the exchange.
+    let note = Case::new("4k3/7p/1p6/r7/8/8/3B4/6K1 b - - 0 1", "h7h6")
+        .reply(&["d2a5", "b6a5", "g1f2"], cp(200))
+        .best(&["a5a1"], cp(0))
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::MaterialGain, vec![Circ::Permits])
+    );
+    assert_eq!(note.text()[0], "h6 allows Bxa5, which wins the exchange.");
 }
