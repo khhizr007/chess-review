@@ -1,7 +1,9 @@
 //! Coach detectors on hand-built positions: one or more positions per tag.
 
 use review_server::board;
-use review_server::coach::detect::{MoveCtx, Tag, bad_tags, defence_tags, tactics};
+use review_server::coach::detect::{
+    MoveCtx, Tag, bad_tags, defence_tags, good_tags, loses_trade, tactics,
+};
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Move, Position, Square};
 
@@ -169,6 +171,18 @@ fn fork_and_royal_fork() {
 fn fork_on_a_defended_square_is_not_a_fork() {
     // The bishop on b6 covers c7 and takes the knight.
     assert!(!tactic_tags("r3k3/8/1b6/1N6/8/8/8/4K3 w - - 0 1", "b5c7", &[]).contains(&Tag::Fork));
+}
+
+#[test]
+fn a_fork_target_is_worth_more_than_the_forker_or_undefended() {
+    // Nc7+ hits the king and the bishop on a6. The pawn on b7 defends the
+    // bishop; the rook on a1 makes it winnable, but a defended piece worth no
+    // more than the knight is not forked.
+    let defended = "4k3/1p6/b7/1N6/8/8/8/R3K3 w - - 0 1";
+    assert!(!tactic_tags(defended, "b5c7", &[]).contains(&Tag::Fork));
+    // Undefended, the same bishop is forked.
+    let undefended = "4k3/8/b7/1N6/8/8/8/4K3 w - - 0 1";
+    assert_eq!(top_tactic(undefended, "b5c7"), Some(Tag::Fork));
 }
 
 #[test]
@@ -462,8 +476,137 @@ fn blocks_check() {
     // The rook on a1 checks along the first rank; the bishop steps in on c1.
     let fen = "4k3/8/8/8/8/8/3B4/r3K3 w - - 0 1";
     assert_eq!(defence(fen, "d2c1", None), vec![Tag::BlocksCheck]);
-    // Stepping out of check is no block.
-    assert!(defence(fen, "e1e2", None).is_empty());
+    // Stepping out of check is no block: it evades the check.
+    assert_eq!(defence(fen, "e1e2", None), vec![Tag::EvadesCheck]);
+}
+
+#[test]
+fn evades_check() {
+    // The knight on d3 checks the king on e1, which steps away.
+    let fen = "4k3/8/8/8/8/3n4/8/4K3 w - - 0 1";
+    assert_eq!(defence(fen, "e1f1", None), vec![Tag::EvadesCheck]);
+    assert_eq!(defence(fen, "e1e2", None), vec![Tag::EvadesCheck]);
+    // Taking the checking piece evades the check too.
+    let fen = "4k3/8/8/8/8/3n4/2B5/4K3 w - - 0 1";
+    assert_eq!(defence(fen, "c2d3", None), vec![Tag::EvadesCheck]);
+    // Not in check: no evasion.
+    assert!(defence("4k3/8/8/8/8/8/8/4K3 w - - 0 1", "e1f1", None).is_empty());
+}
+
+/// Trade and tempo tags of a good move (`good_tags` without a threat line).
+fn good(fen: &str, uci: &str, previous: Option<(&str, &str)>) -> Vec<Tag> {
+    let (before, m, after, _) = setup(fen, uci, &[]);
+    let previous = previous.map(|(prior, u)| {
+        let prior = pos(prior);
+        board::parse_uci(&prior, u).expect("the previous move is legal")
+    });
+    let ctx = MoveCtx {
+        before: &before,
+        m,
+        after: &after,
+        previous,
+        rest: &[],
+        first: true,
+    };
+    good_tags(&ctx, None).into_iter().map(|f| f.tag).collect()
+}
+
+// ---------------------------------------------------------------- trades
+
+#[test]
+fn recapture() {
+    // Black has just taken the knight on d5 with the pawn; exd5 takes back.
+    let prior = "4k3/8/4p3/3N4/4P3/8/8/4K3 b - - 0 1";
+    let fen = "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1";
+    assert_eq!(
+        good(fen, "e4d5", Some((prior, "e6d5"))),
+        vec![Tag::Recapture]
+    );
+    // The same capture with no capture before it is no recapture.
+    assert!(!good(fen, "e4d5", None).contains(&Tag::Recapture));
+    // With the queen behind to take again, the exchange goes on: an even trade.
+    let prior = "3qk3/8/4p3/3N4/4P3/8/8/4K3 b - - 0 1";
+    let fen = "3qk3/8/8/3p4/4P3/8/8/4K3 w - - 0 1";
+    assert_eq!(
+        good(fen, "e4d5", Some((prior, "e6d5"))),
+        vec![Tag::EqualTrade]
+    );
+    // Taking back with the queen into a pawn's guard loses it: no recapture.
+    let prior = "4k3/8/2p1p3/3N4/8/8/8/3QK3 b - - 0 1";
+    let fen = "4k3/8/2p5/3p4/8/8/8/3QK3 w - - 0 1";
+    assert!(!good(fen, "d1d5", Some((prior, "e6d5"))).contains(&Tag::Recapture));
+}
+
+#[test]
+fn equal_trade() {
+    // Nxd5 takes a knight that the e6 pawn takes back: an even trade.
+    let fen = "4k3/8/4p3/3n4/8/2N5/8/4K3 w - - 0 1";
+    assert_eq!(good(fen, "c3d5", None), vec![Tag::EqualTrade]);
+    // Undefended, it is a free piece, not a trade.
+    let fen = "4k3/8/8/3n4/8/2N5/8/4K3 w - - 0 1";
+    assert!(good(fen, "c3d5", None).is_empty());
+    assert_eq!(top_tactic(fen, "c3d5"), Some(Tag::FreePiece));
+}
+
+#[test]
+fn wins_trade() {
+    // Nxd5 takes a rook that the e6 pawn guards: the trade nets the exchange.
+    let fen = "4k3/8/4p3/3r4/8/2N5/8/4K3 w - - 0 1";
+    assert_eq!(top_tactic(fen, "c3d5"), Some(Tag::WinsTrade));
+}
+
+#[test]
+fn a_capture_that_loses_the_trade() {
+    // The tag reads the opponent's line: it takes back on d5, and (as the
+    // caller measured on that line) comes out 200 cp ahead.
+    let fen = "4k3/8/4p3/3n4/8/2N5/8/4K3 w - - 0 1";
+    let (before, m, after, rest) = setup(fen, "c3d5", &["e6d5"]);
+    let ctx = MoveCtx {
+        before: &before,
+        m,
+        after: &after,
+        previous: None,
+        rest: &rest,
+        first: true,
+    };
+    assert_eq!(loses_trade(&ctx, 200).map(|f| f.tag), Some(Tag::LosesTrade));
+    // An even outcome is no lost trade, nor is a reply that does not take back.
+    assert!(loses_trade(&ctx, 0).is_none());
+    let (before, m, after, rest) = setup(fen, "c3d5", &["e8d8"]);
+    let ctx = MoveCtx {
+        before: &before,
+        m,
+        after: &after,
+        previous: None,
+        rest: &rest,
+        first: true,
+    };
+    assert!(loses_trade(&ctx, 200).is_none());
+}
+
+#[test]
+fn offers_trade() {
+    // Rd1 faces the rook on d8: both are guarded, so it offers a trade.
+    let fen = "3rk3/8/8/8/8/8/8/R3K3 w - - 0 1";
+    assert_eq!(good(fen, "a1d1", None), vec![Tag::OffersTrade]);
+    // Facing a lesser piece is no offer.
+    let fen = "3nk3/8/8/8/8/8/8/R3K3 w - - 0 1";
+    assert!(!good(fen, "a1d1", None).contains(&Tag::OffersTrade));
+}
+
+// ---------------------------------------------------------------- tempo
+
+#[test]
+fn kicks_and_gains_tempo() {
+    // h4 attacks the knight on g5, which has squares to go to.
+    let fen = "4k3/8/8/6n1/8/8/7P/4K3 w - - 0 1";
+    assert_eq!(good(fen, "h2h4", None), vec![Tag::Kicks]);
+    // Rg3 attacks a knight with a rook: a tempo gained.
+    let fen = "4k3/8/8/8/6n1/R7/8/4K3 w - - 0 1";
+    assert_eq!(good(fen, "a3g3", None), vec![Tag::GainsTempo]);
+    // Hitting two knights at once is a fork, not a kick.
+    let fen = "4k3/8/3n1n2/8/4P3/8/8/4K3 w - - 0 1";
+    assert!(!good(fen, "e4e5", None).contains(&Tag::Kicks));
 }
 
 #[test]

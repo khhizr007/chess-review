@@ -92,6 +92,20 @@ describe("hint ladder", () => {
     ]);
   });
 
+  it("prefers the best move's idea that a sentence says, and names the new motifs", () => {
+    // The best move both defends a piece (said) and stops a threat (not said).
+    const stops: CoachEvent = { ...freeRook, chain: ["misses", "prevents", "wins_material"], actor: "black" };
+    const defends: CoachEvent = {
+      ...freeRook,
+      chain: ["misses"],
+      tag: "defends_piece",
+      geometry: { kind: "triangle", defended: "d4", defender: "c3", attacker: "d8" },
+    };
+    const p = ply({ coach: { sentences: [said(0), said(2)], show_lines: [], events: [fork, stops, defends] } });
+    expect(hintEvent(p)).toBe(defends);
+    expect(hintLadder(p)[1]).toEqual({ kind: "motif", text: "Look for a way to defend a piece." });
+  });
+
   it("warns about the tactic the move allowed when nothing was missed", () => {
     const p = ply({ mover: "black", coach: { sentences: [said(0)], show_lines: [], events: [fork] } });
     const ladder = hintLadder(p);

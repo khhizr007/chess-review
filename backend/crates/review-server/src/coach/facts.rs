@@ -199,6 +199,30 @@ pub fn is_trapped(pos: &Chess, sq: Square) -> bool {
         })
 }
 
+/// The piece on `sq` (of the side to move in `pos`) has a square to go to
+/// where it cannot be won, or a capture of something at least as valuable.
+/// This is how an attacked piece answers a simple threat: it moves away.
+pub fn has_safe_square(pos: &Chess, sq: Square) -> bool {
+    let Some(piece) = pos.board().piece_at(sq) else {
+        return false;
+    };
+    if piece.color != pos.turn() {
+        return false;
+    }
+    let piece_value = value(piece.role);
+    pos.legal_moves()
+        .iter()
+        .filter(|m| m.from() == Some(sq))
+        .any(|m| {
+            if m.capture().is_some_and(|c| value(c) >= piece_value) {
+                return true;
+            }
+            let mut after = pos.clone();
+            after.play_unchecked(*m);
+            see::capture_gain(&after, m.to()) == 0
+        })
+}
+
 /// Pieces of `color` that the piece on `sq` defends (attacks while being the
 /// same colour).
 pub fn defended_by(board: &Board, sq: Square) -> Bitboard {

@@ -209,3 +209,38 @@ async fn position_analysis() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "invalid_fen");
 }
+
+#[tokio::test]
+async fn the_player_side_is_kept_with_the_review() {
+    let app = app(true);
+    let pgn = common::fixture("scholars_mate.pgn");
+    let (status, created) = call(
+        &app,
+        "POST",
+        "/api/reviews",
+        Some(json!({ "pgn": pgn, "strength": "fast", "player_side": "black" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let id = created["id"].as_str().unwrap().to_owned();
+    for _ in 0..100 {
+        let (_, status) = call(&app, "GET", &format!("/api/reviews/{id}"), None).await;
+        if status["state"] == "completed" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let (status, result) = call(&app, "GET", &format!("/api/reviews/{id}/result"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["settings"]["player_side"], "black");
+
+    // Without it the field is null, and an unknown side is rejected.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/reviews",
+        Some(json!({ "pgn": pgn, "player_side": "green" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}

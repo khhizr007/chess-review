@@ -187,6 +187,30 @@ fn bad_trade(ctx: &MoveCtx<'_>) -> Option<Found> {
     })
 }
 
+/// The move captures, the opponent's best line takes back on that square, and
+/// the opponent comes out at least `net` cp ahead (counted from before the
+/// capture), where the static exchange did not already say so (`BadTrade`):
+/// the trade is lost to an extra attacker, a pin or a follow-up.
+pub fn loses_trade(ctx: &MoveCtx<'_>, net: i32) -> Option<Found> {
+    let captured = ctx.m.capture()?;
+    let moved = ctx.moved()?;
+    let takes_back = ctx
+        .rest
+        .first()
+        .is_some_and(|r| r.is_capture() && r.to() == ctx.to());
+    (takes_back && net >= 100).then(|| Found {
+        tag: Tag::LosesTrade,
+        focus: Some(moved),
+        targets: vec![PieceAt {
+            role: captured,
+            color: ctx.mover().other(),
+            square: ctx.to(),
+        }],
+        geometry: attacked_by(ctx, ctx.to()),
+        stake: net,
+    })
+}
+
 /// The move leaves a piece en prise that was safe before: the moved piece on
 /// its new square, or one the move uncovered.
 fn hangs(ctx: &MoveCtx<'_>, already: Option<Option<PieceAt>>) -> Option<Found> {

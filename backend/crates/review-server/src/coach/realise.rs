@@ -5,12 +5,13 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use review_core::expected_points::ExpectedOutcome;
 use serde::Deserialize;
 use shakmaty::san::SanPlus;
 use shakmaty::{Chess, Color, Move, Position, Role};
 
 use super::circ::{Circ, Event, Gain, Line, LineKind};
-use super::detect::{self, Found};
+use super::detect::{self, Found, Tag};
 use super::facts::{PieceAt, value};
 use super::geometry::{ArrowKind, Marks};
 use super::priority::Selection;
@@ -28,6 +29,51 @@ pub struct Corpus {
     pub narrate: Narrate,
     pub label: Labels,
     pub words: Words,
+    pub outlook: OutlookWords,
+}
+
+/// How the game stands for the mover, in the five steps the coach names
+/// (the expected-outcome buckets with the extremes folded in).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Outlook {
+    Losing,
+    Worse,
+    Equal,
+    Better,
+    Winning,
+}
+
+impl Outlook {
+    pub fn of(outcome: ExpectedOutcome) -> Outlook {
+        match outcome {
+            ExpectedOutcome::Lost | ExpectedOutcome::Losing => Outlook::Losing,
+            ExpectedOutcome::Worse => Outlook::Worse,
+            ExpectedOutcome::Equal => Outlook::Equal,
+            ExpectedOutcome::Better => Outlook::Better,
+            ExpectedOutcome::Winning | ExpectedOutcome::CompletelyWinning => Outlook::Winning,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OutlookWords {
+    pub losing: String,
+    pub worse: String,
+    pub equal: String,
+    pub better: String,
+    pub winning: String,
+}
+
+impl OutlookWords {
+    pub fn word(&self, o: Outlook) -> &str {
+        match o {
+            Outlook::Losing => &self.losing,
+            Outlook::Worse => &self.worse,
+            Outlook::Equal => &self.equal,
+            Outlook::Better => &self.better,
+            Outlook::Winning => &self.winning,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -392,6 +438,10 @@ pub struct Context<'a> {
     pub threat: Option<&'a Line>,
     /// N_prev: the null-move line before it.
     pub prev_threat: Option<&'a Line>,
+    /// N_B: the null-move line after the best move.
+    pub best_threat: Option<&'a Line>,
+    /// The expected outcome for the mover before and after the move.
+    pub swing: Option<(ExpectedOutcome, ExpectedOutcome)>,
     /// The move is a Miss: a missed idea is said as "missed", not "better was".
     pub miss: bool,
     /// The move is good: no "better was" sentence.
@@ -407,6 +457,7 @@ impl Context<'_> {
             LineKind::Played => self.own,
             LineKind::Threat => self.threat,
             LineKind::PrevThreat => self.prev_threat,
+            LineKind::BestThreat => self.best_threat,
         }
     }
 
@@ -415,7 +466,7 @@ impl Context<'_> {
         match kind {
             LineKind::Reply => Some(self.played),
             LineKind::Best | LineKind::Played => self.previous,
-            LineKind::Threat | LineKind::PrevThreat => None,
+            LineKind::Threat | LineKind::PrevThreat | LineKind::BestThreat => None,
         }
     }
 
@@ -424,13 +475,7 @@ impl Context<'_> {
     }
 
     fn frame(&self, key: &str) -> &'static str {
-        let variants = corpus()
-            .frame
-            .get(key)
-            .unwrap_or_else(|| panic!("frame {key} in en.toml"))
-            .get(self.voice.style);
-        let i = self.seed as usize % variants.len().max(1);
-        variants.get(i).map_or("", String::as_str)
+        frame(key, self.voice.style, self.seed)
     }
 
     fn common_values(&self) -> Values {
@@ -438,6 +483,15 @@ impl Context<'_> {
         let mut v = Values::new();
         v.insert("move", Value::plain(san(self.before, self.played)));
         v.insert("mover", Value::plain(self.voice.subject(w)));
+        v.insert(
+            "mover_s",
+            Value::plain(self.voice.owner(self.voice.mover, w)),
+        );
+        if let Some((from, to)) = self.swing {
+            let o = &corpus().outlook;
+            v.insert("from", Value::plain(o.word(Outlook::of(from))));
+            v.insert("to", Value::plain(o.word(Outlook::of(to))));
+        }
         if let Some(best) = self.best.and_then(|b| b.moves.first().map(|m| (b, *m))) {
             v.insert(
                 "best",
@@ -599,6 +653,31 @@ impl Context<'_> {
     }
 }
 
+/// One wording of a frame in a style, picked by the seed.
+fn frame(key: &str, style: Style, seed: u32) -> &'static str {
+    let variants = corpus()
+        .frame
+        .get(key)
+        .unwrap_or_else(|| panic!("frame {key} in en.toml"))
+        .get(style);
+    let i = seed as usize % variants.len().max(1);
+    variants.get(i).map_or("", String::as_str)
+}
+
+/// The note for a forced move: it was the only legal move.
+pub fn forced(before: &Chess, played: Move, voice: Voice, seed: u32) -> Sentence {
+    let mut values = Values::new();
+    values.insert(
+        "move",
+        Value::marked(san(before, played), Marks::of_move(played, ArrowKind::Move)),
+    );
+    values.insert("mover", Value::plain(voice.subject(&corpus().words)));
+    Sentence {
+        fragments: render(frame("forced", voice.style, seed), &values, None),
+        event: None,
+    }
+}
+
 fn tag_text(tag: detect::Tag) -> &'static TagText {
     corpus()
         .tag
@@ -610,8 +689,23 @@ fn tag_text(tag: detect::Tag) -> &'static TagText {
 /// sentence (the show-line has them).
 const LONG_LEAD_PLIES: usize = 4;
 
+/// The best move's idea is on a null-move line (what it threatens or stops).
+fn on_null_line(e: &Event) -> bool {
+    matches!(e.chain.get(1), Some(Circ::Threatens | Circ::Prevents))
+}
+
 fn main_frame(e: &Event) -> &'static str {
     let long = e.ply > LONG_LEAD_PLIES;
+    let missed = matches!(e.first(), Circ::Misses | Circ::MissesSame);
+    // Events about the move as a whole have frames of their own.
+    match e.tag() {
+        Tag::Sacrifice | Tag::OffersPiece if missed => return "misses_sacrifice",
+        Tag::Sacrifice | Tag::OffersPiece => return "sacrifice",
+        Tag::OnlyMove if missed => return "misses_only",
+        Tag::OnlyMove => return "only",
+        Tag::Slide => return "slide",
+        _ => {}
+    }
     if e.line == LineKind::Played {
         return match e.chain.as_slice() {
             [_, Circ::LeadsTo, ..] if long => "good_long",
@@ -620,6 +714,13 @@ fn main_frame(e: &Event) -> &'static str {
         };
     }
     match e.chain.as_slice() {
+        // Said when the piece is lost in an exchange, not for free (a free
+        // piece the reply takes is said instead).
+        [Circ::Base]
+            if e.gain.is_some() && matches!(e.tag(), Tag::IgnoresThreat | Tag::BadTrade) =>
+        {
+            "base_loses"
+        }
         [Circ::Base] if e.gain.is_some() => "base_refuted",
         [Circ::Base, ..] => "base",
         [Circ::Threatens, ..] => "threatens",
@@ -629,15 +730,24 @@ fn main_frame(e: &Event) -> &'static str {
         [Circ::Permits, ..] => "permits",
         [Circ::Misses, Circ::LeadsTo, ..] if long => "misses_long",
         [Circ::Misses, Circ::LeadsTo, ..] => "misses_line",
+        [Circ::Misses, Circ::Threatens, ..] => "misses_threatens",
+        [Circ::Misses, Circ::Prevents, ..] => "misses_prevents",
         [Circ::MissesSame, ..] => "misses_same",
         _ => "misses",
     }
 }
 
 fn best_frame(e: &Event) -> &'static str {
+    match e.tag() {
+        Tag::Sacrifice | Tag::OffersPiece => return "best_sacrifice",
+        Tag::OnlyMove => return "best_only",
+        _ => {}
+    }
     match e.chain.as_slice() {
         [Circ::Misses, Circ::LeadsTo, ..] if e.ply > LONG_LEAD_PLIES => "best_long",
         [Circ::Misses, Circ::LeadsTo, ..] => "best_line",
+        [Circ::Misses, Circ::Threatens, ..] => "best_threatens",
+        [Circ::Misses, Circ::Prevents, ..] => "best_prevents",
         _ => "best_event",
     }
 }
@@ -693,12 +803,28 @@ pub fn realise(
             sentences.push(ctx.sentence(frame, main, main_line, main_index));
         }
     }
-    let label = if matches!(main.first(), Circ::Threatens | Circ::Prevents) {
+    let label = if matches!(main.first(), Circ::Threatens | Circ::Prevents) || on_null_line(main) {
         &corpus().label.threat
     } else {
         &tag_text(main.tag()).label
     };
     show_lines.extend(ctx.show_line(label, Some(main), main.line, Some(main_index)));
+
+    // What a Brilliant sacrifice leads to.
+    if let Some(i) = selection.follow {
+        let e = &events[i];
+        if let Some(line) = ctx.line(e.line) {
+            sentences.push(ctx.sentence(main_frame(e), e, line, i));
+            if e.line != main.line {
+                show_lines.extend(ctx.show_line(
+                    &tag_text(e.tag()).label,
+                    Some(e),
+                    e.line,
+                    Some(i),
+                ));
+            }
+        }
+    }
 
     let main_is_miss = matches!(main.first(), Circ::Misses | Circ::MissesSame);
     let best_label = &corpus().label.best;
@@ -707,7 +833,13 @@ pub fn realise(
             let e = &events[i];
             if let Some(line) = ctx.line(e.line) {
                 sentences.push(ctx.sentence(best_frame(e), e, line, i));
-                show_lines.extend(ctx.show_line(best_label, Some(e), e.line, Some(i)));
+                // A threat or a defence of the best move is shown on the
+                // best line itself.
+                show_lines.extend(if on_null_line(e) {
+                    ctx.show_line(best_label, None, LineKind::Best, Some(i))
+                } else {
+                    ctx.show_line(best_label, Some(e), e.line, Some(i))
+                });
             }
         }
         None if !ctx.good && !main_is_miss && ctx.best.is_some() => {

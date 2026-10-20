@@ -93,6 +93,25 @@ describe("gameTakeaways", () => {
     expect(t).toEqual([{ side: "white", kind: "found", text: "Found 2 forks", plies: [1, 3] }]);
   });
 
+  it("does not praise routine moves, but counts what the best move would have done", () => {
+    const t = gameTakeaways(
+      review([
+        move(1, "best", [event("base", "recapture", "white")]),
+        move(3, "good", [event("base", "evades_check", "white")]),
+        move(5, "brilliant", [event("base", "sacrifice", "white")]),
+        move(7, "excellent", [event("base", "offers_piece", "white")]),
+        move(2, "mistake", [event("misses", "kicks", "black")]),
+        move(4, "mistake", [event("misses", "gains_tempo", "black")]),
+        move(6, "inaccuracy", [event("base", "slide", "black")]),
+      ]),
+    );
+    expect(t).toEqual([
+      { side: "black", kind: "missed", text: "Missed 2 pawn moves that chase pieces", plies: [2, 4] },
+      { side: "white", kind: "found", text: "Found 2 sacrifices", plies: [5, 7] },
+      { side: "black", kind: "error", text: "Let the position slip", plies: [6] },
+    ]);
+  });
+
   it("tolerates moves without a coach note or with sentences that say no event", () => {
     const bare = { ply: 1, mover: "white", classification: "blunder", ep_lost: 0.3 } as PlyReview;
     const noEvent = move(2, "mistake", []);

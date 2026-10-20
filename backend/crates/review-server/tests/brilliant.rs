@@ -28,6 +28,7 @@ async fn review(movetext: &str, engine: ScriptedEngine) -> ReviewResult {
             limit: SearchLimit::Depth { depth: 1 },
             multipv: 3,
             config: ReviewConfig::default(),
+            player_side: None,
         },
         evaluator,
         common::openings(),

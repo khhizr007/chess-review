@@ -35,6 +35,7 @@ async fn castling_label(engine: ScriptedEngine, easy_search_depth: u32) -> Optio
             limit: SearchLimit::Depth { depth: 18 },
             multipv: 3,
             config,
+            player_side: None,
         },
         evaluator,
         common::openings(),

@@ -21,7 +21,8 @@ FAMILIES = (
     "bad-move base",
     "defence",
     "positional",
-    # Chess.com families with no counterpart in our version-1 vocabulary.
+    # Chess.com families that our version-1 vocabulary lacked; Phase 2b added tags for the first
+    # four (trades, sacrifices, the only move, the evaluation slide).
     "sacrifice",
     "trade",
     "evaluation",
@@ -40,6 +41,8 @@ OUR_TAGS: dict[str, tuple[str, tuple[str, ...]]] = {
                              "SlowerMate", "KeymomentGoodFasterMate", "KeymomentBadFasterMate")),
     # 2. Free material.
     "free_piece": ("free material", ("FreePiece", "FreePieceFromDistance", "QuasiFreePiece")),
+    # (Phase 2b) A capture the opponent can take back that still wins material.
+    "wins_trade": ("trade", ("PileTrade", "WinsMaterialNotFree", "QuasiFreePiece")),
     "trapped_piece": ("free material", ("AttacksTrappedPiece",)),
     # 3. Double attacks.
     "double_check": ("double attack", ("DoubleCheck",)),
@@ -69,13 +72,39 @@ OUR_TAGS: dict[str, tuple[str, tuple[str, ...]]] = {
     "ignores_threat": ("bad-move base", ("IgnoresAttackedPiece", "IgnoresAttackedPawn")),
     "removes_own_defender": ("bad-move base", ("RemovesOwnDefender",)),
     "bad_trade": ("bad-move base", ("InferiorTrade", "BadTrade", "BadCaptureChoice")),
+    # (Phase 2b) A capture whose exchange the opponent's reply wins.
+    "loses_trade": ("trade", ("PileTrade", "InferiorTrade", "BadCaptureChoice")),
     "hangs_piece": ("bad-move base", ("HangsPiece",)),
     "hangs_pawn": ("bad-move base", ("HangsPawn",)),
-    # 8. Defence (phase 2).
+    # 8. Trades (phase 2b).
+    "recapture": ("trade", ("ObviousRecapture", "ImmediateRecapture", "DevelopsRecapture",
+                            "RecapturesTowardCenter", "DelayedRecapture")),
+    "equal_trade": ("trade", ("EqualTrade", "EqualTradeSequence", "GoodTrade", "TradeToSimplify")),
+    # 9. Defence (phase 2; evades_check in phase 2b).
+    "blocks_check": ("defence", ("BlocksChecker",)),
+    "evades_check": ("defence", ("EvadesCheck", "CapturesChecker", "KicksChecker")),
     "defends_piece": ("defence", ("DefendsPiece", "ProtectsPiece", "BlocksAttacker")),
     "escapes_threat": ("defence", ("EscapesThreat", "Retreat", "ObviousRetreat")),
-    "blocks_check": ("defence", ("BlocksChecker",)),
     "counter_threat": ("defence", ("CounterThreat",)),
+    # 10. Tempo (phase 2b). Attacking a piece that has to move away. When the best move does it,
+    # Chess.com's played-move speech calls it a missed capture threat (its best-move speech then
+    # says Kicks or WinsTempo); we keep THREATENS for threats the piece cannot simply avoid.
+    "kicks": ("defence", ("Kicks", "WinsTempo", "DevelopsWithTempo", "CaptureThreat",
+                          "CaptureThreatTo", "CaptureThreatFrom")),
+    "gains_tempo": ("defence", ("WinsTempo", "Kicks", "DevelopsWithTempo", "CaptureThreat",
+                                "CaptureThreatTo", "CaptureThreatFrom")),
+    "offers_trade": ("trade", ("OffersTrade",)),
+    # 11. Sacrifices (phase 2b).
+    "sacrifice": ("sacrifice", ("DirectSacrificeCapture", "DirectSacrificeEnprise",
+                                "DirectSacrificeCaptureMate", "DirectSacrificeEnpriseMate",
+                                "ExchangeSacrifice")),
+    "offers_piece": ("sacrifice", ("IgnoresThreat", "IgnoresThreatMate", "IndirectSacrifice",
+                                   "IndirectSacrificeMate")),
+    # 12. The move as a whole (phase 2b).
+    "only_move": ("game", ("Critical",)),
+    "slide": ("evaluation", ("WinningToBetter", "WinningToEqual", "WinningToWorse",
+                             "WinningToLosing", "BetterToEqual", "BetterToWorse", "BetterToLosing",
+                             "EqualToWorse", "EqualToLosing", "WorseToLosing")),
     # Fallback: material won through no named tactic.
     "material_gain": ("free material", ("WinsMaterial", "WinsMaterialNotFree", "LosesMaterial",
                                         "PickUpPieceInTactic", "LosesMaterialLosingPosition",
@@ -207,6 +236,11 @@ CC_IMPLIED_CHAIN = {
     "MissesMaterialLosingPosition": ("misses",),
     "MissesMaterialWinningPosition": ("misses",),
 }
+# Likewise ours: losing a trade is said about the move itself, but it means that the opponent's
+# reply wins the trade (Chess.com: permits > PileTrade).
+OUR_IMPLIED_CHAIN = {
+    "loses_trade": ("permits",),
+}
 
 
 # Steps a tag already implies, dropped before chains are compared: a free piece always wins
@@ -215,10 +249,15 @@ OUR_IMPLIED_STEPS = {
     "material_gain": ("leads_to", "wins_material"),
     "free_piece": ("wins_material",),
     "trapped_piece": ("wins_material",),
+    # (Phase 2b) A trade won wins material; a recapture that comes out ahead says so, Chess.com's
+    # recapture tags do not.
+    "wins_trade": ("wins_material",),
+    "recapture": ("wins_material",),
 }
 CC_IMPLIED_STEPS = {
     "WinsMaterial": ("leads_to", "wins_material"),
     "WinsMaterialNotFree": ("leads_to", "wins_material"),
+    "PileTrade": ("wins_material",),
     "FreePiece": ("wins_material",),
     "QuasiFreePiece": ("wins_material",),
     "FreePieceFromDistance": ("wins_material",),
@@ -230,7 +269,7 @@ CC_IMPLIED_STEPS = {
 # threat); we say it as THREATENS (or PREVENTS) in front of the tactic or mate that is threatened.
 CC_CAPTURE_THREAT = ("CaptureThreat", "CaptureThreatTo", "CaptureThreatFrom")
 CC_MATE_THREAT = ("MateThreat", "NmpMateInXThreat")
-THREAT_FAMILIES = ("free material", "double attack", "line tactic", "defender tactic")
+THREAT_FAMILIES = ("free material", "trade", "double attack", "line tactic", "defender tactic")
 
 
 def threat_match(our_tag: str, our_chain_: tuple[str, ...], cc_tag: str,
@@ -257,6 +296,8 @@ def our_chain(chain: list[str], tag: str | None = None) -> tuple[str, ...]:
         c = OUR_CIRC_AS_THEIRS.get(c, c)
         if c and c not in drop:
             out.append(c)
+    if not out and tag in OUR_IMPLIED_CHAIN:
+        return OUR_IMPLIED_CHAIN[tag]
     return tuple(out)
 
 

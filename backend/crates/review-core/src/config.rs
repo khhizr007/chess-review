@@ -139,6 +139,9 @@ pub struct CoachConfig {
     /// and which threat it stops. Book and forced moves are skipped. 0 turns it
     /// off.
     pub threat_search_depth: u32,
+    /// Also run the threat search after the engine's best move, where the
+    /// played move is not it: what the best move would have threatened.
+    pub best_threat_search: bool,
 }
 
 impl Default for ReviewConfig {
@@ -198,6 +201,7 @@ impl Default for CoachConfig {
     fn default() -> Self {
         Self {
             threat_search_depth: 10,
+            best_threat_search: true,
         }
     }
 }

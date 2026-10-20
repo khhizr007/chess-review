@@ -98,7 +98,8 @@ export function coachMessage(review: ReviewResult, ply: PlyReview, next: PlyRevi
       if (best) advice.push(`${best} was the move to play.`);
       break;
     case "forced":
-      advice.push("It was the only legal move.");
+      // The coach says so itself when it has a sentence for the move.
+      if (!ply.coach?.sentences.length) advice.push("It was the only legal move.");
       break;
     case "tricky":
       advice.push("Not the engine's choice, but it sets a problem the opponent has to solve.");

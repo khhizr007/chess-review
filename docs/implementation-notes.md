@@ -48,6 +48,10 @@ experiments.
   (PREVENTS). Only positions next to a move that is neither Book nor Forced are searched. The
   searches share the engine pool and the progress count with the main searches, and never change a
   classification. A failed threat search is logged and skipped, not fatal. Depth 0 turns them off.
+  - **After the best move** (`coach.best_threat_search`, on): for every such move that is not the
+    engine's best move B, one more search of the same kind runs on the position after B with B's
+    mover to move again (N_B, what B threatens). These run after the main searches, outside the
+    progress count.
 
 ## Fallback heuristics
 
@@ -184,9 +188,13 @@ These are only consulted when precision is Mistake or Blunder, under the recover
 `review-server/src/coach/` implements phases 1 and 2 of [`coach-analysis.md`](coach-analysis.md)
 §6–7. It explains Inaccuracies, Mistakes, Blunders and Misses by naming a tactic and showing the line
 (phase 1), and Brilliant, Great Find, Best, Excellent and Good moves by what they do, threaten or stop
-(phase 2). It is pure: it reads the engine lines the review already has, including the null-move
-threat searches (see "Search model"), and makes no engine calls. The output is `PlyReview.coach`;
-`explanation` stays for the details drawer. Book and Forced moves get an empty note.
+(phase 2). Phase 2b ([`coach-gap-analysis.md`](coach-gap-analysis.md) §4.2) speaks the best move like a
+played good move and adds trade, check, tempo, sacrifice, only-move and slide tags; it is described in
+"Coach phase 2b" below, which supersedes the bullets here where they differ. It is pure: it reads
+the engine lines the review already has, including the null-move threat searches (see "Search
+model"), and makes no engine calls. The output is `PlyReview.coach`;
+`explanation` stays for the details drawer. A Forced move gets one sentence ("Kh2 was the only legal
+move."); a Book move gets an empty note.
 
 - **Nodes.** P is the played move, with its own line (the MultiPV line that starts with it, or P
   followed by the next position's line 1). R is the opponent's best reply: line 1 of the next position
@@ -199,7 +207,8 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
 - **Tags** (`detect/`): our own `Tag` enum, whose declaration order is the priority order. Groups 1–7
   of §6.4 are written from chess semantics and the lichess tagger *description*
   (`coach-research-notes.md` §2.1), not from its code. Choices that differ from that description:
-  - fork targets include pawns only when they are hanging;
+  - a fork target is worth more than the forker (the king counts), or is undefended and cannot take
+    the forker; pawns count only when undefended;
   - a line piece also forks through a friendly piece in front of it (a battery) when the piece
     behind becomes newly lost (6...Nf6 7.Qb3 hits b7, and f7 through the c4 bishop);
   - `FreePiece` counts only on the first move of a line (later captures collect what a tactic won),
@@ -219,9 +228,13 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
   - BASE: for a bad move, the bad-move tags on P. For a good move, the event of P's own line (as for
     PERMITS below: a mate, the tactic behind its gain, or a tactic of P itself) and the defence tags.
   - PERMITS / MISSES: R's or B's line. If its first mover mates, the event is a mate tag:
-    `BackRankMate` when the mating move fits the pattern, else `Checkmate` (mate in one) or
-    `ForcedMate`. If the line wins at least a pawn, the highest-priority tactic among that side's moves
-    up to the gain ply is chosen: WINS_MATERIAL when it is the first move, LEADS_TO when it comes later.
+    `BackRankMate` or `Checkmate` when the first move mates; a longer mate is `ForcedMate`, whatever
+    the final pattern (a pattern is named only on the mating move). If the line wins at least a pawn,
+    the highest-priority tactic among that side's moves up to the gain ply is chosen: WINS_MATERIAL
+    when it is the first move, LEADS_TO when it comes later. In R's line (PERMITS) a tactic is named
+    only on R's first move, or on its second after a quiet check (a check that captures nothing);
+    further down the gain is `MaterialGain`, "allows … to win material". This follows Chess.com,
+    which says LosesMaterial for most deeper tactics (coach run `coach-main-e4ead28`).
     If no tactic is found, the fallback is `MaterialGain`. A line that wins nothing reports a tactic of
     its first move, if any. The gain is placed on the winning side's last capture before the material
     settles, never on the other side's move after it (10...cxb5 Bxb5+ "cxb5 wins a pawn").
@@ -236,9 +249,14 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
   - Gains are counted from **before** the move that led to the line, when that move captured. So a
     recapture is not a gain: after 4...Bxf3, 5.Qxf3 wins nothing. Null-move lines have no such move.
   - MISSES_SAME: B takes, for free, the piece on the square the opponent's last move went to.
+  - A capture that R takes back, where R's piece cannot be won in turn, gave the piece away: R's event
+    is `FreePiece`, although it is a recapture (7...Nxd5 8.Bxd5 "wins Black's knight on d5").
 - **Prioritiser** (`priority.rs`, §6.5):
-  - The Permits block: mate; a bad BASE tag (unless R's tactic wins 200 cp more than it puts at
-    stake); a named tactic with a gain; a free piece; `MaterialGain`; any PERMITS event.
+  - The Permits block: mate; R's free piece when the BASE tag is `IgnoresThreat` or `BadTrade` (the
+    piece is simply lost); a bad BASE tag (unless R's tactic wins 200 cp more than it puts at stake,
+    not counting a tactic that wins the BASE tag's own piece); a named tactic with a gain; a free
+    piece; `MaterialGain`; any PERMITS event. An `IgnoresThreat` or `BadTrade` that is kept (the
+    piece is lost in an exchange, not for free) is worded as losing material.
   - The Misses block: mate; MISSES_SAME; a named tactic with a gain; a free piece; `MaterialGain`; any
     MISSES event.
   - A Miss runs the Misses block first, every other bad move the Permits block first. When the main
@@ -251,8 +269,9 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
     any THREATENS; any PREVENTS; `MaterialGain` on its own line. Good moves get no "better" sentence.
 - **Realiser** (`realise.rs`, `text/en.toml`):
   - A sentence is a frame (by circumstance chain and style) with the tag's phrase spliced in.
-  - Styles `you`, `opponent` and `neutral`. The pipeline uses `neutral` ("White", "Black's knight"),
-    because the API does not know which side the user played.
+  - Styles `you`, `opponent` and `neutral`. The review request's `player_side` picks `you` for the
+    player's moves and `opponent` for the other side's; without it the style is `neutral` ("White",
+    "Black's knight"). The frontend asks before the review ("This is me") and remembers the username.
   - Placeholders: `{move} {reply} {line} {best} {mover} {piece} {piece_role} {square} {targets}
     {gain} {n}`.
   - Fragments for moves and pieces carry the event's arrows and squares. Moves keep their SAN
@@ -305,7 +324,7 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
     the horizon, and their threats (Bxd1, bxc4) are answered by taking the moved piece, so THREATENS
     is dropped. They need positional tags (phase 4).
   - 5.Qxf3 is really a recapture; it is said as the threat it stops, because there is no recapture
-    tag yet.
+    tag yet. (Phase 2b adds it: "Qxf3 takes back on f3.")
 - **Cost of the threat search** (same game; the machine was shared, so wall-clock times varied from
   30 to 56 s for one setting and do not resolve the difference). The review makes 33 main searches
   (depth 18, MultiPV 3) and 23 threat searches (depth 10, MultiPV 1). Measured alone (main search at
@@ -313,6 +332,97 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
   at depth 12, against 100–180 s of CPU for the depth-18 review: about 1%. That is far below the 25–35%
   estimated in `coach-analysis.md` §6.2, because a depth-10 MultiPV-1 search is much cheaper than a
   depth-18 MultiPV-3 one.
+
+## Coach phase 2b
+
+Phase 2b of [`coach-gap-analysis.md`](coach-gap-analysis.md) §4.2 (gaps B1, B4, B5, B9, B10, G1, G3–G6).
+It is built on the quick fixes (§4.1). Measured on all 142 calibration games
+([`calibration/coach-log.md`](calibration/coach-log.md), run `coach-phase2b`): bad-move exact 35.4%
+(quick fixes 29.0%), good-move exact 44.3% (23.4%), best-move sentence exact 37.6% (12.1%).
+
+- **The best move, said like a good move** (`circ::best_events`). B goes through the good-move
+  pipeline, and every event is put under MISSES:
+  - its own line (as before: a mate, the tactic behind its gain, MISSES_SAME);
+  - what it does by itself (`detect::good_tags`: trades, defence, tempo), on B's line;
+  - what it threatens: N_B, the null-move search after B (see "Search model"), read like THREATENS,
+    chain `[misses, threatens, …]`;
+  - which of the opponent's threats it stops: N_prev against B's own continuation, chain
+    `[misses, prevents, …]`;
+  - a sacrifice (`Sacrifice` / `OffersPiece`) when B is one by `static_sacrifice`, unless B answers a
+    check (then the answer is the point);
+  - `OnlyMove` when every other engine line loses more than a Good move may (EP gap to line 2 above
+    `precision_thresholds[1]`, from the MultiPV lines the review already has).
+- **The Misses block** follows the good-move order: mate; MISSES_SAME; sacrifice; a named tactic
+  with a gain; a piece taken (`FreePiece`, `WinsTrade`); a threatened mate; a stopped mate; a trade,
+  defence or tempo tag; a tactic that wins nothing; a threat; a stopped threat; `MaterialGain`;
+  `OnlyMove`. A bad move's main event: Permits block, else Misses block (the other way round for a
+  Miss), else the played move's threat, else "the only good move", else the evaluation slide. The best
+  move is said after every main event that is not already about it.
+- **Frames.** `best_threatens` ("Better was Rd2, threatening Rd8#, which mates on the back rank."),
+  `best_prevents`, `best_sacrifice`, `best_only` and their `misses_*` forms for a Miss. A best-move idea
+  on a null-move line is shown on B's own line ("Show the best line").
+- **Trades** (`detect/trade.rs`, group 8, and `WinsTrade` / `LosesTrade`):
+  - `Recapture`: takes back on the square the opponent just captured on, ending the exchange without
+    losing it. When B's or the played move's line settles a gain on that move, it carries it ("takes
+    back on d7, winning the exchange").
+  - `EqualTrade`: a capture that the opponent takes back with profit, the exchange within 100 cp of
+    even. A recapture that the opponent can take back again evenly is an `EqualTrade` too: the trade
+    goes on. (A first run on 60 games had Chess.com say EqualTrade 14 times where we said
+    `recapture`; this split targets them.)
+  - `WinsTrade`: split from `FreePiece`. A capture the opponent can take back with profit that still
+    nets a pawn or more (a knight takes a rook guarded by a pawn). It sits next to `FreePiece` in the
+    tag order because it wins material on lines too (PERMITS, MISSES, own line), as Chess.com's
+    PileTrade comes before its equal-trade and recapture tags.
+  - `LosesTrade` (a bad-move base): a capture that R takes back on the same square and comes out at
+    least a pawn ahead (line-based), where the static `BadTrade` did not fire.
+  - `OffersTrade` (group 10): a quiet move that faces an opponent piece of the same value, both sides
+    guarded, nothing won by taking first.
+- **Check** (`detect/defence.rs`): `EvadesCheck` (the king steps out of check, or a piece takes the only
+  checker) next to `BlocksCheck`. Both now come before `DefendsPiece`, as in Chess.com's order.
+- **Tempo** (`detect/tempo.rs`): `Kicks` (a pawn) and `GainsTempo` (another piece) newly attack exactly
+  one knight, bishop, rook or queen from a safe square, and that piece has a safe square
+  (`facts::has_safe_square`).
+- **THREATENS tightened.** A material threat on one piece (`FreePiece`, `WinsTrade`, `MaterialGain`)
+  whose target can simply move to a safe square is no longer a threat; it is the tempo tag above.
+  Mates and double attacks stay threats.
+- **Small events.** `Slide` for an Inaccuracy whose expected outcome drops a step (losing, worse, equal,
+  better, winning; the extreme buckets fold in) and that has nothing else to say ("Ke8 lets Black's
+  position slide from equal to worse."). `Sacrifice` / `OffersPiece` for Brilliant moves from the
+  static sacrifice square: said first, then what it leads to in a second sentence
+  (`Selection::follow`).
+- **Priority for good moves**: own mate; sacrifice; own tactic with a gain; threatened mate; stopped
+  mate; trade, defence or tempo tag; a tactic that wins nothing; any threat; any stopped threat;
+  `MaterialGain`; `OnlyMove`. Trades and defences now come before tactics that win nothing, so a
+  recapture is said as a recapture rather than "removes the defender" or "stops … winning a piece".
+- **Frontend.** `lib/tags.ts` names every new tag for hints and takeaways. Trade, defence and tempo
+  tags are `routine`: takeaways do not praise them. The retry hint prefers the best-move event a
+  sentence says.
+- **Tests.** Per-tag positions in `tests/coach_detect.rs` (trades, check, tempo), notes in
+  `tests/coach_note.rs` (best move defends, threatens mate, only move, slide, recapture, check,
+  sacrifices), slot order in `priority.rs`, and the extra search count in `tests/coach_pipeline.rs`.
+- **Sample game** (same setting as above), the sentences that changed:
+
+  | Move | Class | Coach sentence |
+  |---|---|---|
+  | 5.Qxf3 | Best | Qxf3 takes back on f3. |
+  | 6...Nf6 | Mistake | After Nf6 Qb3 Bc5, Bxf7+ wins a pawn. Qf6 was better: it stops Qxf7#, which is checkmate. |
+  | 10.Nxb5 | Brilliant | Nxb5 is a sacrifice: it gives up White's knight on b5, and that pays off. Nxb5 stops bxc4, which wins the trade on c4, winning two pawns. |
+  | 11.Bxb5+ | Best | Bxb5+ takes back on b5. |
+  | 13...Rxd7 | Mistake | After Rxd7, Rd1 makes use of the pin on Black's rook on d7. Nxd7 was better: it takes back on d7. |
+  | 14...Qe6 | Excellent | Qe6 offers to trade Black's queen on e6 for White's queen on b3. |
+  | 15.Bxd7+ | Best | Bxd7+ wins the trade on d7, winning material worth about 3 pawns. |
+  | 15...Nxd7 | Mistake | After Nxd7, Qb8+ starts a forced mate in 2. Qxd7 was better: it gets out of the check from White's bishop on d7. |
+
+  4...Bxf3, 9...b5 and 12...Rd8 still get no sentence (positional; Phase 4).
+- **Cost.** The extra searches are one depth-10 MultiPV-1 search per coached move that is not the best
+  move. On the sample game (main searches at depth 1 so the threat searches dominate, three runs, one
+  engine) they add about 0.3 s of engine CPU to the 1.2 s of the other threat searches; the depth-18
+  review takes 100–180 s of CPU, so the extra search costs about 0.2–0.3% of review time.
+  The sample game plays the best move often; over the 142 calibration games the search ran for 4,735
+  of 7,668 coached moves, about 33 per game. At the same cost per search (about 0.04 s) that is
+  roughly 1.4 s of CPU per game against 190–330 s for a game of average length: about 0.5% of review
+  time. (The calibration run's wall-clock time shared the machine with another run and does not
+  resolve it.)
 
 ## Coach UI (phase 3)
 

@@ -27,8 +27,8 @@ pub fn double_check(ctx: &MoveCtx<'_>) -> Option<Found> {
 
 /// The moved piece (not the king) stands where it cannot be won, and attacks
 /// two or more of the other side's pieces that are each either worth more
-/// than it (the king counts) or hanging and unable to take it back. Pawns
-/// count only when hanging. A fork of the king and queen is a royal fork.
+/// than it (the king counts) or undefended and unable to take it back. Pawns
+/// count only when undefended. A fork of the king and queen is a royal fork.
 pub fn fork(ctx: &MoveCtx<'_>) -> Option<Found> {
     if ctx.m.is_castle() {
         return None;
@@ -40,15 +40,17 @@ pub fn fork(ctx: &MoveCtx<'_>) -> Option<Found> {
     let board = ctx.after.board();
     let mover = ctx.mover();
     let own_value = value(forker.role);
+    let forked = |t: &PieceAt| {
+        let worth_more = t.role != Role::Pawn && value(t.role) > own_value;
+        let undefended = facts::attackers(board, t.square, t.color).is_empty()
+            && !board.attacks_from(t.square).contains(forker.square);
+        worth_more || undefended
+    };
     let mut targets: Vec<PieceAt> = (board.attacks_from(forker.square)
         & board.by_color(mover.other()))
     .into_iter()
     .filter_map(|t| PieceAt::on(board, t))
-    .filter(|t| {
-        (t.role != Role::Pawn && value(t.role) > own_value)
-            || (facts::threat(board, t.square, mover) > 0
-                && !board.attacks_from(t.square).contains(forker.square))
-    })
+    .filter(forked)
     .collect();
     // A line piece also hits what lies behind a friendly piece in front of it
     // (a battery), when that makes the piece there newly lost.
@@ -57,6 +59,7 @@ pub fn fork(ctx: &MoveCtx<'_>) -> Option<Found> {
         .filter_map(|front| facts::behind(board, forker.square, front))
         .filter_map(|t| PieceAt::on(board, t))
         .filter(|t| t.color != mover && t.role != Role::King)
+        .filter(forked)
         .filter(|t| facts::threat(board, t.square, mover) > 0)
         .filter(|t| facts::threat(ctx.before.board(), t.square, mover) == 0);
     for t in battery {
