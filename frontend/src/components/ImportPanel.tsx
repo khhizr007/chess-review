@@ -3,7 +3,9 @@ import { ApiError, api } from "../api/client";
 import type { CreateReviewRequest } from "../api/generated/CreateReviewRequest";
 import type { Health } from "../api/generated/Health";
 import type { ParseEntry } from "../api/generated/ParseEntry";
+import type { Side } from "../api/generated/Side";
 import type { Strength } from "../api/generated/Strength";
+import { mySide, myUsernames, rememberChoice } from "../lib/players";
 import { SAMPLE_PGN } from "../samples";
 
 interface Props {
@@ -29,6 +31,8 @@ export function ImportPanel({ onStart, busy }: Props) {
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // The side the user played, if any: the coach then talks to them.
+  const [side, setSide] = useState<Side | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -76,6 +80,12 @@ export function ImportPanel({ onStart, busy }: Props) {
   };
 
   const selectedEntry = games?.[selected];
+  const selectedGame = selectedEntry?.game ?? null;
+
+  // A game whose PGN names one of the user's usernames starts on that side.
+  useEffect(() => {
+    setSide(selectedGame ? mySide(selectedGame, myUsernames()) : null);
+  }, [selectedGame]);
   const canStart = !busy && !!health?.engine && !!selectedEntry?.game && selectedEntry.game.ply_count > 0;
 
   return (
@@ -189,6 +199,33 @@ export function ImportPanel({ onStart, busy }: Props) {
             </ul>
           )}
 
+          {selectedGame && (
+            <>
+              <h2 className="card__title">This is me</h2>
+              <fieldset className="segmented" aria-label="Which side you played">
+                {(
+                  [
+                    { id: "white", label: selectedGame.white ?? "White", hint: "White" },
+                    { id: "black", label: selectedGame.black ?? "Black", hint: "Black" },
+                    { id: null, label: "Neither", hint: "neutral coach" },
+                  ] as const
+                ).map((o) => (
+                  <label key={o.id ?? "none"} className={side === o.id ? "is-active" : ""}>
+                    <input
+                      type="radio"
+                      name="player-side"
+                      className="visually-hidden"
+                      checked={side === o.id}
+                      onChange={() => setSide(o.id)}
+                    />
+                    {o.label}
+                    <span className="small muted">{o.hint}</span>
+                  </label>
+                ))}
+              </fieldset>
+            </>
+          )}
+
           <h2 className="card__title">Analysis</h2>
           <fieldset className="segmented" aria-label="Strength">
             {STRENGTHS.map((s) => (
@@ -219,7 +256,10 @@ export function ImportPanel({ onStart, busy }: Props) {
             type="button"
             className="button button--primary button--block"
             disabled={!canStart}
-            onClick={() => onStart({ pgn, game_index: selected, strength, multipv })}
+            onClick={() => {
+              if (selectedGame) rememberChoice(selectedGame, side);
+              onStart({ pgn, game_index: selected, strength, multipv, ...(side ? { player_side: side } : {}) });
+            }}
           >
             {busy ? "Starting…" : "Start review"}
           </button>
