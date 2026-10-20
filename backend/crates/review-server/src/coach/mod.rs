@@ -34,10 +34,11 @@ pub mod facts;
 pub mod geometry;
 pub mod priority;
 pub mod realise;
+pub mod verify;
 
 use review_core::expected_points::ExpectedOutcome;
 use review_core::{Classification, Eval, Phase, Side};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shakmaty::{Chess, Color, Move, Position, Role, Square};
 use ts_rs::TS;
 
@@ -71,7 +72,7 @@ impl Style {
 }
 
 /// What the coach says about one move.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CoachNote {
     pub sentences: Vec<Sentence>,
@@ -81,7 +82,7 @@ pub struct CoachNote {
     pub events: Vec<CoachEvent>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Sentence {
     pub fragments: Vec<Fragment>,
@@ -91,7 +92,7 @@ pub struct Sentence {
 
 /// A piece of a sentence. Fragments that name a move or a piece carry the
 /// arrows and squares that show it.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Fragment {
     pub text: String,
@@ -99,7 +100,7 @@ pub struct Fragment {
     pub squares: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ShowLine {
     pub label: String,
@@ -111,7 +112,7 @@ pub struct ShowLine {
     pub event: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum PieceKind {
@@ -137,7 +138,7 @@ impl From<Role> for PieceKind {
 }
 
 /// A board event as sent to the frontend.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CoachEvent {
     /// Circumstance first, e.g. `[permits, wins_material]`.

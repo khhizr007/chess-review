@@ -60,17 +60,27 @@ fn defends_piece(ctx: &MoveCtx<'_>, threat: Option<&[Move]>) -> Option<Found> {
             let guards = board.attacks_from(moved.square).contains(t);
             let blocks = attacks::between(attacker, t).contains(moved.square);
             let piece = PieceAt::on(board, t)?;
-            (guards || blocks).then_some((piece, attacker))
+            (guards || blocks).then_some((piece, attacker, guards))
         })
-        .max_by_key(|(piece, _)| value(piece.role))
-        .map(|(piece, attacker)| Found {
+        .max_by_key(|(piece, ..)| value(piece.role))
+        .map(|(piece, attacker, guards)| Found {
             tag: Tag::DefendsPiece,
             focus: Some(piece),
             targets: Vec::new(),
-            geometry: Geometry::Triangle {
-                defended: piece.square,
-                defender: moved.square,
-                attacker,
+            // A guard is drawn guarding; a block is drawn as the attack it
+            // now stands in.
+            geometry: if guards {
+                Geometry::Triangle {
+                    defended: piece.square,
+                    defender: moved.square,
+                    attacker,
+                }
+            } else {
+                Geometry::XRay {
+                    attacker,
+                    front: moved.square,
+                    behind: piece.square,
+                }
             },
             stake: facts::threat(before, piece.square, mover.other()),
         })

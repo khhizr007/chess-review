@@ -639,7 +639,7 @@ impl Context<'_> {
                 let captured = PieceAt {
                     role,
                     color: ctx.mover().other(),
-                    square: m.to(),
+                    square: board::captured_square(m),
                 };
                 values.insert("piece", Value::plain(self.voice.piece(&captured, true)));
                 &n.capture

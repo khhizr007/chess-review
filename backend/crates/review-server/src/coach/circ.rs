@@ -14,7 +14,7 @@
 //! line LEADS_TO it.
 
 use review_core::Phase;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shakmaty::{Chess, Color, Move, Position, Role, Square};
 use ts_rs::TS;
 
@@ -25,7 +25,7 @@ use crate::analysis::detectors::{LineMaterial, walk_line};
 use crate::analysis::see;
 use crate::board;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Circ {
@@ -323,7 +323,7 @@ pub fn line_event(
                     focus: m.capture().map(|role| PieceAt {
                         role,
                         color: line.solver().other(),
-                        square: m.to(),
+                        square: board::captured_square(m),
                     }),
                     targets: Vec::new(),
                     geometry: Geometry::Relation {

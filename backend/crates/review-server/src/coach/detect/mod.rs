@@ -19,7 +19,7 @@ mod tempo;
 mod trade;
 
 use review_core::Phase;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shakmaty::{Chess, Color, Move, Position, Square};
 use ts_rs::TS;
 
@@ -43,7 +43,7 @@ pub fn good_tags(ctx: &MoveCtx<'_>, threat: Option<&[Move]>) -> Vec<Found> {
 
 /// Our board-event vocabulary. **Declaration order is priority order**: when
 /// several tags apply, the earlier one is said.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Tag {

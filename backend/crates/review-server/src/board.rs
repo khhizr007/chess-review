@@ -125,6 +125,15 @@ pub fn move_squares(m: Move) -> (Option<Square>, Square) {
     }
 }
 
+/// The square of the piece a capture takes (behind the destination for en
+/// passant).
+pub fn captured_square(m: Move) -> Square {
+    match m {
+        Move::EnPassant { from, to } => Square::from_coords(to.file(), from.rank()),
+        other => other.to(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
