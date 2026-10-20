@@ -37,6 +37,8 @@ import coach_tags as ct  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ORACLE = Path(os.path.expanduser("~/work/chesscom/oracle"))
 BAD = ("inaccuracy", "mistake", "blunder", "miss")
+# Chess.com writes Great Find as "great", we write "great_find".
+GOOD = ("brilliant", "great", "great_find", "best", "excellent", "good")
 CATEGORIES = ("exact", "same tag, other circumstance", "same family", "different",
               "they explain, we don't", "we explain, they don't", "neither")
 
@@ -60,6 +62,20 @@ def our_main(coach: dict) -> dict | None:
     return coach["events"][sents[0]["event"]]
 
 
+def our_best(coach: dict) -> dict | None:
+    """Our event for what the best move would have done: the first sentence event said as a miss
+    (or "better was"), with the misses step removed so it reads like the best move's own speech."""
+    events = coach.get("events") or []
+    for s in coach.get("sentences") or []:
+        i = s.get("event")
+        if i is None:
+            continue
+        ev = events[i]
+        if ev["chain"] and ev["chain"][0] in ("misses", "misses_same"):
+            return {**ev, "chain": ev["chain"][1:]}
+    return None
+
+
 def fmt_ours(ev: dict | None) -> str:
     if not ev:
         return "-"
@@ -80,6 +96,12 @@ def categorise(ours: dict | None, theirs: dict | None, tag_index: dict[str, int]
         return "they explain, we don't"
     if theirs is None:
         return "we explain, they don't"
+    threat = ct.threat_match(ours["tag"], ct.our_chain(ours["chain"], ours["tag"]),
+                             theirs["tag"], ct.cc_chain(theirs["chain"], theirs["tag"]))
+    if threat == "exact":
+        return "exact"
+    if threat == "same tag":
+        return "same tag, other circumstance"
     if ct.same_tag(ours["tag"], theirs["tag"]):
         if ct.our_chain(ours["chain"], ours["tag"]) == ct.cc_chain(theirs["chain"], theirs["tag"]):
             return "exact"
@@ -116,6 +138,8 @@ def compare(args) -> dict:
             om = our_main(p.get("coach") or {})
             played = t.get("played") or {}
             tm = played.get("main")
+            ob = our_best(p.get("coach") or {})
+            tb = (t.get("best") or {}).get("main")
             their_tags = {s["tag"] for s in played.get("sentences", []) if s.get("tag_known")}
             our_tags = {e["tag"] for e in (p.get("coach") or {}).get("events", [])}
             records.append({
@@ -137,6 +161,11 @@ def compare(args) -> dict:
                 "their_family": ct.cc_family(tm["tag"], tag_index.get(tm["tag"])) if tm else None,
                 "our_family": ct.our_family(om["tag"]) if om else None,
                 "their_other_tags": sorted(their_tags - ({tm["tag"]} if tm else set())),
+                # The best alternative's own sentence (Chess.com's best_alternative_move speech
+                # against our Misses-block event), compared without the "misses" step.
+                "ours_best": fmt_ours(ob),
+                "theirs_best": fmt_theirs(tb),
+                "best_category": categorise(ob, tb, tag_index) if (ob or tb) else None,
             })
     return {"records": records, "skipped": skipped}
 
@@ -213,6 +242,41 @@ def report(res: dict, args) -> str:
     lines += ["", "## All plies by Chess.com classification", ""]
     classes = ["brilliant", "great", "best", "excellent", "good", "book", "forced", *BAD]
     lines += table(["class", "plies", *CATEGORIES], category_rows(recs, lambda r: r["cc_class"], classes))
+
+    good = [r for r in recs if r["cc_class"] in GOOD]
+    both_good = [r for r in good if r["our_class"] in GOOD]
+    lines += ["", f"## Good moves (Chess.com {', '.join(GOOD)}; {len(both_good)} plies both apps label good)", ""]
+    cg = Counter(r["category"] for r in both_good)
+    lines += table(["category", "plies", "share"],
+                   [[cat, cg[cat], pct(cg[cat], len(both_good))] for cat in CATEGORIES])
+    lines += ["", "### Chess.com's main event on good moves, by family", ""]
+    gf = Counter(r["their_family"] or "(none)" for r in both_good)
+    lines += table(["family", "plies", "share"], [[f, n, pct(n, len(both_good))] for f, n in gf.most_common()])
+    lines += ["", "### Disagreement patterns on good moves (Chess.com → ours)", ""]
+    gp = defaultdict(list)
+    for r in both_good:
+        if r["category"] in ("exact", "neither"):
+            continue
+        gp[(r["theirs"], r["ours"], r["category"])].append(r)
+    lines += table(["Chess.com", "ours", "category", "plies", "examples"],
+                   [[t, o, cat, len(rs), "; ".join(x["ref"] for x in rs[:3])]
+                    for (t, o, cat), rs in sorted(gp.items(), key=lambda kv: -len(kv[1]))[: args.top]])
+
+    bb = [r for r in both_bad if r["best_category"]]
+    lines += ["", f"## The best-move sentence on plies both label bad ({len(bb)} with a sentence on either side)", "",
+              "Chess.com's speech for the best alternative against our Misses-block event, without the "
+              "\"misses\" step.", ""]
+    cb = Counter(r["best_category"] for r in bb)
+    lines += table(["category", "plies", "share"], [[cat, cb[cat], pct(cb[cat], len(bb))] for cat in CATEGORIES])
+    bp = defaultdict(list)
+    for r in bb:
+        if r["best_category"] in ("exact", "neither"):
+            continue
+        bp[(r["theirs_best"], r["ours_best"], r["best_category"])].append(r)
+    lines += ["", "### Patterns (Chess.com → ours)", ""]
+    lines += table(["Chess.com", "ours", "category", "plies", "examples"],
+                   [[t, o, cat, len(rs), "; ".join(x["ref"] for x in rs[:3])]
+                    for (t, o, cat), rs in sorted(bp.items(), key=lambda kv: -len(kv[1]))[: args.top]])
 
     lines += ["", "## Chess.com's main event on bad moves, by family", ""]
     fam = Counter(r["their_family"] or "(none)" for r in bad)

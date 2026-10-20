@@ -16,8 +16,17 @@ our own paraphrases.
 |---|---|---:|---:|---|---|
 | 2026-10-20 | `f5f0b35` (main, phase 1 coach) | 142 | 8,638 | Stockfish 18 depth 18 MultiPV 3 / Stockfish 18 (CEE 1.198.16) | [`runs/coach-phase0/coach-report.md`](../../tests/calibration/runs/coach-phase0/coach-report.md) |
 
-Repeat after Phase 2 merges with the same commands (below) and a new run name. The captures do not
-need to be taken again.
+| 2026-10-20 | `e4ead28` (main, phases 1–3) | 142 | 8,638 | same | [`runs/coach-main-e4ead28/coach-report.md`](../../tests/calibration/runs/coach-main-e4ead28/coach-report.md) |
+
+The second run adds:
+
+- good moves and the best-move sentence to the report;
+- the Phase 2 tags to the mapping.
+
+Its results and the remaining gaps are analysed in [`coach-gap-analysis.md`](../coach-gap-analysis.md).
+
+Repeat with the same commands (below) and a new run name. The captures do not need to be taken
+again.
 
 ## Method
 

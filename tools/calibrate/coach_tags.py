@@ -71,6 +71,11 @@ OUR_TAGS: dict[str, tuple[str, tuple[str, ...]]] = {
     "bad_trade": ("bad-move base", ("InferiorTrade", "BadTrade", "BadCaptureChoice")),
     "hangs_piece": ("bad-move base", ("HangsPiece",)),
     "hangs_pawn": ("bad-move base", ("HangsPawn",)),
+    # 8. Defence (phase 2).
+    "defends_piece": ("defence", ("DefendsPiece", "ProtectsPiece", "BlocksAttacker")),
+    "escapes_threat": ("defence", ("EscapesThreat", "Retreat", "ObviousRetreat")),
+    "blocks_check": ("defence", ("BlocksChecker",)),
+    "counter_threat": ("defence", ("CounterThreat",)),
     # Fallback: material won through no named tactic.
     "material_gain": ("free material", ("WinsMaterial", "WinsMaterialNotFree", "LosesMaterial",
                                         "PickUpPieceInTactic", "LosesMaterialLosingPosition",
@@ -219,6 +224,29 @@ CC_IMPLIED_STEPS = {
     "FreePieceFromDistance": ("wins_material",),
     "AttacksTrappedPiece": ("wins_material",),
 }
+
+
+# Chess.com says a threat with a tag of its own (the move creates a threat to capture, or a mate
+# threat); we say it as THREATENS (or PREVENTS) in front of the tactic or mate that is threatened.
+CC_CAPTURE_THREAT = ("CaptureThreat", "CaptureThreatTo", "CaptureThreatFrom")
+CC_MATE_THREAT = ("MateThreat", "NmpMateInXThreat")
+THREAT_FAMILIES = ("free material", "double attack", "line tactic", "defender tactic")
+
+
+def threat_match(our_tag: str, our_chain_: tuple[str, ...], cc_tag: str,
+                 cc_chain_: tuple[str, ...]) -> str | None:
+    """'exact' / 'same tag' when our threat event says what their threat tag says, else None."""
+    if cc_tag in CC_CAPTURE_THREAT and our_tag in OUR_TAGS and our_family(our_tag) in THREAT_FAMILIES:
+        if "threatens" not in our_chain_:
+            return None
+        rest = tuple(c for c in our_chain_ if c not in ("threatens", "wins_material", "leads_to"))
+        return "exact" if rest == cc_chain_ else "same tag"
+    if cc_tag in CC_MATE_THREAT and our_tag in OUR_TAGS and our_family(our_tag) == "mate":
+        want = cc_chain_ if "prevents" in cc_chain_ else (*cc_chain_, "threatens")
+        if "threatens" not in our_chain_ and "prevents" not in our_chain_:
+            return None
+        return "exact" if our_chain_ == want else "same tag"
+    return None
 
 
 def our_chain(chain: list[str], tag: str | None = None) -> tuple[str, ...]:
