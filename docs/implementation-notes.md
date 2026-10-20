@@ -186,7 +186,8 @@ These are only consulted when precision is Mistake or Blunder, under the recover
 (phase 1), and Brilliant, Great Find, Best, Excellent and Good moves by what they do, threaten or stop
 (phase 2). It is pure: it reads the engine lines the review already has, including the null-move
 threat searches (see "Search model"), and makes no engine calls. The output is `PlyReview.coach`;
-`explanation` stays for the details drawer. Book and Forced moves get an empty note.
+`explanation` stays for the details drawer. A Forced move gets one sentence ("Kh2 was the only legal
+move."); a Book move gets an empty note.
 
 - **Nodes.** P is the played move, with its own line (the MultiPV line that starts with it, or P
   followed by the next position's line 1). R is the opponent's best reply: line 1 of the next position
@@ -199,7 +200,8 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
 - **Tags** (`detect/`): our own `Tag` enum, whose declaration order is the priority order. Groups 1–7
   of §6.4 are written from chess semantics and the lichess tagger *description*
   (`coach-research-notes.md` §2.1), not from its code. Choices that differ from that description:
-  - fork targets include pawns only when they are hanging;
+  - a fork target is worth more than the forker (the king counts), or is undefended and cannot take
+    the forker; pawns count only when undefended;
   - a line piece also forks through a friendly piece in front of it (a battery) when the piece
     behind becomes newly lost (6...Nf6 7.Qb3 hits b7, and f7 through the c4 bishop);
   - `FreePiece` counts only on the first move of a line (later captures collect what a tactic won),
@@ -219,9 +221,13 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
   - BASE: for a bad move, the bad-move tags on P. For a good move, the event of P's own line (as for
     PERMITS below: a mate, the tactic behind its gain, or a tactic of P itself) and the defence tags.
   - PERMITS / MISSES: R's or B's line. If its first mover mates, the event is a mate tag:
-    `BackRankMate` when the mating move fits the pattern, else `Checkmate` (mate in one) or
-    `ForcedMate`. If the line wins at least a pawn, the highest-priority tactic among that side's moves
-    up to the gain ply is chosen: WINS_MATERIAL when it is the first move, LEADS_TO when it comes later.
+    `BackRankMate` or `Checkmate` when the first move mates; a longer mate is `ForcedMate`, whatever
+    the final pattern (a pattern is named only on the mating move). If the line wins at least a pawn,
+    the highest-priority tactic among that side's moves up to the gain ply is chosen: WINS_MATERIAL
+    when it is the first move, LEADS_TO when it comes later. In R's line (PERMITS) a tactic is named
+    only on R's first move, or on its second after a quiet check (a check that captures nothing);
+    further down the gain is `MaterialGain`, "allows … to win material". This follows Chess.com,
+    which says LosesMaterial for most deeper tactics (coach run `coach-main-e4ead28`).
     If no tactic is found, the fallback is `MaterialGain`. A line that wins nothing reports a tactic of
     its first move, if any. The gain is placed on the winning side's last capture before the material
     settles, never on the other side's move after it (10...cxb5 Bxb5+ "cxb5 wins a pawn").
@@ -236,9 +242,14 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
   - Gains are counted from **before** the move that led to the line, when that move captured. So a
     recapture is not a gain: after 4...Bxf3, 5.Qxf3 wins nothing. Null-move lines have no such move.
   - MISSES_SAME: B takes, for free, the piece on the square the opponent's last move went to.
+  - A capture that R takes back, where R's piece cannot be won in turn, gave the piece away: R's event
+    is `FreePiece`, although it is a recapture (7...Nxd5 8.Bxd5 "wins Black's knight on d5").
 - **Prioritiser** (`priority.rs`, §6.5):
-  - The Permits block: mate; a bad BASE tag (unless R's tactic wins 200 cp more than it puts at
-    stake); a named tactic with a gain; a free piece; `MaterialGain`; any PERMITS event.
+  - The Permits block: mate; R's free piece when the BASE tag is `IgnoresThreat` or `BadTrade` (the
+    piece is simply lost); a bad BASE tag (unless R's tactic wins 200 cp more than it puts at stake,
+    not counting a tactic that wins the BASE tag's own piece); a named tactic with a gain; a free
+    piece; `MaterialGain`; any PERMITS event. An `IgnoresThreat` or `BadTrade` that is kept (the
+    piece is lost in an exchange, not for free) is worded as losing material.
   - The Misses block: mate; MISSES_SAME; a named tactic with a gain; a free piece; `MaterialGain`; any
     MISSES event.
   - A Miss runs the Misses block first, every other bad move the Permits block first. When the main
@@ -251,8 +262,9 @@ threat searches (see "Search model"), and makes no engine calls. The output is `
     any THREATENS; any PREVENTS; `MaterialGain` on its own line. Good moves get no "better" sentence.
 - **Realiser** (`realise.rs`, `text/en.toml`):
   - A sentence is a frame (by circumstance chain and style) with the tag's phrase spliced in.
-  - Styles `you`, `opponent` and `neutral`. The pipeline uses `neutral` ("White", "Black's knight"),
-    because the API does not know which side the user played.
+  - Styles `you`, `opponent` and `neutral`. The review request's `player_side` picks `you` for the
+    player's moves and `opponent` for the other side's; without it the style is `neutral` ("White",
+    "Black's knight"). The frontend asks before the review ("This is me") and remembers the username.
   - Placeholders: `{move} {reply} {line} {best} {mover} {piece} {piece_role} {square} {targets}
     {gain} {n}`.
   - Fragments for moves and pieces carry the event's arrows and squares. Moves keep their SAN

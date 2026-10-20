@@ -59,6 +59,9 @@ tagged `PgnError` (`illegal_move` with game, ply and SAN; `invalid_start_positio
 - Use either `depth` (1–40) or `movetime_ms` (50–60000) instead of `strength`.
 - `multipv` is 1–5.
 - `config` (a `ReviewConfig`) overrides the review rules.
+- `player_side` (`"white"` or `"black"`) is the side the user played. The coach then talks to them
+  ("you allow …", "your opponent missed …"); without it, it names the colours. It is echoed in the
+  result's `settings.player_side`.
 
 **Response:** a `ReviewStatus`:
 
