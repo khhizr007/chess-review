@@ -71,7 +71,8 @@ fn wins_same_piece(e: &Event, base: &Event) -> bool {
 
 /// What allowing it costs: a mate; for a threat ignored or a bad trade, the
 /// reply that takes the piece (a free piece, or the material won with it);
-/// the move's own error; a tactic of the reply; a free piece; any material; anything else.
+/// the move's own error; a tactic of the reply; a free piece; any material;
+/// anything else.
 ///
 /// The move's own error gives way to a tactic that wins much more than the
 /// error puts at stake, unless that tactic just wins the same piece.

@@ -353,9 +353,9 @@ pub fn line_event(
 /// piece, although it ends an exchange.
 ///
 /// A free piece is one the reply takes and keeps, and the line wins about
-/// that much. When the mover takes back on the square (the piece was only
-/// defended too little), or the line goes on to win clearly more than the
-/// piece, the reply wins material instead.
+/// that much. When the line goes on to win clearly more than the piece, or
+/// the mover takes back on the square anyway, the reply wins material
+/// instead. (A piece the mover can take back with profit is `WinsTrade`.)
 pub fn permits(reply: &Line, played: Move) -> Option<Event> {
     let e = line_event(reply, LineKind::Reply, Circ::Permits, Some(played))?;
     if e.mate_in.is_some() {
