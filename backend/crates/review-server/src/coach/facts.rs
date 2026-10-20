@@ -4,7 +4,7 @@
 //!
 //! Everything here is static: it looks at one board and never searches.
 
-use shakmaty::{Bitboard, Board, Chess, Color, Position, Role, Square, attacks};
+use shakmaty::{Bitboard, Board, Chess, Color, File, Position, Rank, Role, Square, attacks};
 
 use crate::analysis::see;
 
@@ -230,6 +230,116 @@ pub fn defended_by(board: &Board, sq: Square) -> Bitboard {
         Some(color) => board.attacks_from(sq) & board.by_color(color),
         None => Bitboard::EMPTY,
     }
+}
+
+// ---------------------------------------------------------------- structure
+
+/// The four centre squares.
+pub const CENTER: Bitboard = Bitboard(0x0000_0018_1800_0000);
+/// The sixteen squares from c3 to f6.
+pub const BIG_CENTER: Bitboard = Bitboard(0x0000_3c3c_3c3c_0000);
+
+pub fn pawns(board: &Board, color: Color) -> Bitboard {
+    board.pawns() & board.by_color(color)
+}
+
+/// The files next to `file`.
+fn neighbour_files(file: File) -> Bitboard {
+    [-1, 1]
+        .into_iter()
+        .filter_map(|d| file.offset(d))
+        .fold(Bitboard::EMPTY, |bb, f| bb | Bitboard::from_file(f))
+}
+
+/// Squares strictly ahead of `sq` for `color` on its own rank count (ranks
+/// further up the board for White, down for Black).
+fn ahead(sq: Square, color: Color) -> Bitboard {
+    let rank = sq.rank().to_u32();
+    (0..8)
+        .filter(|r| match color {
+            Color::White => *r > rank,
+            Color::Black => *r < rank,
+        })
+        .fold(Bitboard::EMPTY, |bb, r| {
+            bb | Bitboard::from_rank(Rank::new(r))
+        })
+}
+
+/// The pawn on `sq` has no pawn of its side on the files next to it.
+pub fn is_isolated(board: &Board, sq: Square) -> bool {
+    board
+        .color_at(sq)
+        .is_some_and(|color| (pawns(board, color) & neighbour_files(sq.file())).is_empty())
+}
+
+/// Pawns of `color` that share their file with another pawn of `color`.
+pub fn doubled(board: &Board, color: Color) -> Bitboard {
+    pawns(board, color)
+        .into_iter()
+        .filter(|sq| (pawns(board, color) & Bitboard::from_file(sq.file())).more_than_one())
+        .collect()
+}
+
+/// Pawns of `color` with no pawn of their side on the files next to them.
+pub fn isolated(board: &Board, color: Color) -> Bitboard {
+    pawns(board, color)
+        .into_iter()
+        .filter(|sq| is_isolated(board, *sq))
+        .collect()
+}
+
+/// The pawn on `sq` has no opponent pawn ahead of it on its file or the
+/// files next to it.
+pub fn is_passed(board: &Board, sq: Square) -> bool {
+    let Some(color) = board.color_at(sq) else {
+        return false;
+    };
+    let span = (Bitboard::from_file(sq.file()) | neighbour_files(sq.file())) & ahead(sq, color);
+    (pawns(board, color.other()) & span).is_empty()
+}
+
+pub fn passed(board: &Board, color: Color) -> Bitboard {
+    pawns(board, color)
+        .into_iter()
+        .filter(|sq| is_passed(board, *sq))
+        .collect()
+}
+
+/// The pawn on `sq` is backward: no pawn of its side on the files next to it
+/// stands level with it or behind it (none can come up to support it), and
+/// an opponent pawn guards the square in front of it.
+pub fn is_backward(board: &Board, sq: Square) -> bool {
+    let Some(color) = board.color_at(sq) else {
+        return false;
+    };
+    let supporters = pawns(board, color) & neighbour_files(sq.file()) & !ahead(sq, color);
+    let Some(stop) = sq.offset(color.fold_wb(8, -8)) else {
+        return false;
+    };
+    let guarded = (attacks::pawn_attacks(color, stop) & pawns(board, color.other())).any();
+    supporters.is_empty()
+        && !(pawns(board, color) & neighbour_files(sq.file())).is_empty()
+        && guarded
+}
+
+pub fn backward(board: &Board, color: Color) -> Bitboard {
+    pawns(board, color)
+        .into_iter()
+        .filter(|sq| is_backward(board, *sq))
+        .collect()
+}
+
+/// A file with no pawns on it.
+pub fn is_open_file(board: &Board, file: File) -> bool {
+    (board.pawns() & Bitboard::from_file(file)).is_empty()
+}
+
+/// Squares the piece on `sq` attacks that are not taken by its own pieces.
+pub fn mobility(board: &Board, sq: Square) -> usize {
+    let own = board
+        .color_at(sq)
+        .map_or(Bitboard::EMPTY, |c| board.by_color(c));
+    (board.attacks_from(sq) & !own).count()
 }
 
 #[cfg(test)]

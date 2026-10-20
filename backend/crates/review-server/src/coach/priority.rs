@@ -58,6 +58,8 @@ fn bare_tactic(e: &Event) -> bool {
         && !e.tag().is_mate()
         && !e.tag().is_good_base()
         && !e.tag().is_sacrifice()
+        && !e.tag().is_positional()
+        && !e.tag().is_positional_error()
         && !matches!(e.tag(), Tag::OnlyMove | Tag::Slide | Tag::MaterialGain)
 }
 
@@ -77,7 +79,7 @@ fn wins_same_piece(e: &Event, base: &Event) -> bool {
 /// The move's own error gives way to a tactic that wins much more than the
 /// error puts at stake, unless that tactic just wins the same piece.
 fn permits_block(events: &[Event]) -> Option<usize> {
-    let permits = |e: &Event| e.first() == Circ::Permits;
+    let permits = |e: &Event| e.first() == Circ::Permits && !e.tag().is_positional();
     let base = first_by_tag(events, |e| e.first() == Circ::Base && e.tag().is_bad_base());
     let outweighed = |b: &Event| {
         let tactic_gain = events
@@ -114,12 +116,14 @@ fn permits_block(events: &[Event]) -> Option<usize> {
 
 /// What the best move B would have done, said like a played good move: a
 /// mate on its line; the piece just left hanging; a sacrifice; the tactic
-/// that wins material; a piece it takes; a mate it threatens or stops; what
-/// it does by itself (a trade, a defence, a tempo); a tactic that wins
-/// nothing; any threat; any threat it stops; a plain material gain; and last
-/// that it was the only good move. This follows the good-move order of
-/// [`select_good`], with the piece just left hanging added.
-fn misses_block(events: &[Event]) -> Option<usize> {
+/// that wins material; a piece it takes; a mate it threatens or stops; a
+/// weakness it forces; what it does by itself (a trade, a defence, a
+/// tempo); a tactic that wins nothing; its positional idea; any threat; any
+/// threat it stops; a plain material gain; and last that it was the only
+/// good move. This follows the good-move order of [`select_good`], with the
+/// piece just left hanging added. Without `positional`, B's positional
+/// ideas are left out.
+fn misses_block(events: &[Event], positional: bool) -> Option<usize> {
     let misses = |e: &Event| matches!(e.first(), Circ::Misses | Circ::MissesSame);
     // The circumstance after MISSES says whose line it is: B's own, or the
     // null-move lines of what it threatens and stops.
@@ -128,7 +132,10 @@ fn misses_block(events: &[Event]) -> Option<usize> {
         move |e: &Event| misses(e) && !matches!(then(e), Some(Circ::Threatens | Circ::Prevents));
     let threat = move |e: &Event| misses(e) && then(e) == Some(Circ::Threatens);
     let stops = move |e: &Event| misses(e) && then(e) == Some(Circ::Prevents);
-    let slots: [Slot<'_>; 13] = [
+    let idea = move |e: &Event, weakness: bool| {
+        positional && own(e) && e.tag().is_positional() && e.tag().outranks_trades() == weakness
+    };
+    let slots: [Slot<'_>; 15] = [
         Box::new(move |e| own(e) && e.tag().is_mate()),
         Box::new(|e| e.first() == Circ::MissesSame),
         Box::new(move |e| own(e) && e.tag().is_sacrifice()),
@@ -136,8 +143,10 @@ fn misses_block(events: &[Event]) -> Option<usize> {
         Box::new(move |e| own(e) && takes_piece(e.tag())),
         Box::new(move |e| threat(e) && e.tag().is_mate()),
         Box::new(move |e| stops(e) && e.tag().is_mate()),
+        Box::new(move |e| idea(e, true)),
         Box::new(move |e| own(e) && e.tag().is_good_base()),
         Box::new(move |e| own(e) && bare_tactic(e)),
+        Box::new(move |e| idea(e, false)),
         Box::new(threat),
         Box::new(stops),
         Box::new(move |e| own(e) && e.tag() == Tag::MaterialGain),
@@ -147,20 +156,35 @@ fn misses_block(events: &[Event]) -> Option<usize> {
 }
 
 /// What to say about a bad move. `miss` puts the missed chance first. When
-/// neither what it allows nor what it misses has a motif, what it threatens is
-/// said; then that the best move was the only good one; then, last, that the
-/// evaluation slid. The best move is said after any main event that is not
-/// already about it.
+/// neither what it allows nor what it misses has a motif, a positional error
+/// of the move is said; then a weakness the reply forces on our pawns; then
+/// the best move's positional idea; then what the move threatens; then that
+/// the best move was the only good one; then, last, that the evaluation
+/// slid. The best move is said after any main event that is not already
+/// about it.
 pub fn select_bad(events: &[Event], miss: bool) -> Selection {
     let permits = permits_block(events);
-    let misses = misses_block(events);
-    // "The only good move" is said only when nothing else is.
-    let missed_idea = misses.filter(|&i| events[i].tag() != Tag::OnlyMove);
+    let misses = misses_block(events, true);
+    // "The only good move" is said only when nothing else is, and the best
+    // move's positional idea only after the move's own errors.
+    let missed_idea = misses_block(events, false).filter(|&i| events[i].tag() != Tag::OnlyMove);
+    let missed_plan = misses.filter(|&i| events[i].tag().is_positional());
     let main = if miss {
         missed_idea.or(permits)
     } else {
         permits.or(missed_idea)
     }
+    .or_else(|| {
+        first_by_tag(events, |e| {
+            e.first() == Circ::Base && e.tag().is_positional_error()
+        })
+    })
+    .or_else(|| {
+        first_by_tag(events, |e| {
+            e.first() == Circ::Permits && e.tag().is_positional()
+        })
+    })
+    .or(missed_plan)
     .or_else(|| first_by_tag(events, |e| e.first() == Circ::Threatens))
     .or(misses)
     .or_else(|| first_by_tag(events, |e| e.tag() == Tag::Slide));
@@ -178,8 +202,9 @@ pub fn select_bad(events: &[Event], miss: bool) -> Selection {
 
 /// What to say about a good move: a mate on its own line; a Brilliant
 /// sacrifice (then what it leads to); the tactic that wins material there; a
-/// mate it threatens; a mate it stops; what it does by itself (a trade, a
-/// defence, a tempo); a tactic that wins nothing; any threat it makes; any
+/// mate it threatens; a mate it stops; a weakness it forces on the
+/// opponent's pawns; what it does by itself (a trade, a defence, a tempo); a
+/// tactic that wins nothing; its positional idea; any threat it makes; any
 /// threat it stops; a plain material gain on its line; and last that it was
 /// the only good move.
 pub fn select_good(events: &[Event]) -> Selection {
@@ -192,8 +217,10 @@ pub fn select_good(events: &[Event]) -> Selection {
         Box::new(move |e| own(e) && e.gain.is_some() && e.tag() != Tag::MaterialGain),
         Box::new(move |e| threatens(e) && e.tag().is_mate()),
         Box::new(move |e| prevents(e) && e.tag().is_mate()),
+        Box::new(move |e| own(e) && e.tag().outranks_trades()),
         Box::new(move |e| own(e) && e.tag().is_good_base()),
         Box::new(move |e| own(e) && bare_tactic(e)),
+        Box::new(move |e| own(e) && e.tag().is_positional()),
         Box::new(threatens),
         Box::new(prevents),
         Box::new(move |e| own(e) && e.tag() == Tag::MaterialGain),

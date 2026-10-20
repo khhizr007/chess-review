@@ -142,6 +142,10 @@ pub struct CoachConfig {
     /// Also run the threat search after the engine's best move, where the
     /// played move is not it: what the best move would have threatened.
     pub best_threat_search: bool,
+    /// Leave out ideas above the player's rating (each coach tag has a
+    /// minimum rating). The rating is the player's Elo from the PGN when
+    /// `player_side` is known, else the rating used for expected points.
+    pub rating_gates: bool,
 }
 
 impl Default for ReviewConfig {
@@ -202,6 +206,7 @@ impl Default for CoachConfig {
         Self {
             threat_search_depth: 10,
             best_threat_search: true,
+            rating_gates: true,
         }
     }
 }

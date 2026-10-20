@@ -55,12 +55,27 @@ async fn scholars_mate_blunder_is_explained_by_the_mate_it_allows() {
     assert_eq!(nf6.coach.show_lines[0].moves[0].san, "Qxf7#");
     // The factual sentences stay for the details drawer.
     assert!(!nf6.explanation.is_empty());
-    // Book moves get no coach note; a forced move gets one sentence.
+    // A book move is said only by its development idea; a forced move gets
+    // one sentence.
     for p in r.plies.iter().filter(|p| !explains(p.classification)) {
+        if p.classification == Some(Classification::Book) {
+            assert!(p.coach.sentences.len() <= 1, "ply {}", p.ply);
+            assert!(
+                p.coach.events.iter().all(|e| e.tag.is_development()),
+                "ply {}",
+                p.ply
+            );
+            continue;
+        }
         let expected = usize::from(p.classification == Some(Classification::Forced));
         assert_eq!(p.coach.sentences.len(), expected, "ply {}", p.ply);
         assert!(p.coach.events.is_empty(), "ply {}", p.ply);
     }
+    // 2.Bc4 (book) develops toward d5.
+    assert_eq!(
+        r.plies[2].coach.text(),
+        vec!["Bc4 is a book move: it develops White's bishop toward the centre."]
+    );
 }
 
 #[tokio::test]
@@ -100,7 +115,9 @@ async fn every_explained_sentence_is_backed_by_an_event_with_a_line() {
                 }
             }
             if let Some(main) = p.coach.main_event() {
-                assert!(explains(p.classification));
+                assert!(
+                    explains(p.classification) || p.classification == Some(Classification::Book)
+                );
                 assert!(!p.coach.show_lines.is_empty());
                 let marked = p.coach.sentences[0]
                     .fragments

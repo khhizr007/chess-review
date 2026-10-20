@@ -27,6 +27,7 @@ use crate::coach;
 use crate::engine::{
     AnalysisRequest, EngineError, EngineLine, Evaluator, PositionAnalysis, SearchLimit,
 };
+use crate::human::{HumanModel, MoveQuery};
 use crate::openings::OpeningBook;
 use crate::pgn::ParsedGame;
 use detectors::{
@@ -84,6 +85,20 @@ pub async fn run_review(
     cancel: CancellationToken,
     progress: ProgressFn,
 ) -> Result<ReviewResult, ReviewError> {
+    run_review_with_model(request, evaluator, None, openings, cancel, progress).await
+}
+
+/// [`run_review`] with a human-move model for the coach's difficulty wording
+/// (`crate::human`). A failing model is logged and the review goes on
+/// without it.
+pub async fn run_review_with_model(
+    request: ReviewRequest,
+    evaluator: Arc<dyn Evaluator>,
+    human: Option<Arc<dyn HumanModel>>,
+    openings: Arc<OpeningBook>,
+    cancel: CancellationToken,
+    progress: ProgressFn,
+) -> Result<ReviewResult, ReviewError> {
     let game = &request.game;
     if game.moves.is_empty() {
         return Err(ReviewError::NoMoves);
@@ -91,13 +106,76 @@ pub async fn run_review(
     let book = book_flags(game, &openings, &request.config);
     let positions =
         analyse_positions(&request, &book, evaluator.as_ref(), &cancel, progress).await?;
+    let odds = match human {
+        Some(model) => human_odds(&request, &positions, &book, model.as_ref()).await,
+        None => Vec::new(),
+    };
     Ok(build_review(
         &request,
         &positions,
         &openings,
         &book,
+        &odds,
         &evaluator.name(),
     ))
+}
+
+/// Queries per call to the human-move model.
+const HUMAN_BATCH: usize = 256;
+
+/// Per move (book moves excluded): how likely a player of the mover's rating
+/// was to play it and the engine's best move. Ratings come from the PGN,
+/// else the rating used for expected points. Empty when the model fails.
+async fn human_odds(
+    request: &ReviewRequest,
+    infos: &[PositionInfo],
+    book: &[bool],
+    model: &dyn HumanModel,
+) -> Vec<Option<coach::Difficulty>> {
+    let game = &request.game;
+    let rating = rating_for_expected_points(
+        game.elo(Color::White),
+        game.elo(Color::Black),
+        &request.config,
+    );
+    let elo = |c: Color| game.elo(c).unwrap_or(rating.max(0) as u32);
+    let mut plies = Vec::new();
+    let mut queries = Vec::new();
+    for (i, parsed) in game.moves.iter().enumerate() {
+        let best = infos[i]
+            .analysis
+            .as_ref()
+            .and_then(PositionAnalysis::best)
+            .and_then(|l| l.pv.first());
+        let (Some(best), false) = (best, book[i]) else {
+            continue;
+        };
+        let mover = game.positions[i].turn();
+        plies.push(i);
+        queries.push(MoveQuery {
+            fen: board::fen(&game.positions[i]),
+            moves: vec![parsed.uci.clone(), best.clone()],
+            elo_self: elo(mover),
+            elo_oppo: elo(mover.other()),
+        });
+    }
+    let mut out = vec![None; game.moves.len()];
+    for (chunk, at) in queries.chunks(HUMAN_BATCH).zip(plies.chunks(HUMAN_BATCH)) {
+        match model.odds(chunk).await {
+            Ok(odds) => {
+                for (i, p) in at.iter().zip(odds) {
+                    if let [played, best] = p[..] {
+                        out[*i] = Some(coach::Difficulty { played, best });
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("human-move model: {e}; the coach goes on without it");
+                return Vec::new();
+            }
+        }
+    }
+    out
 }
 
 /// Per move: the position after it is a book position.
@@ -410,6 +488,7 @@ fn build_review(
     infos: &[PositionInfo],
     openings: &OpeningBook,
     book: &[bool],
+    odds: &[Option<coach::Difficulty>],
     engine: &str,
 ) -> ReviewResult {
     let game = &request.game;
@@ -417,6 +496,20 @@ fn build_review(
     let white_elo = game.elo(Color::White);
     let black_elo = game.elo(Color::Black);
     let rating = rating_for_expected_points(white_elo, black_elo, cfg);
+    // The coach's rating gates: the player's own Elo when we know who they
+    // are, else the rating used for expected points.
+    let coach_rating = cfg.coach.rating_gates.then(|| {
+        request
+            .player_side
+            .and_then(|s| {
+                game.elo(if s == Side::White {
+                    Color::White
+                } else {
+                    Color::Black
+                })
+            })
+            .map_or(rating, |e| e as i32)
+    });
     let highest_elo = white_elo.unwrap_or(0).max(black_elo.unwrap_or(0));
     let phases = phases(game);
     let horizon = cfg.material_horizon_plies;
@@ -708,6 +801,9 @@ fn build_review(
                 .map(|s| s.square),
             swing: Some((oc(mover_value_before), oc(played_value))),
             classification: outcome.classification,
+            phase: phase_after,
+            rating: coach_rating,
+            difficulty: odds.get(i).copied().flatten(),
             style: coach::Style::for_player(request.player_side, mover),
             horizon,
             seed: i as u32,

@@ -6,6 +6,7 @@ pub mod board;
 pub mod coach;
 pub mod config;
 pub mod engine;
+pub mod human;
 pub mod jobs;
 pub mod openings;
 pub mod pgn;

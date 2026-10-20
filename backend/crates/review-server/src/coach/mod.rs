@@ -19,7 +19,14 @@
 //!
 //! Bad moves (Inaccuracy, Mistake, Blunder, Miss) are explained by what they
 //! allow and miss; good moves (Brilliant, Great Find, Best, Excellent, Good) by
-//! what they do, threaten and stop.
+//! what they do, threaten and stop. Positional ideas (development, the
+//! centre, activity, pawn structure) come after the tactics, and book moves
+//! are explained by their development idea alone.
+//!
+//! Each tag has a minimum rating (`text/en.toml`): above the player's
+//! rating it is not said. When a human-move model says how likely the
+//! player was to find the best move, or to play the move, the wording says
+//! so ("hard to find at this level", "looks natural, but").
 
 pub mod circ;
 pub mod detect;
@@ -29,7 +36,7 @@ pub mod priority;
 pub mod realise;
 
 use review_core::expected_points::ExpectedOutcome;
-use review_core::{Classification, Eval, Side};
+use review_core::{Classification, Eval, Phase, Side};
 use serde::Serialize;
 use shakmaty::{Chess, Color, Move, Position, Role, Square};
 use ts_rs::TS;
@@ -195,12 +202,37 @@ pub struct CoachInput<'a> {
     /// The expected outcome for the mover before and after the move.
     pub swing: Option<(ExpectedOutcome, ExpectedOutcome)>,
     pub classification: Option<Classification>,
+    /// The game phase after the move.
+    pub phase: Phase,
+    /// The player's rating for the rating gates: tags whose `min_rating` is
+    /// above it are not said. `None` says every tag.
+    pub rating: Option<i32>,
+    /// How likely players of the mover's rating are to play the move and the
+    /// best move (from a human-move model), when known.
+    pub difficulty: Option<Difficulty>,
     pub style: Style,
     /// Plies of a line to inspect for material (extended through exchanges).
     pub horizon: u32,
     /// Picks among the wordings of a sentence (the ply number keeps it stable).
     pub seed: u32,
 }
+
+/// The chance that a player of the mover's rating plays a move (a human-move
+/// model's prediction; `docs/coach-analysis.md` §6.7).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Difficulty {
+    /// P(played move).
+    pub played: f32,
+    /// P(best move).
+    pub best: f32,
+}
+
+/// Below this chance the best move is hard to find at the player's level:
+/// the text about it is softened.
+pub const HARD_TO_FIND: f32 = 0.10;
+/// From this chance a bad move is a natural one at the player's level: the
+/// text leads with the safety check it skipped.
+pub const NATURAL: f32 = 0.30;
 
 /// Bad moves: explained by what they allow and miss.
 pub fn is_bad(classification: Option<Classification>) -> bool {
@@ -242,11 +274,20 @@ fn mate_for(eval: Eval, solver: Color) -> Option<u32> {
     }
 }
 
-/// Coaches one move. A forced move is said to be the only legal move; other
+/// The tag may be said at the input's rating.
+fn allowed(input: &CoachInput<'_>, tag: Tag) -> bool {
+    input.rating.is_none_or(|r| realise::min_rating(tag) <= r)
+}
+
+/// Coaches one move. A forced move is said to be the only legal move; a book
+/// move gets a note when it develops, castles or takes the centre; other
 /// moves the coach does not explain get an empty note.
 pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
     let before = input.before;
     let mover = before.turn();
+    if input.classification == Some(Classification::Book) {
+        return book_note(input);
+    }
     if input.classification == Some(Classification::Forced) {
         let voice = realise::Voice {
             style: input.style,
@@ -349,6 +390,15 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
                 LineKind::Played,
             ));
         }
+        events.extend(circ::positional_events(
+            before,
+            input.played,
+            input.previous,
+            own.as_ref(),
+            LineKind::Played,
+            Circ::Base,
+            input.phase,
+        ));
     } else {
         events.extend(circ::base_events(
             before,
@@ -359,6 +409,15 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
             best.as_ref(),
         ));
         events.extend(reply.as_ref().and_then(|r| circ::permits(r, input.played)));
+        events.extend(circ::positional_errors(
+            before,
+            input.played,
+            &after,
+            input.previous,
+            reply.as_ref(),
+            input.phase,
+        ));
+        events.extend(reply.as_ref().and_then(circ::permits_weakness));
         if let Some(b) = best.as_ref() {
             events.extend(circ::best_events(
                 before,
@@ -367,6 +426,7 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
                 prev_threat.as_ref(),
                 best_threat.as_ref(),
                 input.horizon,
+                input.phase,
             ));
             // Answering a check is the point of the move, not what it leaves.
             if let Some(sq) = input.best_sacrifice.filter(|_| !before.is_check()) {
@@ -400,6 +460,9 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
             .and_then(|t| circ::threatens(t, before, input.played, reply.as_ref())),
     );
 
+    // Ideas above the player's level are not said.
+    events.retain(|e| allowed(input, e.tag()));
+
     let miss = input.classification == Some(Classification::Miss);
     let selection = if good {
         priority::select_good(&events)
@@ -429,6 +492,11 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
             Some(Classification::GreatFind) => Some(realise::Special::GreatFind),
             _ => None,
         },
+        hard: !good && input.difficulty.is_some_and(|d| d.best < HARD_TO_FIND),
+        natural: matches!(
+            input.classification,
+            Some(Classification::Blunder | Classification::Mistake)
+        ) && input.difficulty.is_some_and(|d| d.played >= NATURAL),
     };
     let (sentences, show_lines) = realise::realise(&events, selection, &ctx);
     let line_of = |kind: LineKind| ctx.line(kind);
@@ -436,6 +504,63 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
         sentences,
         show_lines,
         events: events.iter().map(|e| view(e, line_of(e.line))).collect(),
+    }
+}
+
+/// A book move is explained only by its development or centre idea, when it
+/// has one: "Nf3 is a book move: it develops ...".
+fn book_note(input: &CoachInput<'_>) -> CoachNote {
+    let before = input.before;
+    let own = input
+        .played_line
+        .map(|p| Line::parse(before, p.pv, None, input.horizon, input.previous))
+        .filter(|l| l.moves.first() == Some(&input.played));
+    let events: Vec<Event> = circ::positional_events(
+        before,
+        input.played,
+        input.previous,
+        own.as_ref(),
+        LineKind::Played,
+        Circ::Base,
+        input.phase,
+    )
+    .into_iter()
+    .filter(|e| e.tag().is_development() && allowed(input, e.tag()))
+    .collect();
+    let Some(main) = (0..events.len()).min_by_key(|&i| events[i].tag()) else {
+        return CoachNote::default();
+    };
+    let ctx = realise::Context {
+        voice: realise::Voice {
+            style: input.style,
+            mover: before.turn(),
+        },
+        seed: input.seed,
+        before,
+        played: input.played,
+        previous: input.previous,
+        reply: None,
+        best: None,
+        own: own.as_ref(),
+        threat: None,
+        prev_threat: None,
+        best_threat: None,
+        swing: input.swing,
+        miss: false,
+        good: true,
+        special: Some(realise::Special::Book),
+        hard: false,
+        natural: false,
+    };
+    let selection = priority::Selection {
+        main: Some(main),
+        ..priority::Selection::default()
+    };
+    let (sentences, show_lines) = realise::realise(&events, selection, &ctx);
+    CoachNote {
+        sentences,
+        show_lines,
+        events: events.iter().map(|e| view(e, ctx.line(e.line))).collect(),
     }
 }
 

@@ -100,6 +100,9 @@ pub struct TagText {
     pub wins: Option<String>,
     pub vp_long: Option<String>,
     pub label: String,
+    /// The lowest rating at which the coach says this tag (default: any).
+    #[serde(default)]
+    pub min_rating: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -411,6 +414,7 @@ fn san(pos: &Chess, m: Move) -> String {
 pub enum Special {
     Brilliant,
     GreatFind,
+    Book,
 }
 
 impl Special {
@@ -419,6 +423,7 @@ impl Special {
         match self {
             Special::Brilliant => "brilliant",
             Special::GreatFind => "great_find",
+            Special::Book => "book",
         }
     }
 }
@@ -447,6 +452,12 @@ pub struct Context<'a> {
     /// The move is good: no "better was" sentence.
     pub good: bool,
     pub special: Option<Special>,
+    /// The best move is hard to find at the player's level: what was missed
+    /// is said gently (frames ending `_hard`).
+    pub hard: bool,
+    /// The bad move is a natural one at the player's level: the sentence
+    /// leads with the check it skipped (frames ending `_natural`).
+    pub natural: bool,
 }
 
 impl Context<'_> {
@@ -472,6 +483,27 @@ impl Context<'_> {
 
     fn has_frame(&self, key: &str) -> bool {
         corpus().frame.contains_key(key)
+    }
+
+    /// The frame `key` in its difficulty wording, when it has one: `_hard`
+    /// for what was missed when the best move is hard to find, `_natural`
+    /// for what the move allows when it is a natural move.
+    fn variant(&self, key: &str, e: Option<&Event>) -> String {
+        let missed = e.is_none_or(|e| matches!(e.first(), Circ::Misses | Circ::MissesSame));
+        let allowed = e.is_some_and(|e| matches!(e.first(), Circ::Base | Circ::Permits));
+        let suffix = if self.hard && missed {
+            "_hard"
+        } else if self.natural && allowed {
+            "_natural"
+        } else {
+            ""
+        };
+        let wanted = format!("{key}{suffix}");
+        if self.has_frame(&wanted) {
+            wanted
+        } else {
+            key.to_owned()
+        }
     }
 
     fn frame(&self, key: &str) -> &'static str {
@@ -685,6 +717,11 @@ fn tag_text(tag: detect::Tag) -> &'static TagText {
         .unwrap_or_else(|| panic!("tag {} in en.toml", tag.key()))
 }
 
+/// The lowest rating at which the coach says `tag`.
+pub fn min_rating(tag: detect::Tag) -> i32 {
+    tag_text(tag).min_rating
+}
+
 /// Lines leading to the event longer than this are not spelled out in the
 /// sentence (the show-line has them).
 const LONG_LEAD_PLIES: usize = 4;
@@ -800,7 +837,8 @@ pub fn realise(
         Some(key) => sentences.push(ctx.sentence(&key, main, main_line, main_index)),
         None => {
             special_sentence(&mut sentences);
-            sentences.push(ctx.sentence(frame, main, main_line, main_index));
+            let key = ctx.variant(frame, Some(main));
+            sentences.push(ctx.sentence(&key, main, main_line, main_index));
         }
     }
     let label = if matches!(main.first(), Circ::Threatens | Circ::Prevents) || on_null_line(main) {
@@ -832,7 +870,8 @@ pub fn realise(
         Some(i) => {
             let e = &events[i];
             if let Some(line) = ctx.line(e.line) {
-                sentences.push(ctx.sentence(best_frame(e), e, line, i));
+                let key = ctx.variant(best_frame(e), Some(e));
+                sentences.push(ctx.sentence(&key, e, line, i));
                 // A threat or a defence of the best move is shown on the
                 // best line itself.
                 show_lines.extend(if on_null_line(e) {
@@ -846,7 +885,7 @@ pub fn realise(
             let values = ctx.common_values();
             if values.contains_key("best") {
                 sentences.push(Sentence {
-                    fragments: render(ctx.frame("best"), &values, None),
+                    fragments: render(ctx.frame(&ctx.variant("best", None)), &values, None),
                     event: None,
                 });
                 show_lines.extend(ctx.show_line(best_label, None, LineKind::Best, None));

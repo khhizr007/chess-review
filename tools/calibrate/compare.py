@@ -220,6 +220,8 @@ class Reviewer:
         body = {"pgn": pgn, "depth": self.args.depth, "multipv": self.args.multipv}
         if self.args.config_override is not None:
             body["config"] = self.args.config_override
+        if self.args.player_side:
+            body["player_side"] = self.args.player_side
         started = time.monotonic()
         status = http_json("POST", f"{self.url}/api/reviews", body)
         rid = status["id"]
@@ -803,6 +805,9 @@ def parse_args(argv=None):
     p.add_argument("--multipv", type=int, default=3, help="engine lines per position (1-5)")
     p.add_argument("--config", default=None,
                    help="partial ReviewConfig override as JSON, or @path/to/file.json (part of the cache key)")
+    p.add_argument("--player-side", choices=("white", "black"), default=None,
+                   help="review every game as this side's player (the coach's voice and rating gates; "
+                        "part of the cache key)")
     p.add_argument("--games-dir", default=str(REPO_ROOT / "tests/calibration/games"))
     p.add_argument("--runs-dir", default=str(REPO_ROOT / "tests/calibration/runs"))
     p.add_argument("--concurrency", type=int, default=3,
@@ -846,6 +851,8 @@ def main(argv=None) -> int:
                 )
             engine, server_version = health.get("engine"), health.get("version")
         settings = {"depth": args.depth, "multipv": args.multipv, "config": args.config_override}
+        if args.player_side:
+            settings["player_side"] = args.player_side
         base_key = {
             "harness_version": HARNESS_VERSION,
             "git_commit": source["git_commit"],

@@ -93,14 +93,75 @@ OUR_TAGS: dict[str, tuple[str, tuple[str, ...]]] = {
                           "CaptureThreatTo", "CaptureThreatFrom")),
     "gains_tempo": ("defence", ("WinsTempo", "Kicks", "DevelopsWithTempo", "CaptureThreat",
                                 "CaptureThreatTo", "CaptureThreatFrom")),
-    "offers_trade": ("trade", ("OffersTrade",)),
+    # (Phase 4) Challenging an open file with a rook is an offer to trade rooks.
+    "offers_trade": ("trade", ("OffersTrade", "ChallengesOpenFile")),
     # 11. Sacrifices (phase 2b).
     "sacrifice": ("sacrifice", ("DirectSacrificeCapture", "DirectSacrificeEnprise",
                                 "DirectSacrificeCaptureMate", "DirectSacrificeEnpriseMate",
                                 "ExchangeSacrifice")),
     "offers_piece": ("sacrifice", ("IgnoresThreat", "IgnoresThreatMate", "IndirectSacrifice",
                                    "IndirectSacrificeMate")),
-    # 12. The move as a whole (phase 2b).
+    # 13. Positional ideas (phase 4). Chess.com splits development and castling by circumstance
+    # (toward the centre or not, the other king castled or not); our variants are counted as one tag
+    # with all of theirs, the closest listed first.
+    "forces_doubled_pawns": ("positional", ("DoublesPawns", "ForcesDoubledPawns",
+                                            "DoubledIsolatedPawn", "DoublesCastlePawns",
+                                            "ForcesDoubledCastlePawns")),
+    "forces_isolated_pawn": ("positional", ("IsolatesPawn", "ForcesIsolatedPawn",
+                                            "IsolatesPawnOnSemiOpenFile", "DoubledIsolatedPawn")),
+    "strikes_at_center": ("positional", ("StrikesAtCenter",)),
+    "central_break": ("positional", ("CentralBreak",)),
+    "puts_pawn_in_center": ("positional", ("PutsPawnInCenter", "GainsCentralSpace")),
+    "attacks_pawn_chain": ("positional", ("AttacksPawnChain",)),
+    "prepares_central_push": ("positional", ("PreparesCentralPush",)),
+    "rook_on_seventh": ("positional", ("RookOnSeventh", "ConnectsRooks7th")),
+    "outpost": ("positional", ("TakesOutpost", "TakesOutpostWithTempo", "RookTakesOutpost",
+                               "PillsburyKnight", "CarlsbadKnight")),
+    "takes_open_file": ("positional", ("TakesOpenFile", "ChallengesOpenFile")),
+    "battery": ("positional", ("CreatesBattery", "DoublesRooks", "PreparesToDoubleRooks")),
+    "centralizes_knight": ("positional", ("CentralizesKnight",)),
+    "moves_to_active_square": ("positional", ("MovesToActiveSquare", "ManeuversToActiveSquare")),
+    "bishop_gains_scope": ("positional", ("BishopGainsScope", "OpensUpScope",
+                                          "MovesToActiveSquare")),
+    "castles_same_side": ("positional", ("CastlesSameSide", "CastlesKingSide", "CastlesQueenSide",
+                                         "CastlesOppositeSide")),
+    "castles_opposite_side": ("positional", ("CastlesOppositeSide", "CastlesKingSide",
+                                             "CastlesQueenSide", "CastlesSameSide")),
+    "castles_kingside": ("positional", ("CastlesKingSide", "CastlesSameSide",
+                                        "CastlesOppositeSide")),
+    "castles_queenside": ("positional", ("CastlesQueenSide", "CastlesSameSide",
+                                         "CastlesOppositeSide")),
+    "connects_rooks": ("positional", ("ConnectsRooks",)),
+    "fianchetto": ("positional", ("Fianchetto",)),
+    "prepares_to_castle_queenside": ("positional", ("PreparesToCastleQueenside",)),
+    "prepares_to_castle_kingside": ("positional", ("PreparesToCastleKingside",)),
+    "develops_center": ("positional", ("DevelopsCenter", "DevelopsOpening", "Develops",
+                                       "DevelopsLastPiece")),
+    "develops_opening": ("positional", ("DevelopsOpening", "DevelopsCenter", "Develops",
+                                        "DevelopsLastPiece")),
+    "develops_middlegame": ("positional", ("DevelopsMiddlegame", "DevelopsLastPiece", "Develops")),
+    "prepares_bishop_development": ("positional", ("PreparesBishopDevelopment",)),
+    "pushes_passed_pawn": ("positional", ("PushesPassedPawnMiddlegame", "PushesPassedPawnEndgame")),
+    "pushes_passed_pawn_endgame": ("positional", ("PushesPassedPawnEndgame",
+                                                  "PushesPassedPawnMiddlegame")),
+    "makes_passed_pawn": ("positional", ("MakesPassedPawn", "CreatesProtectedPassedPawn")),
+    "king_activity": ("positional", ("ActivatesKing",)),
+    "creates_luft": ("positional", ("CreatesLuft",)),
+    # 14. Positional errors (phase 4), said about a bad move itself.
+    "loses_castling": ("positional", ("LosesCastlingRights",)),
+    "doubled_pawns": ("positional", ("DoublesPawns", "DoublesCastlePawns", "DoubledIsolatedPawn",
+                                     "DoubledIsolatedPawnOnSemiOpenFile", "DoubledBackwardPawn",
+                                     "DoubledBackwardPawnOnSemiOpenFile")),
+    "isolated_pawn": ("positional", ("IsolatesPawn", "IsolatesPawnOnSemiOpenFile",
+                                     "DoubledIsolatedPawn", "DoubledIsolatedPawnOnSemiOpenFile")),
+    "backward_pawn": ("positional", ("CreatesBackwardPawn", "BackwardPawnOnSemiOpenFile",
+                                     "DoubledBackwardPawn", "DoubledBackwardPawnOnSemiOpenFile")),
+    "weakens_king": ("positional", ("NeverPlayF3",)),
+    "moves_pawn_in_front_of_king": ("positional", ("MovesPawnInFrontOfKing",)),
+    "too_early_queen": ("positional", ("TooEarlyQueenDevelopment",)),
+    "moves_same_piece": ("positional", ("MovesSamePieceInOpening",)),
+    "moves_to_passive_square": ("positional", ("MovesToPassiveSquare", "PassiveRetreat")),
+    # 15. The move as a whole (phase 2b).
     "only_move": ("game", ("Critical",)),
     "slide": ("evaluation", ("WinningToBetter", "WinningToEqual", "WinningToWorse",
                              "WinningToLosing", "BetterToEqual", "BetterToWorse", "BetterToLosing",
@@ -240,6 +301,10 @@ CC_IMPLIED_CHAIN = {
 # reply wins the trade (Chess.com: permits > PileTrade).
 OUR_IMPLIED_CHAIN = {
     "loses_trade": ("permits",),
+    # (Phase 4) A capture that leaves the opponent's pawns weak once a pawn takes back: Chess.com
+    # says it as FORCES (forces > DoublesPawns).
+    "forces_doubled_pawns": ("forces",),
+    "forces_isolated_pawn": ("forces",),
 }
 
 

@@ -16,6 +16,7 @@
 | `MAX_STORED_REVIEWS` | `100` | Finished reviews kept in memory |
 | `STATIC_DIR` | unset | Serve a built frontend (`frontend/dist`) from the backend |
 | `CORS_ORIGIN` | unset | Allowed browser origin. Only needed when the frontend is served from another origin without the Vite proxy. |
+| `MAIA_COMMAND` | unset | Command that starts the optional Maia-2 sidecar (see below). Without it the coach does not judge how hard a move was to find. |
 | `RUST_LOG` | `info,tower_http=warn` | Log filter |
 
 **CPU budget.** CPU use is about `ENGINE_POOL_SIZE × ENGINE_THREADS` cores while a review runs. On a
@@ -34,11 +35,33 @@ off; classifications do not change, only the coach's notes. `coach.best_threat_s
 `true`) also runs it after the engine's best move wherever the played move was not that move, so the
 coach can say what the better move would have threatened.
 
+`coach.rating_gates` (default `true`) leaves out ideas above the player's level: each coach tag has a
+`min_rating` in `backend/crates/review-server/src/coach/text/en.toml` (tactics and development are
+said to everyone, activity from about 600–900, pawn structure from about 900–1100). The rating is the
+player's Elo from the PGN when the request names `player_side`, else the rating the review uses for
+expected points (the higher Elo plus 200, at least 1000). When the only idea of a move is gated, the
+coach says nothing about it.
+
 ## Frontend
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `VITE_BACKEND_URL` | `http://127.0.0.1:8080` | Where the Vite dev server proxies `/api` |
+
+## Maia-2 (optional)
+
+[Maia-2](https://github.com/CSSLab/maia2) (MIT) predicts the moves human players of a given rating
+make. With it, the coach says when the best move was hard to find at the player's level (P(best) below
+0.10) and leads with the safety check when a Mistake or Blunder was a natural move (P(played) at least
+0.30). It runs as a separate Python process, like Stockfish, and is not bundled:
+
+```
+python3 -m venv ~/maia && ~/maia/bin/pip install maia2
+MAIA_COMMAND="$HOME/maia/bin/python3 tools/maia/maia_sidecar.py --type rapid" ./target/release/review-server
+```
+
+The `maia2` package downloads its model weights on first start. If the sidecar fails to start or
+answer, reviews go on without it (a warning is logged).
 
 ## Installing Stockfish
 

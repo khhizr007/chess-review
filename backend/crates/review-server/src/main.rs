@@ -4,6 +4,7 @@ use review_server::api::AppState;
 use review_server::config::AppConfig;
 use review_server::engine::Evaluator;
 use review_server::engine::pool::EnginePool;
+use review_server::human::{HumanModel, MaiaSidecar};
 use review_server::jobs::JobStore;
 use tracing_subscriber::EnvFilter;
 
@@ -49,7 +50,16 @@ async fn main() -> std::process::ExitCode {
         }
     };
 
-    let jobs = JobStore::new(config.max_concurrent_reviews, config.max_stored_reviews);
+    let mut jobs = JobStore::new(config.max_concurrent_reviews, config.max_stored_reviews);
+    if let Some(command) = &config.human_model_command {
+        match MaiaSidecar::start(command).await {
+            Ok(model) => {
+                tracing::info!(model = %model.name(), "human-move model ready");
+                jobs = jobs.with_human_model(Arc::new(model));
+            }
+            Err(e) => tracing::warn!("human-move model unavailable, reviews run without it: {e}"),
+        }
+    }
     let state = AppState {
         evaluator: pool.clone().map(|p| p as Arc<dyn Evaluator>),
         engine_error,

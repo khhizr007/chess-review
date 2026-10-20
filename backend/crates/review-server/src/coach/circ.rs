@@ -13,6 +13,7 @@
 //! material is won: found on the first move it WINS_MATERIAL, found later the
 //! line LEADS_TO it.
 
+use review_core::Phase;
 use serde::Serialize;
 use shakmaty::{Chess, Color, Move, Position, Role, Square};
 use ts_rs::TS;
@@ -477,6 +478,69 @@ pub fn good_base_events(
         .collect()
 }
 
+/// The positional ideas of a good move (group 13; see
+/// [`detect::positional_tags`]), said under `circ` like [`good_base_events`]:
+/// BASE for the played move on its own line, MISSES for the best move.
+pub fn positional_events(
+    before: &Chess,
+    m: Move,
+    previous: Option<Move>,
+    line: Option<&Line>,
+    kind: LineKind,
+    circ: Circ,
+    phase: Phase,
+) -> Vec<Event> {
+    let mut after = before.clone();
+    after.play_unchecked(m);
+    let rest = line.and_then(|l| l.moves.get(1..)).unwrap_or(&[]);
+    let ctx = MoveCtx {
+        before,
+        m,
+        after: &after,
+        previous,
+        rest,
+        first: true,
+    };
+    detect::positional_tags(&ctx, phase)
+        .into_iter()
+        .map(|found| move_event(vec![circ], found, before.turn(), kind))
+        .collect()
+}
+
+/// The positional errors of a bad move (group 14), said about the move
+/// itself (BASE), shown on the opponent's reply line.
+pub fn positional_errors(
+    before: &Chess,
+    played: Move,
+    after: &Chess,
+    previous: Option<Move>,
+    reply: Option<&Line>,
+    phase: Phase,
+) -> Vec<Event> {
+    let ctx = MoveCtx {
+        before,
+        m: played,
+        after,
+        previous,
+        rest: reply.map_or(&[][..], |l| &l.moves[..]),
+        first: true,
+    };
+    detect::positional_errors(&ctx, phase)
+        .into_iter()
+        .map(|found| move_event(vec![Circ::Base], found, before.turn(), LineKind::Reply))
+        .collect()
+}
+
+/// PERMITS a weakness: the opponent's reply is a capture that forces us to
+/// take back with a pawn, doubling or isolating our pawns.
+pub fn permits_weakness(reply: &Line) -> Option<Event> {
+    if reply.moves.is_empty() {
+        return None;
+    }
+    detect::forced_weakness(&reply.ctx(0, None))
+        .map(|found| move_event(vec![Circ::Permits], found, reply.solver(), LineKind::Reply))
+}
+
 /// An event about the move as a whole (no line of its own to show beyond
 /// `line`): a sacrifice, the only good move, a slide in the evaluation.
 pub fn move_event(chain: Vec<Circ>, found: Found, actor: Color, line: LineKind) -> Event {
@@ -519,9 +583,9 @@ pub fn sacrifice(before: &Chess, m: Move, sq: Square, circ: Circ, line: LineKind
 
 /// The best alternative B said like a played good move, every event under
 /// MISSES: what B wins or mates on its own line (with MISSES_SAME for the
-/// piece just left hanging), what it does by itself (trades, defence, tempo),
-/// what it threatens (N_B, the null-move line after it) and which threat of
-/// the opponent it stops (N_prev).
+/// piece just left hanging), what it does by itself (trades, defence, tempo,
+/// positional ideas), what it threatens (N_B, the null-move line after it)
+/// and which threat of the opponent it stops (N_prev).
 pub fn best_events(
     before: &Chess,
     best: &Line,
@@ -529,6 +593,7 @@ pub fn best_events(
     prev_threat: Option<&Line>,
     best_threat: Option<&Line>,
     horizon: u32,
+    phase: Phase,
 ) -> Vec<Event> {
     let Some(&b) = best.moves.first() else {
         return Vec::new();
@@ -542,6 +607,15 @@ pub fn best_events(
         LineKind::Best,
         Circ::Misses,
         prev_threat,
+    ));
+    events.extend(positional_events(
+        before,
+        b,
+        previous,
+        Some(best),
+        LineKind::Best,
+        Circ::Misses,
+        phase,
     ));
     // The opponent's best line after B, for what B's threat and defence leave.
     let after_b = Line::parse(&best.positions[1], &best.uci[1..], None, horizon, Some(b));

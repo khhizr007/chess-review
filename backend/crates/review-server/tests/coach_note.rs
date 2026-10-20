@@ -2,12 +2,12 @@
 //! the choice of what to say, and the realised text with its board marks.
 
 use review_core::expected_points::ExpectedOutcome;
-use review_core::{Classification, Eval, Side};
+use review_core::{Classification, Eval, Phase, Side};
 use review_server::board;
 use review_server::coach::circ::Circ;
 use review_server::coach::detect::Tag;
 use review_server::coach::geometry::ArrowKind;
-use review_server::coach::{CoachInput, CoachNote, LineInput, Style, coach_move};
+use review_server::coach::{CoachInput, CoachNote, Difficulty, LineInput, Style, coach_move};
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Move, Square};
 
@@ -22,6 +22,7 @@ fn pv(moves: &[&str]) -> Vec<String> {
     moves.iter().map(|m| (*m).to_owned()).collect()
 }
 
+#[derive(Clone)]
 struct Case {
     fen: &'static str,
     played: &'static str,
@@ -43,6 +44,9 @@ struct Case {
     best_sacrifice: Option<Square>,
     swing: Option<(ExpectedOutcome, ExpectedOutcome)>,
     class: Classification,
+    phase: Phase,
+    rating: Option<i32>,
+    difficulty: Option<Difficulty>,
     style: Style,
     seed: u32,
 }
@@ -70,6 +74,9 @@ impl Case {
             best_sacrifice: None,
             swing: None,
             class: Classification::Blunder,
+            phase: Phase::Middlegame,
+            rating: None,
+            difficulty: None,
             style: Style::Neutral,
             seed: 0,
         }
@@ -145,6 +152,22 @@ impl Case {
         self
     }
 
+    fn phase(mut self, phase: Phase) -> Case {
+        self.phase = phase;
+        self
+    }
+
+    fn rating(mut self, rating: i32) -> Case {
+        self.rating = Some(rating);
+        self
+    }
+
+    /// P(played) and P(best) from a human-move model.
+    fn odds(mut self, played: f32, best: f32) -> Case {
+        self.difficulty = Some(Difficulty { played, best });
+        self
+    }
+
     fn run(&self) -> CoachNote {
         let before = pos(self.fen);
         let played = board::parse_uci(&before, self.played).expect("played move is legal");
@@ -181,6 +204,9 @@ impl Case {
             best_sacrifice: self.best_sacrifice,
             swing: self.swing,
             classification: Some(self.class),
+            phase: self.phase,
+            rating: self.rating,
+            difficulty: self.difficulty,
             style: self.style,
             horizon: 6,
             seed: self.seed,
@@ -958,13 +984,15 @@ fn good_move_priority() {
 #[test]
 fn a_bad_move_with_nothing_else_to_say_names_its_threat() {
     // Rb1 attacks the knight on h1, which has no safe square (f2 is the
-    // king's, g3 the pawn's); h3 was better.
+    // king's, g3 the pawn's); h3 was better. (h3 pushes a passed pawn, an
+    // idea above a player rated 800.)
     let fen = "4k3/8/8/1R6/8/4K3/7P/7n w - - 0 1";
     let note = Case::new(fen, "b5b1")
         .reply(&["e8e7"], cp(0))
         .best(&["h2h3"], cp(30))
         .threat(&["b1h1"], cp(300))
         .class(Classification::Inaccuracy)
+        .rating(800)
         .run();
     assert_well_formed(&note);
     let main = note.main_event().unwrap();
@@ -1303,4 +1331,187 @@ fn a_free_piece_the_line_outgrows_is_said_as_material_won() {
     );
     assert_eq!(main.square.as_deref(), Some("a5"));
     assert!(note.text()[0].starts_with("h6 allows Bxa5, which wins"));
+}
+
+// ---------------------------------------------------------------- positional ideas
+
+const AFTER_E4_E5: &str = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
+const RUY: &str = "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
+
+#[test]
+fn a_good_move_is_said_by_its_positional_idea() {
+    let note = Case::new(AFTER_E4_E5, "g1f3")
+        .own(&["g1f3", "b8c6"], cp(30))
+        .class(Classification::Best)
+        .phase(Phase::Opening)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::DevelopsCenter, vec![Circ::Base])
+    );
+    assert_eq!(
+        note.text(),
+        vec!["Nf3 develops White's knight toward the centre."]
+    );
+}
+
+#[test]
+fn a_forced_weakness_comes_before_the_trade() {
+    let case = Case::new(RUY, "b5c6")
+        .own(&["b5c6", "b7c6"], cp(0))
+        .class(Classification::Good)
+        .phase(Phase::Opening);
+    let note = case.run();
+    assert_well_formed(&note);
+    assert_eq!(note.main_event().unwrap().tag, Tag::ForcesDoubledPawns);
+    assert_eq!(
+        note.text(),
+        vec!["Bxc6 leaves Black's pawns on c6 and c7 doubled once a pawn takes back."]
+    );
+    // Below the structure gate the trade is said instead.
+    let note = case.clone().rating(800).run();
+    assert_eq!(note.main_event().unwrap().tag, Tag::EqualTrade);
+}
+
+#[test]
+fn a_bad_move_is_said_by_its_opening_error_then_the_best_moves_idea() {
+    let note = Case::new(AFTER_E4_E5, "d1h5")
+        .reply(&["b8c6"], cp(-20))
+        .best(&["g1f3", "b8c6"], cp(30))
+        .class(Classification::Inaccuracy)
+        .phase(Phase::Opening)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::TooEarlyQueen, vec![Circ::Base])
+    );
+    assert_eq!(
+        note.text(),
+        vec![
+            "Qh5 brings White's queen out early, before the knights and bishops.",
+            "Better was Nf3, which develops White's knight toward the centre.",
+        ]
+    );
+}
+
+#[test]
+fn a_bad_move_that_allows_doubled_pawns() {
+    // ...h6 lets Bxc6 double Black's pawns.
+    let fen = "r1bqkbnr/pppp1ppp/2n5/1B6/8/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 1";
+    let note = Case::new(fen, "h7h6")
+        .reply(&["b5c6", "d7c6"], cp(40))
+        .class(Classification::Inaccuracy)
+        .phase(Phase::Opening)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::ForcesDoubledPawns, vec![Circ::Permits])
+    );
+    assert_eq!(
+        note.text()[0],
+        "h6 allows Bxc6, which leaves Black's pawns on c6 and c7 doubled once a pawn takes back."
+    );
+}
+
+#[test]
+fn an_idea_above_the_players_rating_is_not_said() {
+    let fen = "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1";
+    let case = Case::new(fen, "h2h3")
+        .own(&["h2h3", "g8f8"], cp(0))
+        .class(Classification::Good)
+        .phase(Phase::Middlegame);
+    assert_eq!(
+        case.run().main_event().map(|e| e.tag),
+        Some(Tag::CreatesLuft)
+    );
+    assert_eq!(
+        case.clone().rating(1200).run().main_event().map(|e| e.tag),
+        Some(Tag::CreatesLuft)
+    );
+    // The only idea is gated: the coach stays quiet.
+    let quiet = case.rating(500).run();
+    assert!(quiet.sentences.is_empty());
+    assert!(quiet.events.is_empty());
+}
+
+#[test]
+fn a_book_move_with_a_development_idea_gets_a_note() {
+    let note = Case::new(AFTER_E4_E5, "g1f3")
+        .own(&["g1f3", "b8c6"], cp(30))
+        .class(Classification::Book)
+        .phase(Phase::Opening)
+        .run();
+    assert_well_formed(&note);
+    assert_eq!(
+        note.text(),
+        vec!["Nf3 is a book move: it develops White's knight toward the centre."]
+    );
+    // A book move with no such idea gets none.
+    let note = Case::new(AFTER_E4_E5, "a2a3")
+        .own(&["a2a3", "b8c6"], cp(0))
+        .class(Classification::Book)
+        .phase(Phase::Opening)
+        .run();
+    assert_eq!(note, CoachNote::default());
+}
+
+// ---------------------------------------------------------------- difficulty
+
+#[test]
+fn a_natural_blunder_leads_with_the_safety_check() {
+    let note = Case::new(FORK, "d8e8")
+        .reply(&["b5c7", "e8d7", "c7a8"], cp(500))
+        .best(&["d8c8"], cp(0))
+        .odds(0.45, 0.2)
+        .run();
+    assert_well_formed(&note);
+    assert_eq!(
+        note.text(),
+        vec![
+            "Ke8 looks natural, but check the reply first: Nc7+ forks Black's king and rook on a8, winning a rook.",
+            "Better was Kc8.",
+        ]
+    );
+}
+
+#[test]
+fn a_best_move_hard_to_find_is_said_gently() {
+    let note = Case::new(FORK, "d8e8")
+        .reply(&["b5c7", "e8d7", "c7a8"], cp(500))
+        .best(&["d8c8"], cp(0))
+        .odds(0.05, 0.04)
+        .run();
+    assert_eq!(
+        note.text()[1],
+        "Better was Kc8, though it is hard to find at this level."
+    );
+    // With an idea of its own.
+    let note = Case::new(AFTER_E4_E5, "d1h5")
+        .reply(&["b8c6"], cp(-20))
+        .best(&["g1f3", "b8c6"], cp(30))
+        .class(Classification::Inaccuracy)
+        .phase(Phase::Opening)
+        .odds(0.2, 0.05)
+        .run();
+    assert_eq!(
+        note.text()[1],
+        "Better was Nf3, a hard move to find at this level: it develops White's knight toward the centre."
+    );
+    // Good moves are never softened.
+    let note = Case::new(AFTER_E4_E5, "g1f3")
+        .own(&["g1f3", "b8c6"], cp(30))
+        .class(Classification::Best)
+        .phase(Phase::Opening)
+        .odds(0.05, 0.05)
+        .run();
+    assert_eq!(
+        note.text(),
+        vec!["Nf3 develops White's knight toward the centre."]
+    );
 }
