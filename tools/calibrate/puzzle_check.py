@@ -116,11 +116,11 @@ def puzzle_record(row: dict[str, str], strata: list[str]) -> dict:
 def cmd_sample(args) -> None:
     out = Path(args.out)
     if args.from_ids:
-        wanted: dict[str, list[str]] = defaultdict(list)
+        wanted: dict[str, list[str]] = {}
         for line in Path(args.from_ids).read_text(encoding="utf-8").splitlines():
             if line and not line.startswith("#"):
-                pid, stratum = line.split("\t")
-                wanted[pid].append(stratum)
+                pid, strata_text = line.split("\t")
+                wanted[pid] = strata_text.split(",")
         with open_db(args.db) as f, out.open("w", encoding="utf-8") as w:
             found = 0
             for row in csv.DictReader(f):
@@ -163,9 +163,9 @@ def cmd_sample(args) -> None:
                     "tools/calibrate/puzzle_check.py:\n")
             w.write(f"# seed {args.seed}, {args.per_theme} per theme, {args.random} at random, "
                     f"NbPlays >= {args.min_plays}, Popularity >= {args.min_popularity}.\n")
+            w.write("# id<TAB>strata (the themes it was sampled for, or random)\n")
             for pid in sorted(rows):
-                for s in strata[pid]:
-                    w.write(f"{pid}\t{s}\n")
+                w.write(f"{pid}\t{','.join(strata[pid])}\n")
     print(f"{len(rows)} puzzles; eligible per stratum: "
           + ", ".join(f"{s} {seen[s]}" for s in size))
 
@@ -279,8 +279,11 @@ def cmd_report(args) -> None:
 
     rng = random.Random(1)
     w("\n## Examples\n")
-    for tag, themes in SAID_MAP.items():
-        for reading in ("said", "fired"):
+    for tag in SAID_MAP:
+        for reading, mapping in (("said", SAID_MAP), ("fired", FIRED_MAP)):
+            themes = mapping.get(tag)
+            if themes is None:
+                continue
             fp = [p for p in puzzles if tag in tags_of(p, reading)
                   and not set(themes) & set(p["themes"])]
             if not fp:
@@ -314,7 +317,7 @@ def main() -> None:
     s.add_argument("--ids", help="also write the sampled ids (with their strata) here")
     s.add_argument("--from-ids", help="take exactly these ids instead of sampling")
     s.add_argument("--per-theme", type=int, default=300)
-    s.add_argument("--random", type=int, default=1000, help="puzzles taken at random")
+    s.add_argument("--random", type=int, default=10000, help="puzzles taken at random")
     s.add_argument("--seed", type=int, default=20261021)
     s.add_argument("--min-plays", type=int, default=100)
     s.add_argument("--min-popularity", type=int, default=50)

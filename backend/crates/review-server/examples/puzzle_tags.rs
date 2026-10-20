@@ -49,9 +49,8 @@ fn run() -> Result<(), String> {
         return Err("usage: puzzle_tags <in.jsonl> <out.jsonl>".to_owned());
     };
     let reader = BufReader::new(std::fs::File::open(input).map_err(|e| format!("{input}: {e}"))?);
-    let mut out = BufWriter::new(
-        std::fs::File::create(output).map_err(|e| format!("{output}: {e}"))?,
-    );
+    let mut out =
+        BufWriter::new(std::fs::File::create(output).map_err(|e| format!("{output}: {e}"))?);
     for line in reader.lines() {
         let line = line.map_err(|e| e.to_string())?;
         if line.trim().is_empty() {

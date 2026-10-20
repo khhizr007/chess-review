@@ -28,7 +28,8 @@ pub fn double_check(ctx: &MoveCtx<'_>) -> Option<Found> {
 /// The moved piece (not the king) stands where it cannot be won, and attacks
 /// two or more of the other side's pieces that are each either worth more
 /// than it (the king counts) or undefended and unable to take it back. Pawns
-/// count only when undefended. A fork of the king and queen is a royal fork.
+/// never count: a check that picks up a loose pawn is no fork. A fork of the
+/// king and queen is a royal fork.
 pub fn fork(ctx: &MoveCtx<'_>) -> Option<Found> {
     if ctx.m.is_castle() {
         return None;
@@ -41,10 +42,10 @@ pub fn fork(ctx: &MoveCtx<'_>) -> Option<Found> {
     let mover = ctx.mover();
     let own_value = value(forker.role);
     let forked = |t: &PieceAt| {
-        let worth_more = t.role != Role::Pawn && value(t.role) > own_value;
+        let worth_more = value(t.role) > own_value;
         let undefended = facts::attackers(board, t.square, t.color).is_empty()
             && !board.attacks_from(t.square).contains(forker.square);
-        worth_more || undefended
+        t.role != Role::Pawn && (worth_more || undefended)
     };
     let mut targets: Vec<PieceAt> = (board.attacks_from(forker.square)
         & board.by_color(mover.other()))
@@ -148,10 +149,20 @@ pub fn discovered_check(ctx: &MoveCtx<'_>) -> Option<Found> {
 }
 
 /// The move steps off a line and uncovers an attack on a knight, bishop, rook
-/// or queen that is worth more than the attacker or hanging.
+/// or queen that is worth more than the attacker or hanging, and that cannot
+/// simply take the attacker: the capture is illegal (a check to answer, a
+/// pin), or the attacker is guarded and worth less than the target.
 pub fn discovered_attack(ctx: &MoveCtx<'_>) -> Option<Found> {
     let board = ctx.after.board();
     let mover = ctx.mover();
+    let replies = ctx.after.legal_moves();
+    let takes_attacker = |s: Square, t: &PieceAt| {
+        replies
+            .iter()
+            .any(|m| m.from() == Some(t.square) && m.to() == s)
+            && (facts::attackers(board, s, mover).is_empty()
+                || board.role_at(s).is_some_and(|r| value(t.role) <= value(r)))
+    };
     let (slider, target) = uncovered(ctx)
         .into_iter()
         .filter(|(_, t)| !matches!(t.role, Role::King | Role::Pawn))
@@ -159,6 +170,7 @@ pub fn discovered_attack(ctx: &MoveCtx<'_>) -> Option<Found> {
             board.role_at(*s).is_some_and(|r| value(t.role) > value(r))
                 || facts::threat(board, t.square, mover) > 0
         })
+        .filter(|(s, t)| !takes_attacker(*s, t))
         .max_by_key(|(_, t)| value(t.role))?;
     Some(Found {
         tag: Tag::DiscoveredAttack,

@@ -11,9 +11,10 @@ fn is_slider(role: Role) -> bool {
     matches!(role, Role::Bishop | Role::Rook | Role::Queen)
 }
 
-/// The moved line piece pins one of the other side's pieces, to the king or to
-/// a piece worth more than the pinner (so moving the pinned piece loses
-/// material). The pinner must not simply be lost.
+/// The moved line piece pins one of the other side's pieces (not a pawn), to
+/// the king or to a piece worth more than the pinner (so moving the pinned
+/// piece loses material). The pinner must not simply be lost. A pinned pawn
+/// matters when it cannot take back, which is [`exploits_pin`].
 pub fn pin(ctx: &MoveCtx<'_>) -> Option<Found> {
     let pinner = ctx.moved().filter(|p| is_slider(p.role))?;
     if see::capture_gain(ctx.after, pinner.square) > 0 {
@@ -25,6 +26,7 @@ pub fn pin(ctx: &MoveCtx<'_>) -> Option<Found> {
     facts::pins(board, opponent)
         .into_iter()
         .filter(|p| p.pinner == pinner.square)
+        .filter(|p| board.role_at(p.pinned) != Some(Role::Pawn))
         .filter(|p| {
             !before
                 .iter()
@@ -123,7 +125,9 @@ pub fn exploits_pin(ctx: &MoveCtx<'_>) -> Option<Found> {
 
 /// The moved line piece attacks a valuable piece that has to move (the king,
 /// a piece worth more than the attacker, or a hanging one), and the less
-/// valuable piece behind it on the same line is then lost.
+/// valuable piece behind it on the same line is then lost. When the line goes
+/// on, it shows the skewer: the front piece steps off the line and the mover
+/// takes the piece behind.
 pub fn skewer(ctx: &MoveCtx<'_>) -> Option<Found> {
     let attacker = ctx.moved().filter(|p| is_slider(p.role))?;
     if see::capture_gain(ctx.after, attacker.square) > 0 {
@@ -141,6 +145,14 @@ pub fn skewer(ctx: &MoveCtx<'_>) -> Option<Found> {
             ))
         })
         .filter(|(_, front, behind)| front.color != mover && behind.color != mover)
+        .filter(|(x, _, behind)| match ctx.rest {
+            [reply, take, ..] => {
+                reply.from() == Some(x.front)
+                    && take.to() == x.behind
+                    && take.capture() == Some(behind.role)
+            }
+            _ => true,
+        })
         .filter(|(_, front, behind)| {
             behind.role != Role::King && value(front.role) > value(behind.role)
         })

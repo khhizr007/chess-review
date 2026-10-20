@@ -385,6 +385,23 @@ impl Tag {
         }
     }
 
+    /// Double attacks, pins and skewers: they threaten material rather than
+    /// take it. Made by the capture that settles a line's gain, they are about
+    /// what comes after the line, not the material it wins.
+    pub fn threatens_material(self) -> bool {
+        matches!(
+            self,
+            Tag::TrappedPiece
+                | Tag::DoubleCheck
+                | Tag::RoyalFork
+                | Tag::Fork
+                | Tag::DiscoveredCheck
+                | Tag::DiscoveredAttack
+                | Tag::Skewer
+                | Tag::Pin
+        )
+    }
+
     pub fn is_mate(self) -> bool {
         matches!(self, Tag::BackRankMate | Tag::Checkmate | Tag::ForcedMate)
     }

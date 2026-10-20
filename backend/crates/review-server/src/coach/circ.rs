@@ -307,7 +307,11 @@ pub fn line_event(
         let mut chosen: Option<(usize, Found)> = None;
         let named_at = |k: usize| circ != Circ::Permits || k == 0 || (k == 2 && quiet_check(line));
         for k in (0..=gain.ply).step_by(2).filter(|k| named_at(*k)) {
-            if let Some(f) = detect::best_tactic(&line.ctx(k, previous))
+            // The capture that settles a later gain explains it by what it takes.
+            let settles = k > 0 && k == gain.ply;
+            if let Some(f) = detect::tactics(&line.ctx(k, previous))
+                .into_iter()
+                .find(|f| !(settles && f.tag.threatens_material()))
                 && chosen.as_ref().is_none_or(|(_, c)| f.tag < c.tag)
             {
                 chosen = Some((k, f));

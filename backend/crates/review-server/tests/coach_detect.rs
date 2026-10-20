@@ -88,6 +88,10 @@ fn back_rank_mate() {
     // The same rook check with an escape square is no mate at all.
     let fen = "6k1/5p1p/8/8/8/8/8/R5K1 w - - 0 1";
     assert_eq!(top_tactic(fen, "a1a8"), None);
+    // The queen on c7 covers f7 and g7: a mate on the back rank, but the
+    // king is not boxed in by its own pieces.
+    let fen = "6k1/2Q4p/8/8/8/8/8/R5K1 w - - 0 1";
+    assert_eq!(top_tactic(fen, "a1a8"), Some(Tag::Checkmate));
 }
 
 // ---------------------------------------------------------------- material
@@ -183,6 +187,9 @@ fn a_fork_target_is_worth_more_than_the_forker_or_undefended() {
     // Undefended, the same bishop is forked.
     let undefended = "4k3/8/b7/1N6/8/8/8/4K3 w - - 0 1";
     assert_eq!(top_tactic(undefended, "b5c7"), Some(Tag::Fork));
+    // A loose pawn is no fork target: Nc7+ only checks.
+    let pawn = "4k3/8/p7/1N6/8/8/8/4K3 w - - 0 1";
+    assert!(!tactic_tags(pawn, "b5c7", &[]).contains(&Tag::Fork));
 }
 
 #[test]
@@ -206,6 +213,11 @@ fn discovered_attack() {
     assert_eq!(
         top_tactic("3qk3/8/8/8/3N4/8/8/3RK3 w - - 0 1", "d4b3"),
         Some(Tag::DiscoveredAttack)
+    );
+    // A loose rook uncovered against a rook that simply takes it attacks nothing.
+    assert!(
+        !tactic_tags("3r3k/8/8/8/3N4/8/8/3R2K1 w - - 0 1", "d4b3", &[])
+            .contains(&Tag::DiscoveredAttack)
     );
 }
 
@@ -239,26 +251,37 @@ fn capture_with_a_pinned_defender_exploits_the_pin() {
 #[test]
 fn skewer() {
     // Re1+ skewers the king and the queen behind it.
+    let fen = "4q3/8/4k3/8/8/8/8/R5K1 w - - 0 1";
+    assert_eq!(top_tactic(fen, "a1e1"), Some(Tag::Skewer));
     assert_eq!(
-        top_tactic("4q3/8/4k3/8/8/8/8/R5K1 w - - 0 1", "a1e1"),
-        Some(Tag::Skewer)
+        tactic_tags(fen, "a1e1", &["e6d7", "e1e8"]).first(),
+        Some(&Tag::Skewer)
     );
+    // The king steps aside but the line does not take the queen.
+    assert!(!tactic_tags(fen, "a1e1", &["e6d7", "g1f2"]).contains(&Tag::Skewer));
 }
 
 // ---------------------------------------------------------------- defender tactics
 
 #[test]
 fn removes_defender() {
-    // Bxc6 removes the knight that guarded the bishop on e5.
+    // Bxc6 bxc6 Rxe5: the knight that guarded the bishop on e5 is gone.
     let fen = "6k1/1p6/2n5/1B2b3/8/8/8/4R1K1 w - - 0 1";
-    assert_eq!(top_tactic(fen, "b5c6"), Some(Tag::RemovesDefender));
+    let tags = tactic_tags(fen, "b5c6", &["b7c6", "e1e5"]);
+    assert_eq!(tags.first(), Some(&Tag::RemovesDefender));
+    // A line that does not take the bishop shows no such thing.
+    assert!(!tactic_tags(fen, "b5c6", &["b7c6", "g1f2"]).contains(&Tag::RemovesDefender));
+    assert!(!tactic_tags(fen, "b5c6", &[]).contains(&Tag::RemovesDefender));
 }
 
 #[test]
 fn overloaded() {
     // The queen guards both d5 and h4: after Rxd5 Qxd5, Nxh4.
     let fen = "3q2k1/8/8/3n4/7b/5N2/8/3R2K1 w - - 0 1";
-    assert_eq!(top_tactic(fen, "d1d5"), Some(Tag::Overloaded));
+    let tags = tactic_tags(fen, "d1d5", &["d8d5", "f3h4"]);
+    assert_eq!(tags.first(), Some(&Tag::Overloaded));
+    // The queen does not take back: it is not overloaded.
+    assert!(!tactic_tags(fen, "d1d5", &["h4f6", "d5d8"]).contains(&Tag::Overloaded));
 }
 
 #[test]
