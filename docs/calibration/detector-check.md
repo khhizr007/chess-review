@@ -2,7 +2,8 @@
 
 Our coach detectors (`backend/crates/review-server/src/coach/detect/`) were tuned only against
 Chess.com's coach on 142 games from one account ([`coach-log.md`](coach-log.md)). This is the
-independent check of [`coach-analysis.md`](../coach-analysis.md) §8 item 1: run them on lichess
+independent check of [`coach-analysis.md`](../coach-analysis.md) §8 item 1, step 2 of
+[`coach-gap-analysis.md`](../coach-gap-analysis.md) §7.2: run them on lichess
 puzzles, whose themes are labelled independently of us, and report precision and recall per theme.
 The target was precision ≥ 0.9 on fork, pin, skewer, hanging piece and discovered attack.
 
@@ -217,12 +218,12 @@ Each fix follows chess semantics. Each has a unit test in `tests/coach_detect.rs
 
 ## 5. Chess.com agreement (run `coach-detector-check`)
 
-Measured on the 142 calibration games at commit `cac2d14`, the same way as `coach-main-582bdd9`
+Measured on the 142 calibration games at commit `0a8971a`, the same way as `coach-main-582bdd9`
 (Stockfish 18, depth 18, MultiPV 3). Both runs read the same engine results from a local disk cache
 of the server's engine pool (a patch that is not committed). The coach is pure, so only engine
 results are cached and the tags are what a fresh search gives.
 
-| | main `582bdd9` | this branch | change |
+| | main `582bdd9` (and `25a2a6a`, same figures) | this branch | change |
 |---|---:|---:|---:|
 | bad moves exact (1,641 plies both apps label bad) | 643 (39.2%) | 665 (40.5%) | +22 |
 | good moves exact (5,349) | 3,116 (58.3%) | 3,144 (58.8%) | +28 |

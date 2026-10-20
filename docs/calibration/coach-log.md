@@ -19,7 +19,7 @@ our own paraphrases.
 | 2026-10-20 | `cb1b475` (quick fixes of `coach-gap-analysis.md` §4.1) | 142 | 8,638 | same | [`runs/coach-quickfix/coach-report.md`](../../tests/calibration/runs/coach-quickfix/coach-report.md) |
 | 2026-10-20 | `14186c4` (quick fixes + Phase 2b) | 142 | 8,638 | same | [`runs/coach-phase2b/coach-report.md`](../../tests/calibration/runs/coach-phase2b/coach-report.md) |
 | 2026-10-20 | `118a076` (Phase 4) | 142 | 8,638 | same | [`runs/coach-phase4/coach-report.md`](../../tests/calibration/runs/coach-phase4/coach-report.md) |
-| 2026-10-21 | `cac2d14` (detector fixes from the lichess puzzle check) | 142 | 8,638 | same | [`runs/coach-detector-check/coach-report.md`](../../tests/calibration/runs/coach-detector-check/coach-report.md) |
+| 2026-10-21 | `0a8971a` (detector fixes from the lichess puzzle check) | 142 | 8,638 | same | [`runs/coach-detector-check/coach-report.md`](../../tests/calibration/runs/coach-detector-check/coach-report.md) |
 
 The quick fixes alone were measured twice in run `coach-quickfix`: a first pass at `d25b1b7`
 (29.0%, the figure quoted in "Results: Phase 2b") and the committed run at `cb1b475`, which adds the
@@ -478,7 +478,7 @@ By Chess.com's group of positional tags (plies where theirs is the main event; e
   `coach-p4-nogates`, `coach-p4-as-white` / `-as-black` for the gates. These reused the engine
   results of the main-before run through a local disk cache that is not part of the code.
 
-## Results: detector fixes (`cac2d14`, 142 games)
+## Results: detector fixes (`0a8971a`, 142 games)
 
 The tactic detectors were checked against the lichess puzzle themes and seven of them fixed;
 see [`detector-check.md`](detector-check.md). Against Chess.com (run `coach-detector-check`,
