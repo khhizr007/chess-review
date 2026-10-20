@@ -485,6 +485,12 @@ fn a_hanging_queen_is_said_even_when_the_line_wins_more() {
         (Tag::HangsPiece, vec![Circ::Base])
     );
     assert!(note.text()[0].starts_with("Qg5 leaves Black's queen on g5 hanging"));
+    // The line wins more than the queen, so the reply is said as material won.
+    assert!(
+        note.events
+            .iter()
+            .any(|e| e.tag == Tag::MaterialGain && e.chain == vec![Circ::Permits])
+    );
 }
 
 #[test]
@@ -1278,4 +1284,23 @@ fn a_brilliant_sacrifice_then_what_it_leads_to() {
         note.text(),
         vec!["Better was Rf8+, a sacrifice that works."]
     );
+}
+
+#[test]
+fn a_free_piece_the_line_outgrows_is_said_as_material_won() {
+    // ...h6 leaves the knight on a5 to the bishop, which then takes the rook
+    // on d8 as well: the reply wins more than the knight, so the move allows
+    // White to win material.
+    let note = Case::new("3rk3/7p/8/n7/8/8/3B4/6K1 b - - 0 1", "h7h6")
+        .reply(&["d2a5", "e8e7", "a5d8", "e7d8"], cp(500))
+        .best(&["a5c4"], cp(0))
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::MaterialGain, vec![Circ::Permits])
+    );
+    assert_eq!(main.square.as_deref(), Some("a5"));
+    assert!(note.text()[0].starts_with("h6 allows Bxa5, which wins"));
 }

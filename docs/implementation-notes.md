@@ -251,12 +251,17 @@ move."); a Book move gets an empty note.
   - MISSES_SAME: B takes, for free, the piece on the square the opponent's last move went to.
   - A capture that R takes back, where R's piece cannot be won in turn, gave the piece away: R's event
     is `FreePiece`, although it is a recapture (7...Nxd5 8.Bxd5 "wins Black's knight on d5").
+  - R's first move takes a free piece only if R keeps it and the line wins about that much. When the
+    line wins more than the piece plus a pawn (or the mover takes back on the square anyway), R's
+    event is `MaterialGain` about the same piece ("h6 allows Bxa5, which wins …"). A piece
+    the mover can take back with profit is `WinsTrade` already (phase 2b, below).
 - **Prioritiser** (`priority.rs`, §6.5):
-  - The Permits block: mate; R's free piece when the BASE tag is `IgnoresThreat` or `BadTrade` (the
-    piece is simply lost); a bad BASE tag (unless R's tactic wins 200 cp more than it puts at stake,
-    not counting a tactic that wins the BASE tag's own piece); a named tactic with a gain; a free
-    piece; `MaterialGain`; any PERMITS event. An `IgnoresThreat` or `BadTrade` that is kept (the
-    piece is lost in an exchange, not for free) is worded as losing material.
+  - The Permits block: mate; when the BASE tag is `IgnoresThreat` or `BadTrade`, R's first move that
+    takes the piece (a free piece, or `MaterialGain` about that piece); a bad BASE tag (unless R's
+    tactic wins 200 cp more than it puts at stake, not counting a tactic that wins the BASE tag's own
+    piece); a named tactic with a gain; a free piece; `MaterialGain`; any PERMITS event. An
+    `IgnoresThreat` or `BadTrade` that is kept (R takes the piece later in its line) is worded as
+    losing material.
   - The Misses block: mate; MISSES_SAME; a named tactic with a gain; a free piece; `MaterialGain`; any
     MISSES event.
   - A Miss runs the Misses block first, every other bad move the Permits block first. When the main

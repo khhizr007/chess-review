@@ -351,11 +351,43 @@ pub fn line_event(
 /// A capture that the reply simply takes back, where the piece that takes
 /// back cannot be won in turn, gave the piece away: the reply takes a free
 /// piece, although it ends an exchange.
+///
+/// A free piece is one the reply takes and keeps, and the line wins about
+/// that much. When the line goes on to win clearly more than the piece, or
+/// the mover takes back on the square anyway, the reply wins material
+/// instead. (A piece the mover can take back with profit is `WinsTrade`.)
 pub fn permits(reply: &Line, played: Move) -> Option<Event> {
     let e = line_event(reply, LineKind::Reply, Circ::Permits, Some(played))?;
     if e.mate_in.is_some() {
         return Some(e);
     }
+    let e = recaptured_for_free(reply, played, e);
+    Some(taken_back_or_more(reply, e))
+}
+
+/// A free piece on the reply's first move that is taken back, or that the
+/// line outgrows, said as the material the line wins (about the same piece).
+fn taken_back_or_more(reply: &Line, mut e: Event) -> Event {
+    let Some(gain) = e.gain.filter(|_| e.tag() == Tag::FreePiece && e.ply == 0) else {
+        return e;
+    };
+    let first = reply.moves[0];
+    let taken_back = reply
+        .moves
+        .get(1)
+        .is_some_and(|m| m.is_capture() && m.to() == first.to());
+    let piece = first.capture().map_or(0, facts::value);
+    if taken_back || gain.cp > piece + MIN_GAIN {
+        e.chain = vec![Circ::Permits];
+        e.found.tag = Tag::MaterialGain;
+        e.found.stake = gain.cp;
+    }
+    e
+}
+
+/// The reply takes back a capture with a piece that cannot be won in turn:
+/// the piece was given away (see [`permits`]).
+fn recaptured_for_free(reply: &Line, played: Move, e: Event) -> Event {
     let takes_back = reply
         .moves
         .first()
@@ -365,7 +397,7 @@ pub fn permits(reply: &Line, played: Move) -> Option<Event> {
         .and_then(|_| detect::best_tactic(&reply.ctx(0, None)))
         .filter(|f| f.tag == Tag::FreePiece && f.tag < e.tag());
     match (free, gain_of(reply)) {
-        (Some(found), Some(gain)) => Some(Event {
+        (Some(found), Some(gain)) => Event {
             chain: vec![Circ::Permits, Circ::WinsMaterial],
             found,
             actor: reply.solver(),
@@ -373,8 +405,8 @@ pub fn permits(reply: &Line, played: Move) -> Option<Event> {
             ply: 0,
             gain: Some(gain),
             mate_in: None,
-        }),
-        _ => Some(e),
+        },
+        _ => e,
     }
 }
 
