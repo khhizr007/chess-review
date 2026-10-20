@@ -39,7 +39,7 @@ pub struct GameInfo {
     pub opening: Option<OpeningName>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MoveRef {
     pub san: String,

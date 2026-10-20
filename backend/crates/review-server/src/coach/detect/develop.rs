@@ -267,11 +267,15 @@ fn prepares_central_push(ctx: &MoveCtx<'_>, phase: Phase) -> Option<Found> {
             for _ in 0..2 {
                 match board.piece_at(sq) {
                     Some(p) if p == Role::Pawn.of(mover) => {
+                        // The moved pawn guards the square the push goes to.
                         return Some(found(
                             Tag::PreparesCentralPush,
                             PieceAt::on(board, sq),
                             Vec::new(),
-                            Geometry::Relation { from: sq, to: t },
+                            Geometry::Relation {
+                                from: ctx.to(),
+                                to: t,
+                            },
                         ));
                     }
                     Some(_) => return None,
@@ -440,12 +444,14 @@ fn weakens_king(ctx: &MoveCtx<'_>, phase: Phase) -> Option<Found> {
     let king = ctx.after.board().king_of(mover)?;
     let exposed =
         king.rank() == mover.backrank() && matches!(king.file(), File::E | File::G | File::H);
+    // The square the pawn left and the king behind it: nothing attacks along
+    // the diagonal yet, so it is marked, not drawn as an attack.
     exposed.then(|| {
         found(
             Tag::WeakensKing,
             PieceAt::on(ctx.after.board(), king),
             Vec::new(),
-            Geometry::Relation { from, to: king },
+            Geometry::Squares(vec![from, king]),
         )
     })
 }
@@ -453,14 +459,12 @@ fn weakens_king(ctx: &MoveCtx<'_>, phase: Phase) -> Option<Found> {
 /// After castling, a pawn of the king's shelter moves.
 fn pawn_in_front_of_king(ctx: &MoveCtx<'_>) -> Option<Found> {
     let shield = king_shield_move(ctx)?;
+    // The king and the square the pawn left (not always next to the king).
     Some(found(
         Tag::MovesPawnInFrontOfKing,
         PieceAt::on(ctx.after.board(), shield.king),
         Vec::new(),
-        Geometry::Relation {
-            from: shield.king,
-            to: shield.from,
-        },
+        Geometry::Squares(vec![shield.king, shield.from]),
     ))
 }
 

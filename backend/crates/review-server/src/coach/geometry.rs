@@ -1,6 +1,6 @@
 //! Where an event happens on the board, and the arrows and squares that show it.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shakmaty::{Move, Square};
 use ts_rs::TS;
 
@@ -39,7 +39,7 @@ pub enum Geometry {
     Squares(Vec<Square>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum ArrowKind {
@@ -53,7 +53,7 @@ pub enum ArrowKind {
     Best,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Arrow {
     pub from: String,
@@ -210,7 +210,7 @@ impl Geometry {
 }
 
 /// [`Geometry`] as sent to the frontend (square names).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
 pub enum GeometryView {
