@@ -15,8 +15,8 @@ our own paraphrases.
 | date | measured commit | games | plies | engine (ours / theirs) | report |
 |---|---|---:|---:|---|---|
 | 2026-10-20 | `f5f0b35` (main, phase 1 coach) | 142 | 8,638 | Stockfish 18 depth 18 MultiPV 3 / Stockfish 18 (CEE 1.198.16) | [`runs/coach-phase0/coach-report.md`](../../tests/calibration/runs/coach-phase0/coach-report.md) |
-
 | 2026-10-20 | `e4ead28` (main, phases 1–3) | 142 | 8,638 | same | [`runs/coach-main-e4ead28/coach-report.md`](../../tests/calibration/runs/coach-main-e4ead28/coach-report.md) |
+| 2026-10-20 | `cb1b475` (quick fixes of `coach-gap-analysis.md` §4.1) | 142 | 8,638 | same | [`runs/coach-quickfix/coach-report.md`](../../tests/calibration/runs/coach-quickfix/coach-report.md) |
 
 The second run adds:
 
@@ -315,6 +315,49 @@ references, is in the report.
   - pawn moves in front of the king (15);
   - evaluation-swing remarks (18).
 - 81 plies are explained only by us. On those, Chess.com's speech is generic or unmatched.
+
+## Results (`cb1b475`, quick fixes, 142 games)
+
+Run `coach-quickfix` measures the quick fixes of
+[`coach-gap-analysis.md`](../coach-gap-analysis.md) §4.1 (B2, B3, B7, B8 and the forced-move
+sentence). Labels are unchanged (68.7% exact). The commands are the ones above, with the server on
+port 8097.
+
+| plies both apps label bad (1,641) | `e4ead28` | `cb1b475` |
+|---|---:|---:|
+| exact | 371 (22.6%) | **485 (29.6%)** |
+| … tuning games (1,106) | 22.9% | 29.3% |
+| … holdout games (535) | 22.1% | 30.1% |
+| same tag, other circumstance | 34 | 43 |
+| same family | 78 | 49 |
+| different | 725 | 629 |
+| they explain, we don't | 301 | 303 |
+| we explain, they don't | 86 | 86 |
+| neither | 46 | 46 |
+
+Where both explain, 35.5% are exact (was 32.5% in Phase 0). Good moves (23.4%, was 23.1%) and the
+best-move sentence (12.1%, was 11.9%) did not regress.
+
+**What moved** (ply counts from the per-ply records):
+
+- **B2** gains the most: 55 plies of `ignores_threat` and 13 of `bad_trade` are now Chess.com's
+  PERMITS FreePiece. 9 plies where Chess.com said IgnoresAttackedPiece/Pawn are lost.
+- **B7:** 12 plies of `back_rank_mate` are now `forced_mate`, as Chess.com says ForcesMate.
+- **B3:** about 16 named tactics deep in R's line are now `material_gain` (Chess.com's
+  LosesMaterial). 4 deep forks that Chess.com does name are lost. The tighter Fork turns 6 forks
+  into Chess.com's Skewer, because the skewer is now the best tactic on the move.
+- **B8:** 8 plies of the PERMITS free piece are now `hangs_piece`, as Chess.com says.
+- **Taken back or outgrown** (`cb1b475`, after a first pass at `df8a7c1` that reached 29.0%): a free
+  piece the mover takes back, or that the line outgrows by more than a pawn, is `material_gain`.
+  That gained 14 LosesMaterial plies and lost 4 FreePiece plies.
+
+**Target missed by 0.4 points.** Phase 0 estimated 30% or more; this run is 8 plies short. It was not
+tuned further: the two refinements already used these games, and the holdout games agree at 30.1%.
+The largest remaining patterns are Phase 2b work. In 53 plies Chess.com says the best move
+threatened material and we say nothing. In 17 Chess.com names the only good move.
+
+**Forced moves.** All 114 now get the sentence "… was the only legal move". The comparison still
+counts them as "they explain, we don't", because it reads events and the sentence has none.
 
 ## Files
 
