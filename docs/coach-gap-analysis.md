@@ -331,3 +331,87 @@ minutes of review time in WSL, and needs no new Chess.com capture.
 - **Vocabulary and gap sizes** in §3 come from the per-ply records written by `coach_compare.py
   --records`. They are kept locally next to the captures and contain tags only.
 - **No Chess.com text is in this document or the repository.** The tag names are generic chess terms.
+
+## 7. Status after Phase 4 (main `582bdd9`, 2026-10-21)
+
+Run `coach-main-582bdd9`: merged main (quick fixes, Phase 2b, the taken-back rule, Phase 4 and the
+Maia-2 move-11 fix). It reused the depth-18 engine results of the Phase 4 run through the local disk
+cache (`coach-fast-reruns`; 8 of 19,200 searches were new). The labels are unchanged (68.7% exact).
+The numbers equal the Phase 4 run, as expected: the Maia-2 fix only changes wording.
+
+| | phases 1–3 | quick fixes | Phase 2b | **now** |
+|---|---:|---:|---:|---:|
+| bad moves both label bad (1,641): exact | 22.6% | 29.6% | 35.4% | **39.2%** |
+| … they explain, we say nothing | 18.3% | 18.5% | 7.1% | **1.5%** |
+| good moves both label good (5,349): exact | 23.1% | 23.4% | 44.3% | **58.3%** |
+| … they explain, we say nothing | 30.1% | 30.1% | 17.4% | **2.9%** |
+| best-move sentence: exact | 11.9% | 12.1% | 37.6% | **46.0%** |
+| … they explain, we say nothing | 60.5% | 60.9% | 15.1% | **3.6%** |
+
+The quick-fix column's bad-move rows come from the `cb1b475` run (`coach-quickfix`). Its good-move and
+best-move rows come from the `d25b1b7` run quoted in coach-log "Results: Phase 2b". Phase 2b was
+measured on `14186c4`.
+
+By Chess.com class (all plies, exact): Blunder 60.5%, Great 55.5%, Best 60.5%, Excellent 56.6%,
+Good 46.8%, Miss 36.4%, Mistake 34.3%, Brilliant 36%, Inaccuracy 21.6%.
+
+**Held-out games agree as well as tuning games.** The tuning set (99 games) gives bad 38.7%, good
+58.4%, best-move sentence 45.8%. The holdout (43 games) gives 40.2%, 58.0% and 46.2%. The phases did
+not overfit the games they were tuned on. All 142 games come from one account, though: the human
+players are mostly rated 820–950 (median Elo 949), plus some bot games.
+
+### 7.1 What is left
+
+1. **Silence is solved; choice is not.**
+   - Where Chess.com explains a move, we now nearly always say something too.
+   - The remaining gap is *which* reason we pick:
+     - "different" is 44.1% of bad moves and 18.9% of good moves;
+     - on 345 of those bad moves and 438 good ones, Chess.com's reason is among our detected
+       events, but our priority picks another.
+   - The patterns form a long tail. The largest are:
+     - a developing move that pins (we: pin; they: develops), 15;
+     - a central pawn hit (we: kicks; they: strikes at the centre), 14;
+     - a trade that doubles pawns, 11;
+     - a passed-pawn push or a check evasion that we say as a mate threat, 11 each.
+   - Several of ours are defensible (a mate threat outranks "evades check").
+2. **We speak where Chess.com is quiet:** 383 good moves and 119 bad, mostly routine captures and
+   positional remarks. The rating gates do not touch tactics.
+3. **The verdict sometimes contradicts Chess.com.**
+   - On 275 moves we praise what Chess.com calls bad (mostly Inaccuracies). On 167 we criticise what
+     it calls good.
+   - That is up from 297 after phases 1–3, because more moves now get a note. The label disagreement
+     underneath is unchanged.
+   - The near-threshold hedge of §4.7 is not done yet.
+4. **Agreement is not correctness.**
+   - Nothing yet checks that our sentences are *true* (every piece, square and line).
+   - No detector has been checked against an independent labelled set (the lichess puzzle themes).
+   - No human has rated the notes.
+5. **Measurement limits.**
+   - Forced moves get a sentence without an event, so the comparison counts them as unexplained
+     (0 of 114). This is a tool artifact.
+   - Rating gates and Maia-2 wording are untested above about 1000 Elo.
+
+### 7.2 Next steps
+
+| order | work | why | measure |
+|---|---|---|---|
+| 1 | **Fact checker**: verify every claim in a note against the position and line (piece on square, move legal, the stated gain occurs on the line, the threat exists). Run it on all 142 games. | Correctness is unmeasured. Required before any LLM wording | claims checked, false-claim rate (target < 1%) |
+| 2 | **Independent detector check** on the lichess puzzle database (CC0, theme labels): precision and recall per tag. | Agreement with Chess.com does not prove a detector is right | precision ≥ 0.9 on fork, pin, skewer, hanging piece, discovered attack |
+| 3 | **Human rating** of about 100 sampled notes across classes (correct / relevant / specific / useful) | The only measure of usefulness | mean scores; list of bad notes |
+| 4 | **Second calibration set at other ratings** (1200–2200 players), captured with the Phase 0 tooling | Gates, positional tags and Maia-2 are untested above 1000 | agreement by rating band |
+| 5 | **Priority tuning from data**, bounded: learn reorderings on the tuning games, keep only changes that also hold on the holdout and read well | The 345 + 438 "detected but not chosen" moves | +3–5 points expected, not more |
+| 6 | **Near-threshold hedge** (§4.7) and a `Forced` event for the comparison | The 442 tone contradictions, and the 0-of-114 artifact | contradictions with a praise or blame frame |
+| 7 | **Wording**: more variants per frame, no repeats within a game, then optionally Phase 5 (LLM rephrasing gated by the fact checker) | Readability; the facts are now good enough to be worth phrasing well | fact-check pass rate, human scores |
+
+The comparison against Chess.com stays as a regression check on every change (about a minute with the
+engine cache), but it is no longer the main target.
+
+**Step 1, fact checker: done** (`4b84721`, run `coach-verify-4b84721`; `implementation-notes.md`
+"Coach fact checker"). `coach/verify.rs` reads each note as text and checks 101,440 claims in the 142
+games: pieces on squares, moves legal and on their line, gains, mates, geometry and arrows, show-line
+narrations. At `582bdd9`, 75 of 8,884 sentences (0.84%) had a false claim, all of them an arrow (a
+block drawn as a guard, the central push drawn as an attack, king-shelter marks drawn from squares
+that attack nothing), and 12 of 24,274 narrations named the wrong square for an en passant capture.
+After the fixes: 0 and 0. 133 mates in 7 or more are past the 12 plies the coach keeps and stay
+unchecked. Changed claims are caught 97–100% of the time (mates: every one the line can show), and
+the Chess.com agreement is unchanged.

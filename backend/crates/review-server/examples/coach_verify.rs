@@ -261,6 +261,7 @@ async fn run() -> Result<(), String> {
         total.show_lines,
         total.narrations
     );
+    println!("claims checked: {}", total.claims);
     println!(
         "sentences with a false claim: {} ({:.2}%)",
         total.false_sentences,

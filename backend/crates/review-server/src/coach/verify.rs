@@ -123,6 +123,9 @@ pub struct Report {
     /// Narrations with at least one false claim.
     pub false_narrations: usize,
     pub show_lines: usize,
+    /// Claims checked: the words that name a move, a piece, a square, a
+    /// gain, a mate or a side, the arrows, and the moves of the show-lines.
+    pub claims: usize,
     /// Claims whose proof lies past the end of the line (a mate longer than
     /// the line the coach kept): neither true nor false here.
     pub unchecked: Vec<Failure>,
@@ -146,6 +149,7 @@ impl Report {
         self.narrations += other.narrations;
         self.false_narrations += other.false_narrations;
         self.show_lines += other.show_lines;
+        self.claims += other.claims;
         self.unchecked.extend(other.unchecked);
         self.failures.extend(other.failures);
     }
@@ -236,7 +240,8 @@ pub fn verify(input: &VerifyInput<'_>) -> Report {
             },
             None => None,
         };
-        let (failures, unchecked) = ctx.sentence(&text, &arrows, event);
+        let (failures, unchecked, claims) = ctx.sentence(&text, &arrows, event);
+        report.claims += claims;
         report
             .unchecked
             .extend(unchecked.into_iter().map(|(kind, claim, detail)| Failure {
@@ -931,7 +936,7 @@ impl<'a> Ctx<'a> {
         text: &str,
         arrows: &[&Arrow],
         event: Option<&CoachEvent>,
-    ) -> (Vec<Found>, Vec<Found>) {
+    ) -> (Vec<Found>, Vec<Found>, usize) {
         let mut readings = Vec::new();
         let lowered = lower_first(text);
         for (key, template) in sentence_templates(event.map(|e| e.tag)) {
@@ -948,17 +953,22 @@ impl<'a> Ctx<'a> {
                 Some(e) => format!("no frame says this with the phrase of {}", e.tag.key()),
                 None => "no frame says this".to_owned(),
             };
-            return (vec![(Kind::Unparsed, text.to_owned(), detail)], Vec::new());
+            return (
+                vec![(Kind::Unparsed, text.to_owned(), detail)],
+                Vec::new(),
+                1,
+            );
         }
-        let mut best: Option<(Vec<Found>, Vec<Found>)> = None;
+        let mut best: Option<(Vec<Found>, Vec<Found>, usize)> = None;
         for (key, bindings) in &readings {
             let reading = Reading {
                 kind: frame_kind(key),
                 bindings,
             };
-            let result = self.reading(&reading, arrows, event);
+            let (false_claims, unchecked) = self.reading(&reading, arrows, event);
+            let result = (false_claims, unchecked, bindings.len() + arrows.len());
             // Fewest false claims, then fewest claims left unchecked.
-            let score = |r: &(Vec<Found>, Vec<Found>)| (r.0.len(), r.1.len());
+            let score = |r: &(Vec<Found>, Vec<Found>, usize)| (r.0.len(), r.1.len());
             if best.as_ref().is_none_or(|b| score(&result) < score(b)) {
                 best = Some(result);
             }
@@ -2130,6 +2140,7 @@ impl Ctx<'_> {
             return;
         };
         let pos = self.pos(start).expect("found above");
+        report.claims += line.moves.len();
         let mut walk = Walk::empty(pos, self.lead(start));
         for m in &line.moves {
             match board::parse_uci(walk.last(), &m.uci) {
@@ -2205,15 +2216,19 @@ impl Ctx<'_> {
         for (k, text) in line.narration.iter().enumerate() {
             report.narrations += 1;
             let place = Place::Narration { line: i, ply: k };
-            let failures = if k < walk.moves.len() {
+            let (failures, claims) = if k < walk.moves.len() {
                 self.narration(text, &line.moves[k].san, &walk, k)
             } else {
-                vec![(
-                    Kind::Narration,
-                    text.clone(),
-                    "no legal move to narrate".to_owned(),
-                )]
+                (
+                    vec![(
+                        Kind::Narration,
+                        text.clone(),
+                        "no legal move to narrate".to_owned(),
+                    )],
+                    1,
+                )
             };
+            report.claims += claims;
             if !failures.is_empty() {
                 report.false_narrations += 1;
             }
@@ -2223,7 +2238,8 @@ impl Ctx<'_> {
         }
     }
 
-    fn narration(&self, text: &str, san_text: &str, walk: &Walk, k: usize) -> Vec<Found> {
+    /// The narration's false claims, and how many claims it makes.
+    fn narration(&self, text: &str, san_text: &str, walk: &Walk, k: usize) -> (Vec<Found>, usize) {
         let n = &corpus().narrate;
         let mut templates: Vec<(Option<Tag>, String)> = vec![
             (None, n.capture.clone()),
@@ -2239,7 +2255,7 @@ impl Ctx<'_> {
             ));
         }
         let f = walk.facts(k);
-        let mut best: Option<Vec<Found>> = None;
+        let mut best: Option<(Vec<Found>, usize)> = None;
         for (tag, template) in &templates {
             let Some(bindings) = match_template(&tokenize(template), text) else {
                 continue;
@@ -2312,19 +2328,22 @@ impl Ctx<'_> {
                     o.0 = Kind::Narration;
                 }
             }
-            if best.as_ref().is_none_or(|b| out.len() < b.len()) {
-                best = Some(out);
+            if best.as_ref().is_none_or(|b| out.len() < b.0.len()) {
+                best = Some((out, bindings.len()));
             }
-            if best.as_ref().is_some_and(Vec::is_empty) {
+            if best.as_ref().is_some_and(|b| b.0.is_empty()) {
                 break;
             }
         }
         best.unwrap_or_else(|| {
-            vec![(
-                Kind::Narration,
-                text.to_owned(),
-                "no narration says this".to_owned(),
-            )]
+            (
+                vec![(
+                    Kind::Narration,
+                    text.to_owned(),
+                    "no narration says this".to_owned(),
+                )],
+                1,
+            )
         })
     }
 }

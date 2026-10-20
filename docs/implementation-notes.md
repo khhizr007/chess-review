@@ -14,6 +14,7 @@ else is used instead.
 | Orchestration: searches, perspective conversion, facts → `MoveFacts`, CAPS2, summary | `review-server/src/analysis/mod.rs` |
 | Generated explanations (facts for the details drawer) | `review-server/src/analysis/explain.rs` |
 | Coach: position facts, tag detectors, circumstances, prioritiser, realiser, English text | `review-server/src/coach/` (`text/en.toml`) |
+| Coach fact checker and its CLI | `review-server/src/coach/verify.rs`, `examples/coach_verify.rs` |
 | Phase heuristic, material values, FEN helpers | `review-server/src/board.rs` |
 
 Every recovered constant is a default in `ReviewConfig` and is pinned by a unit test in `review-core`.
@@ -535,6 +536,108 @@ good-move exact 58.3% (44.4% before), bad-move exact 39.2% (36.0%), opening-phas
   and the difficulty wording in `tests/coach_note.rs`; book notes in the pipeline in
   `tests/coach_pipeline.rs`; the sidecar protocol (against `tests/fixtures/fake_maia.sh`) and a model
   through the review pipeline in `tests/human_model.rs`.
+
+## Coach fact checker
+
+`coach/verify.rs` (`coach-analysis.md` §8 item 3, `coach-gap-analysis.md` §7.2 step 1). It checks a
+`CoachNote` the way a user reads it, as text, so it can also hold reworded text (Phase 5) to the
+facts. It is pure: the position before the move, the move, the previous move, the engine's best line,
+and the event lines stored in the note.
+
+- **Parsing.** Each sentence is matched against every wording of every frame in `en.toml`, with
+  `{pred}` replaced by its event's tag phrases (`vp`, `vp_long`, the "wins" form). Each placeholder
+  only matches words of its kind: one SAN, a line of SANs, "Black's knight on f6", a list of pieces, a
+  gain phrase, a number, a side. A sentence no frame produces is `unparsed`. When several frames
+  match ("{move} {pred}." and "{reply} {pred}."), the reading with the fewest false claims wins, then
+  the one with the fewest unchecked claims.
+- **Where moves are played.** `{move}` and `{best}` from the position before the move. `{line}` from
+  the position after it for what the move allows (BASE and PERMITS frames), before it otherwise. A
+  `{reply}` without a line comes from:
+  - after the move, for what it allows;
+  - the null-move position after the move, for "threatens";
+  - before it with the opponent to move, for "stops";
+  - after the best move with its mover to move again, for what the best move threatens.
+
+  Every SAN must be legal there and written as SAN writes it, check suffix included. The sentence's
+  moves must be the start of its event's engine line (the event's `line`, from the position its
+  circumstance implies). `{move}` must be the played move, `{best}` the engine's first move.
+- **Pieces.** A named piece must stand on its square after the subject move (the reply, else the
+  played or best move). It must stand there before the move when the move takes it or the text says
+  it "was" there: free piece, removed defender, the targets of a losing trade, a checker escaped.
+  Exploited pins, overloads and attraction accept either; "once a pawn takes back" is checked after
+  the answer. "Your" and "their" are resolved by the note's style; a piece named without its square
+  must be the moved piece, or the side's own bishop or king.
+- **Tag phrases**, checked from the board, not from the detectors:
+  - fork: the moved piece attacks every target;
+  - pin and skewer: a line piece of the side attacks the front piece, and the back one is next on the
+    same ray;
+  - discovered check and attack: a piece other than the moved one gives check, or newly attacks the
+    targets;
+  - double check: two checkers;
+  - removes defender: the move takes it, and it guarded the targets;
+  - hanging, under attack, offered: the other side attacks it;
+  - defends: the piece was attacked, and the moved piece guards it or blocks the attack;
+  - also captures and take-backs, promotion, castling side, open file, seventh rank, passed and
+    isolated pawns, the central push, and the bishop's opened diagonal.
+- **Material.** The gain words promise a minimum: "a knight" more than two pawns, "about N pawns" at
+  least N − ½. The line's first mover must be that far ahead at some settled point (no capture next)
+  from the subject on. The lead is counted three ways, and any one is enough: from the line's start,
+  from before the move that led to it (taking back is not a gain, as in `Line::net`), or from the
+  subject move.
+- **Mate.** "A forced mate in N" must mate within N moves of the subject on the line. A mate beyond the
+  12 plies the coach keeps is reported as *unchecked*, not false.
+- **Arrows.** A move arrow must be a move of the sentence, a best arrow the best move. An attack or
+  defence arrow needs a real attack, or an x-ray through one piece, from the piece on its tail, before
+  or after the subject move.
+- **Show-lines** must start from a position the note is about. Each move must be legal, with the
+  right SAN and FEN, and the line must be its event's line (or the best line). There must be one
+  narration per move, each naming its own move; captures, take-backs, checks, "only move" and tactic
+  narrations are checked as above.
+- **Not checked:** the engine's judgement ("the only good move", "hard to find", a slide from equal to
+  worse, a sacrifice that works, a book move), and whether the coach picked the best idea.
+- **The checker itself is tested** by `verify::mutate`, which changes one claim at a time. On the 142
+  games (`--mutate`):
+
+  | changed claim | tried | caught |
+  |---|---:|---:|
+  | a move goes to the next file | 8,678 | 100% |
+  | a narration names the next move | 15,260 | 100% |
+  | a piece's owner | 5,533 | 100% |
+  | a piece's square (next file) | 3,697 | 99.7% |
+  | a gain made larger | 1,185 | 96.6% |
+  | a mate in N said as N − 1 | 473 | 71.9% |
+
+  The uncaught squares are phrases whose geometry is not checked (offers to trade, battery), or a
+  pawn on the next file that fits the claim as well. The uncaught gains are lines that do win that
+  much later. The uncaught mates are the 133 mates past the line's end.
+- **Results** (run `coach-verify-4b84721`, the 142 calibration games, with the engine results of the
+  `582bdd9` run from the local disk cache; labels unchanged at 68.7%):
+
+  | | `582bdd9` | `4b84721` |
+  |---|---:|---:|
+  | sentences (8,884) with a false claim | 75 (0.84%) | 0 |
+  | narrations (24,274) with a false claim | 12 (0.05%) | 0 |
+  | claims unchecked (mates in 7–20) | 133 | 133 |
+
+  101,440 claims were checked. All 75 false sentences had a false arrow. The fixes in the coach:
+  - **En passant.** The narration "exf6 takes Black's pawn on f6" and the material-gain focus named
+    the destination; `board::captured_square` gives the captured pawn's square (f5).
+  - **Blocks.** `DefendsPiece` by interposition ("f3 defends White's queen on d1") was drawn as a
+    guard from f3 to d1. It is now drawn as the attack the blocker stands in, an x-ray through f3.
+  - **The central push.** `PreparesCentralPush` drew the planned d7–d5 as an attack. It now draws the
+    moved pawn guarding d5.
+  - **King shelter.** `WeakensKing` (f7 to e8) and `MovesPawnInFrontOfKing` (g1 to f3) drew attacks
+    from squares that attack nothing. They mark the squares instead.
+
+  The Chess.com comparison (`coach_compare.py`) gives the same report as `582bdd9`.
+- **Tests.** `tests/coach_verify.rs` reviews the fixtures and the first 16 calibration games with the
+  fake engine, as neither side and as each side, and requires every claim to be true. It also requires
+  every changed move and narration to be caught, and nine in ten changed squares and owners. Against
+  the `582bdd9` coach it fails on the en passant narration and the central-push arrow.
+- **CLI.** `cargo run --release -p review-server --example coach_verify -- <run dir | game.json |
+  game.pgn> [depth] [--list] [--mutate]`. For a PGN it reviews the game first (`STOCKFISH_PATH`). It
+  prints the false claims (all with `--list`, plus the unchecked ones and the missed mutations), and
+  the rate by kind.
 
 ## Coach UI (phase 3)
 

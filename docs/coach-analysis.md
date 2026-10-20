@@ -590,9 +590,10 @@ doing after the template coach is good, and it adds a runtime dependency and cos
    - same tag with a different circumstance;
    - different tag in the same family (tactic, material, positional);
    - and inspect the disagreements by hand. The same approach `docs/calibration/` uses for labels.
-3. **Fact checking.** An automatic verifier checks that every square, piece and SAN in a generated
-   sentence exists in the position or line. This mirrors the ACT-Eval rules, such as using the
-   pre-move position for "was" claims and the post-move position for "creates".
+3. **Fact checking** (built: `coach/verify.rs`, see `implementation-notes.md`). An automatic
+   verifier checks that every square, piece and SAN in a generated sentence exists in the position
+   or line. This mirrors the ACT-Eval rules, such as using the pre-move position for "was" claims
+   and the post-move position for "creates".
 4. **Usefulness.** A small rubric (correct / relevant / specific / actionable) on about 100 sampled
    moves across 600–2000 ratings. Later, learning metrics: retry success, and whether the same motif
    error recurs in later games.
