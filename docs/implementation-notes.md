@@ -194,7 +194,7 @@ played good move and adds trade, check, tempo, sacrifice, only-move and slide ta
 the engine lines the review already has, including the null-move threat searches (see "Search
 model"), and makes no engine calls. The output is `PlyReview.coach`;
 `explanation` stays for the details drawer. A Forced move gets one sentence ("Kh2 was the only legal
-move."); a Book move gets an empty note.
+move."); a Book move gets a note only for a development idea (phase 4).
 
 - **Nodes.** P is the played move, with its own line (the MultiPV line that starts with it, or P
   followed by the next position's line 1). R is the opponent's best reply: line 1 of the next position
@@ -428,6 +428,113 @@ It is built on the quick fixes (§4.1). Measured on all 142 calibration games
   roughly 1.4 s of CPU per game against 190–330 s for a game of average length: about 0.5% of review
   time. (The calibration run's wall-clock time shared the machine with another run and does not
   resolve it.)
+
+## Coach phase 4
+
+Phase 4 of [`coach-analysis.md`](coach-analysis.md) (§6.4 group 9, §6.7, §7 row 4), scoped in
+[`coach-gap-analysis.md`](coach-gap-analysis.md) §4.3 (gaps B6, G2, G7 and book moves): positional
+tags, rating gates and an optional human-move model. Measured on all 142 calibration games
+([`calibration/coach-log.md`](calibration/coach-log.md) "Results: Phase 4", run `coach-phase4`):
+good-move exact 58.3% (44.4% before), bad-move exact 39.2% (36.0%), opening-phase bad moves 34.4%
+(27.6%), best-move sentence 46.0% (37.6%), Blunders 138 of 228 (137).
+
+- **Positional ideas** (group 13, `detect/develop.rs`, `activity.rs`, `structure.rs`), written from
+  chess semantics; the pawn-structure helpers (doubled, isolated, passed, backward, open files,
+  mobility) are in `facts.rs`. Home squares are those of standard chess, and a piece on its home square
+  counts as undeveloped. In priority order:
+  - `ForcesDoubledPawns`, `ForcesIsolatedPawn`: a capture that the next move of the line takes back
+    with a pawn, leaving the opponent doubled pawns or a new isolated pawn. Doubled pawns are said
+    before trades (Chess.com says "forces > DoublesPawns" where we said `equal_trade`); an isolated
+    pawn after them (a first run had Chess.com say EqualTrade 12 times and the isolated pawn 6).
+  - Centre: `StrikesAtCenter` (a pawn hits an opponent pawn on d4/e4/d5/e5, locked or not: 3.d4
+    against e5), `CentralBreak` (after the opening, a pawn hits a locked pawn on the c- or f-file; a
+    first run that made locked centre pawns breaks matched Chess.com 0 of 10 times), `PutsPawnInCenter` (a pawn reaches a centre square in the opening without hitting a
+    pawn), `AttacksPawnChain` (a pawn hits a pawn that guards or is guarded by another pawn),
+    `PreparesCentralPush` (in the opening, a pawn off the d- to f-files guards the empty centre square
+    a d- or e-pawn of ours can advance to, where no pawn guarded it).
+  - Activity: `RookOnSeventh` (with opponent pawns there or its king on the back rank), `Outpost` (a
+    knight or bishop on ranks 4–6, guarded by a pawn, no opponent pawn on the next files ahead of it),
+    `TakesOpenFile` (a rook, also a castling rook, onto a file with no pawns), `Battery` (two line pieces
+    one behind the other on a line both move along, the front one bearing on opponent pieces or the
+    king's squares; doubled rooks on a file free of our pawns count), `CentralizesKnight` (from outside
+    c3–f6 into it), `MovesToActiveSquare` / `BishopGainsScope` (a piece that already stood somewhere
+    gains at least 3 squares of mobility and ends with at least 5 for a knight, 7 for a bishop or rook,
+    12 for the queen).
+  - Development: `CastlesSameSide` / `CastlesOppositeSide` (by the other king: on its back rank, on
+    the g/h or a–c files, no castling rights left), else `CastlesKingside` / `CastlesQueenside`;
+    `ConnectsRooks` (the moved piece stood between the two back-rank rooks); `Fianchetto`;
+    `PreparesToCastleKingside` / `Queenside` (the move empties the castling path while the right
+    remains); `DevelopsCenter` (a minor piece leaves home in the opening and attacks a centre square),
+    `DevelopsOpening` (any other piece leaving home in the opening), `DevelopsMiddlegame` (leaving home
+    later, mostly rooks from a1/h1); `PreparesBishopDevelopment` (a pawn move frees a bishop with no
+    square at home).
+  - Endgame and structure: `PushesPassedPawn` / `PushesPassedPawnEndgame`, `MakesPassedPawn`,
+    `KingActivity` (in the endgame a king on its first two ranks steps closer to the centre, onto a
+    square not attacked; without the rank condition 50 of 72 were remarks Chess.com does not make),
+    `CreatesLuft` (after castling, a g- or h-pawn one step forward).
+- **Positional errors** (group 14, BASE of a bad move): `LosesCastling`, `DoubledPawns`,
+  `IsolatedPawn`, `BackwardPawn` (new weaknesses in our own pawns; a pawn that was already weak and
+  moves on is none), `WeakensKing` (f3/f6 in the opening, king at home or castled short; Chess.com's
+  NeverPlayF3), `MovesPawnInFrontOfKing` (a shelter pawn of the castled king), `TooEarlyQueen` and
+  `MovesSamePiece` (in the opening, while two or more minor pieces are at home), `MovesToPassiveSquare`
+  (a piece not under attack loses at least 4 squares and ends with at most 3).
+- **Circumstances.** BASE on a good move (its own line gives the recapture for the forced
+  weaknesses), MISSES on the best move (with B's line), BASE errors on a bad move, and PERMITS for a
+  reply that forces a weakness on our pawns (`circ::permits_weakness`). The phase is the game phase
+  after the move (`CoachInput.phase`).
+- **Priority.**
+  - Good moves: … stopped mate; a forced weakness; trade, defence, tempo; a tactic that wins nothing;
+    **a positional idea**; any threat; any stopped threat; `MaterialGain`; `OnlyMove`. This follows
+    Chess.com's add_good: any BASE event comes before any THREATENS.
+  - The best move's sentence (Misses block): the same order, so B's positional idea comes after its
+    tactics, trades and defences and before its threats.
+  - Bad moves: what it allows and what it misses (tactics, material, defence: unchanged; positional
+    PERMITS and MISSES events are left out here), then **a positional error of the move**, then a
+    weakness the reply forces, then **the best move's positional idea**, then the move's threat, the
+    only move, the slide.
+- **Book moves** get a note when a development or centre tag applies (`Tag::is_development`):
+  "Nf3 is a book move: it develops White's knight toward the centre." (`frame.book_good`, said on
+  the played move so the fragment carries its arrow). Other book moves stay empty.
+- **Rating gates.** Every tag has a `min_rating` in `text/en.toml`: tactics, material, defence and
+  development 0 (overloaded defender and decoy 600); activity 600–900; structure 1000–1100. The rating
+  is the player's Elo from the PGN when the request sets `player_side`, else `rating_used` (the higher
+  Elo plus 200, at least 1000). Gated events are dropped before selection, so when the only idea of a
+  move is gated the note is empty. `ReviewConfig.coach.rating_gates` (default `true`) turns it off.
+- **Human-move model** (`human.rs`, `tools/maia/maia_sidecar.py`): Maia-2 (MIT) as an optional
+  sidecar process started from `MAIA_COMMAND`, speaking one JSON line per batch of positions. After the
+  engine searches, `run_review_with_model` asks, for every non-book move from move 11 on, P(played)
+  and P(best) at the mover's Elo (else `rating_used`) against the opponent's, in batches of 256. A
+  failing model is logged and left out. Moves 1–10 are not asked: Maia-2's training config skips the
+  first ten moves of each game (`first_n_moves: 10`), and there it rates 1.e4 below 1.Na3 at 1200
+  and 2.Ke2 among its top moves after 1.e4 e5. In the coach:
+  - P(best) < 0.10 on a bad move: the "missed" and "better was" frames take their `_hard` wording
+    ("Better was Nf3, a hard move to find at this level: it …").
+  - P(played) ≥ 0.30 on a Mistake or Blunder: what it allows is said with the `_natural` wording,
+    leading with the safety check ("Ke8 looks natural, but check the reply first: Nc7+ forks …").
+  - **Why a sidecar and not `ort`.** Maia-2 ships as PyTorch code and weights, not ONNX; an ONNX
+    export would have to be made and kept in step with its board encoding, Elo bucketing and
+    1,880-move vocabulary, all reimplemented in Rust. `ort` also brings onnxruntime's native library
+    into every build (downloaded at build time), for a feature most users will not enable, and does
+    not fit the zig-cc cross build used here. The sidecar runs the reference implementation
+    unchanged, behind a process boundary like Stockfish, and costs nothing when it is not configured.
+    It needs Python, PyTorch and the weights, installed separately (`docs/configuration.md`).
+  - **Checked against the real model** (Maia-2 rapid, torch 2.8.0 CPU, on the 142 calibration
+    games): of 1,422 bad moves from move 11 on, 282 (20%) get the "hard to find" wording and 130 of
+    619 Mistakes and Blunders (21%) the "looks natural" wording. Tags are unchanged (the comparison
+    gives the same 58.3% / 39.2%). The model adds about 0.5 s per game on 2 CPU threads. Examples:
+    "Qxa8 looks natural, but check the reply first: Qxh3 starts a forced mate in 3. Better was Qh7, a
+    hard move to find at this level: it moves White's queen out of danger."; "Kh1 allows Qf3+, which
+    starts a forced mate in 2. Better was Rf1, hard to find at this level: it stops Re2+, which starts
+    a forced mate in 3."
+  - The sidecar points `sys.stdout` at stderr: the maia2 package prints progress with `print()`,
+    which would otherwise break the line protocol.
+- **Frontend.** `lib/tags.ts` names the new tags. Development and castling are `routine` (takeaways
+  do not praise them); the errors have takeaway verbs and Retry hints. Book notes show in the bubble
+  above the opening name.
+- **Tests.** One or more positions per tag in `tests/coach_positional.rs`; notes, the gate, book notes
+  and the difficulty wording in `tests/coach_note.rs`; book notes in the pipeline in
+  `tests/coach_pipeline.rs`; the sidecar protocol (against `tests/fixtures/fake_maia.sh`) and a model
+  through the review pipeline in `tests/human_model.rs`.
 
 ## Coach UI (phase 3)
 

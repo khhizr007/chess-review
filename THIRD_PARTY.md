@@ -9,6 +9,7 @@ rules and PGN libraries below are GPL-3.0.
 | [pgn-reader](https://crates.io/crates/pgn-reader) | PGN parsing | GPL-3.0-or-later | Compiled into the backend |
 | axum, tokio, tower-http, serde, tracing, uuid, lru, ts-rs, futures, async-trait, thiserror, toml | Web server, runtime, serialisation, coach text | MIT and/or Apache-2.0 | Compiled into the backend |
 | [Stockfish](https://stockfishchess.org/) | Position search over UCI | GPL-3.0 | **No.** It is installed separately and launched as its own process (`STOCKFISH_PATH`). |
+| [Maia-2](https://github.com/CSSLab/maia2) (Tang et al., NeurIPS 2024) | Optional human-move model for the coach's difficulty wording (`tools/maia/maia_sidecar.py`, `MAIA_COMMAND`) | MIT | **No.** The `maia2` Python package, PyTorch and the model weights are installed separately (the weights are downloaded by `maia2` on first use); the server talks to it as its own process. |
 | [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) | Opening names and book positions (`backend/data/openings/*.tsv`) | CC0 (public domain) | Yes (data files) |
 | React, React DOM | UI | MIT | Bundled into the frontend build |
 | [react-chessboard](https://github.com/Clariity/react-chessboard) | Board rendering, arrows, highlights | MIT | Bundled into the frontend build |

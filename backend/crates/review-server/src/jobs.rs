@@ -11,8 +11,9 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::analysis::model::ReviewResult;
-use crate::analysis::{ProgressFn, ReviewError, ReviewRequest, run_review};
+use crate::analysis::{ProgressFn, ReviewError, ReviewRequest, run_review_with_model};
 use crate::engine::Evaluator;
+use crate::human::HumanModel;
 use crate::openings::OpeningBook;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -63,6 +64,8 @@ pub struct JobStore {
     jobs: Arc<Mutex<HashMap<Uuid, Job>>>,
     running: Arc<Semaphore>,
     max_stored: usize,
+    /// The human-move model reviews use, when one is running.
+    human: Option<Arc<dyn HumanModel>>,
 }
 
 impl JobStore {
@@ -71,7 +74,14 @@ impl JobStore {
             jobs: Arc::default(),
             running: Arc::new(Semaphore::new(max_concurrent.max(1))),
             max_stored: max_stored.max(1),
+            human: None,
         }
+    }
+
+    /// Reviews use `model` for the coach's difficulty wording.
+    pub fn with_human_model(mut self, model: Arc<dyn HumanModel>) -> Self {
+        self.human = Some(model);
+        self
     }
 
     fn update(&self, id: Uuid, f: impl FnOnce(&mut Job)) {
@@ -125,7 +135,9 @@ impl JobStore {
                 progress_store.update(id, |job| job.status.progress = Progress { done, total });
             });
             let started = Instant::now();
-            let result = run_review(request, evaluator, openings, cancel, progress).await;
+            let human = store.human.clone();
+            let result =
+                run_review_with_model(request, evaluator, human, openings, cancel, progress).await;
             tracing::info!(review = %id, ok = result.is_ok(), elapsed_ms = started.elapsed().as_millis() as u64, "review finished");
             store.finish(id, result);
         });

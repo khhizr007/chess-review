@@ -22,6 +22,8 @@ pub struct AppConfig {
     pub max_concurrent_reviews: usize,
     /// Finished reviews kept in memory.
     pub max_stored_reviews: usize,
+    /// Command that starts the human-move model sidecar (`MAIA_COMMAND`), if any.
+    pub human_model_command: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +102,9 @@ impl AppConfig {
             cors_origin: std::env::var("CORS_ORIGIN").ok().filter(|v| !v.is_empty()),
             max_concurrent_reviews: parse_var("MAX_CONCURRENT_REVIEWS", 2usize)?.max(1),
             max_stored_reviews: parse_var("MAX_STORED_REVIEWS", 100usize)?.max(1),
+            human_model_command: std::env::var("MAIA_COMMAND")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
         })
     }
 }

@@ -4,17 +4,21 @@
 //! puzzle tagger as described in `docs/coach-research-notes.md` §2.1. They are
 //! written from those descriptions, not from its code.
 
+mod activity;
 mod bad;
 mod defence;
 mod defender;
+mod develop;
 mod double;
 mod lines;
 mod mate;
 mod material;
 mod promotion;
+mod structure;
 mod tempo;
 mod trade;
 
+use review_core::Phase;
 use serde::Serialize;
 use shakmaty::{Chess, Color, Move, Position, Square};
 use ts_rs::TS;
@@ -118,7 +122,89 @@ pub enum Tag {
     Sacrifice,
     /// Another piece is left to be taken, and that is the point.
     OffersPiece,
-    // 12. The move as a whole.
+    // 13. Positional ideas (said about a good move itself, or the best move).
+    /// A capture the opponent takes back with a pawn, doubling its pawns.
+    ForcesDoubledPawns,
+    /// A capture the opponent takes back with a pawn, leaving a pawn isolated.
+    ForcesIsolatedPawn,
+    /// A pawn hits an opponent pawn on a centre square.
+    StrikesAtCenter,
+    /// A pawn hits an opponent pawn on the c- to f-files that is locked by one of ours.
+    CentralBreak,
+    /// A pawn reaches a centre square in the opening.
+    PutsPawnInCenter,
+    /// A pawn hits an opponent pawn that guards or is guarded by another pawn.
+    AttacksPawnChain,
+    /// A pawn guards the square a central pawn of ours wants to advance to.
+    PreparesCentralPush,
+    /// A rook reaches the opponent's second rank.
+    RookOnSeventh,
+    /// A knight or bishop settles where a pawn guards it and no opponent pawn can attack it.
+    Outpost,
+    /// A rook moves to a file with no pawns.
+    TakesOpenFile,
+    /// Two line pieces stand one behind the other, aimed at the opponent.
+    Battery,
+    /// A knight comes from the edge to the central squares.
+    CentralizesKnight,
+    /// A piece moves to where it reaches clearly more squares.
+    MovesToActiveSquare,
+    /// A bishop moves to a longer diagonal.
+    BishopGainsScope,
+    /// Castles on the side where the opponent's king is.
+    CastlesSameSide,
+    /// Castles on the other side from the opponent's king.
+    CastlesOppositeSide,
+    /// Castles kingside (the opponent has not castled).
+    CastlesKingside,
+    /// Castles queenside (the opponent has not castled).
+    CastlesQueenside,
+    /// The rooks see each other along the back rank.
+    ConnectsRooks,
+    /// A bishop develops to the long diagonal in front of a pawn pushed one square.
+    Fianchetto,
+    /// Clears the last piece between the king and the queenside rook.
+    PreparesToCastleQueenside,
+    /// Clears the last piece between the king and the kingside rook.
+    PreparesToCastleKingside,
+    /// A knight or bishop leaves home in the opening and reaches a centre square.
+    DevelopsCenter,
+    /// A piece leaves home in the opening.
+    DevelopsOpening,
+    /// A piece leaves home after the opening.
+    DevelopsMiddlegame,
+    /// A pawn move opens a diagonal for a bishop still shut in at home.
+    PreparesBishopDevelopment,
+    /// A passed pawn moves on, before the endgame.
+    PushesPassedPawn,
+    /// A passed pawn moves on in the endgame.
+    PushesPassedPawnEndgame,
+    /// A pawn becomes passed.
+    MakesPassedPawn,
+    /// The king walks toward the centre in the endgame.
+    KingActivity,
+    /// After castling, a pawn in front of the king steps forward one square.
+    CreatesLuft,
+    // 14. Positional errors (said about a bad move itself).
+    /// The king or a rook moves and a right to castle is lost.
+    LosesCastling,
+    /// Our pawns end up doubled.
+    DoubledPawns,
+    /// One of our pawns ends up isolated.
+    IsolatedPawn,
+    /// One of our pawns ends up backward.
+    BackwardPawn,
+    /// The f-pawn steps forward in the opening and opens the king's diagonal.
+    WeakensKing,
+    /// After castling, a pawn of the king's shelter moves.
+    MovesPawnInFrontOfKing,
+    /// The queen comes out while the minor pieces are still at home.
+    TooEarlyQueen,
+    /// A piece moves a second time in the opening while others are still at home.
+    MovesSamePiece,
+    /// A piece moves to a square where it does much less.
+    MovesToPassiveSquare,
+    // 15. The move as a whole.
     /// The only move that keeps a Good result: every other line loses more.
     OnlyMove,
     /// The evaluation slides a bucket (say, from equal to worse).
@@ -128,7 +214,7 @@ pub enum Tag {
 }
 
 impl Tag {
-    pub const ALL: [Tag; 41] = [
+    pub const ALL: [Tag; 81] = [
         Tag::BackRankMate,
         Tag::Checkmate,
         Tag::ForcedMate,
@@ -167,6 +253,46 @@ impl Tag {
         Tag::OffersTrade,
         Tag::Sacrifice,
         Tag::OffersPiece,
+        Tag::ForcesDoubledPawns,
+        Tag::ForcesIsolatedPawn,
+        Tag::StrikesAtCenter,
+        Tag::CentralBreak,
+        Tag::PutsPawnInCenter,
+        Tag::AttacksPawnChain,
+        Tag::PreparesCentralPush,
+        Tag::RookOnSeventh,
+        Tag::Outpost,
+        Tag::TakesOpenFile,
+        Tag::Battery,
+        Tag::CentralizesKnight,
+        Tag::MovesToActiveSquare,
+        Tag::BishopGainsScope,
+        Tag::CastlesSameSide,
+        Tag::CastlesOppositeSide,
+        Tag::CastlesKingside,
+        Tag::CastlesQueenside,
+        Tag::ConnectsRooks,
+        Tag::Fianchetto,
+        Tag::PreparesToCastleQueenside,
+        Tag::PreparesToCastleKingside,
+        Tag::DevelopsCenter,
+        Tag::DevelopsOpening,
+        Tag::DevelopsMiddlegame,
+        Tag::PreparesBishopDevelopment,
+        Tag::PushesPassedPawn,
+        Tag::PushesPassedPawnEndgame,
+        Tag::MakesPassedPawn,
+        Tag::KingActivity,
+        Tag::CreatesLuft,
+        Tag::LosesCastling,
+        Tag::DoubledPawns,
+        Tag::IsolatedPawn,
+        Tag::BackwardPawn,
+        Tag::WeakensKing,
+        Tag::MovesPawnInFrontOfKing,
+        Tag::TooEarlyQueen,
+        Tag::MovesSamePiece,
+        Tag::MovesToPassiveSquare,
         Tag::OnlyMove,
         Tag::Slide,
         Tag::MaterialGain,
@@ -213,6 +339,46 @@ impl Tag {
             Tag::OffersTrade => "offers_trade",
             Tag::Sacrifice => "sacrifice",
             Tag::OffersPiece => "offers_piece",
+            Tag::ForcesDoubledPawns => "forces_doubled_pawns",
+            Tag::ForcesIsolatedPawn => "forces_isolated_pawn",
+            Tag::StrikesAtCenter => "strikes_at_center",
+            Tag::CentralBreak => "central_break",
+            Tag::PutsPawnInCenter => "puts_pawn_in_center",
+            Tag::AttacksPawnChain => "attacks_pawn_chain",
+            Tag::PreparesCentralPush => "prepares_central_push",
+            Tag::RookOnSeventh => "rook_on_seventh",
+            Tag::Outpost => "outpost",
+            Tag::TakesOpenFile => "takes_open_file",
+            Tag::Battery => "battery",
+            Tag::CentralizesKnight => "centralizes_knight",
+            Tag::MovesToActiveSquare => "moves_to_active_square",
+            Tag::BishopGainsScope => "bishop_gains_scope",
+            Tag::CastlesSameSide => "castles_same_side",
+            Tag::CastlesOppositeSide => "castles_opposite_side",
+            Tag::CastlesKingside => "castles_kingside",
+            Tag::CastlesQueenside => "castles_queenside",
+            Tag::ConnectsRooks => "connects_rooks",
+            Tag::Fianchetto => "fianchetto",
+            Tag::PreparesToCastleQueenside => "prepares_to_castle_queenside",
+            Tag::PreparesToCastleKingside => "prepares_to_castle_kingside",
+            Tag::DevelopsCenter => "develops_center",
+            Tag::DevelopsOpening => "develops_opening",
+            Tag::DevelopsMiddlegame => "develops_middlegame",
+            Tag::PreparesBishopDevelopment => "prepares_bishop_development",
+            Tag::PushesPassedPawn => "pushes_passed_pawn",
+            Tag::PushesPassedPawnEndgame => "pushes_passed_pawn_endgame",
+            Tag::MakesPassedPawn => "makes_passed_pawn",
+            Tag::KingActivity => "king_activity",
+            Tag::CreatesLuft => "creates_luft",
+            Tag::LosesCastling => "loses_castling",
+            Tag::DoubledPawns => "doubled_pawns",
+            Tag::IsolatedPawn => "isolated_pawn",
+            Tag::BackwardPawn => "backward_pawn",
+            Tag::WeakensKing => "weakens_king",
+            Tag::MovesPawnInFrontOfKing => "moves_pawn_in_front_of_king",
+            Tag::TooEarlyQueen => "too_early_queen",
+            Tag::MovesSamePiece => "moves_same_piece",
+            Tag::MovesToPassiveSquare => "moves_to_passive_square",
             Tag::OnlyMove => "only_move",
             Tag::Slide => "slide",
             Tag::MaterialGain => "material_gain",
@@ -260,6 +426,76 @@ impl Tag {
     pub fn is_sacrifice(self) -> bool {
         matches!(self, Tag::Sacrifice | Tag::OffersPiece)
     }
+
+    /// Group 13: a positional idea of a good move (or the best move).
+    pub fn is_positional(self) -> bool {
+        (Tag::ForcesDoubledPawns..=Tag::CreatesLuft).contains(&self)
+    }
+
+    /// Group 14: a positional error, said about a bad move itself (BASE).
+    pub fn is_positional_error(self) -> bool {
+        (Tag::LosesCastling..=Tag::MovesToPassiveSquare).contains(&self)
+    }
+
+    /// A weakness forced on the opponent's pawns.
+    pub fn forces_weakness(self) -> bool {
+        matches!(self, Tag::ForcesDoubledPawns | Tag::ForcesIsolatedPawn)
+    }
+
+    /// Said before trades, since it is what the trade is for: doubled pawns.
+    /// (An isolated pawn left by a trade is said after the trade.)
+    pub fn outranks_trades(self) -> bool {
+        self == Tag::ForcesDoubledPawns
+    }
+
+    /// Development, castling and the centre: what a book move is for.
+    pub fn is_development(self) -> bool {
+        matches!(
+            self,
+            Tag::StrikesAtCenter
+                | Tag::PutsPawnInCenter
+                | Tag::PreparesCentralPush
+                | Tag::CastlesSameSide
+                | Tag::CastlesOppositeSide
+                | Tag::CastlesKingside
+                | Tag::CastlesQueenside
+                | Tag::ConnectsRooks
+                | Tag::Fianchetto
+                | Tag::PreparesToCastleQueenside
+                | Tag::PreparesToCastleKingside
+                | Tag::DevelopsCenter
+                | Tag::DevelopsOpening
+                | Tag::DevelopsMiddlegame
+                | Tag::PreparesBishopDevelopment
+        )
+    }
+}
+
+/// Positional ideas of a move (group 13), best first: the weakness its
+/// capture forces on the opponent's pawns (`ctx.rest` holds the opponent's
+/// answer), its centre, development, activity and passed-pawn ideas.
+pub fn positional_tags(ctx: &MoveCtx<'_>, phase: Phase) -> Vec<Found> {
+    let mut out: Vec<Found> = structure::forces_structure(ctx).into_iter().collect();
+    out.extend(develop::develop_tags(ctx, phase));
+    out.extend(activity::activity_tags(ctx, phase));
+    out.extend(structure::structure_tags(ctx, phase));
+    out.sort_by_key(|f| f.tag);
+    out
+}
+
+/// Positional errors of a bad move (group 14), best first.
+pub fn positional_errors(ctx: &MoveCtx<'_>, phase: Phase) -> Vec<Found> {
+    let mut out = develop::opening_errors(ctx, phase);
+    out.extend(structure::structure_errors(ctx));
+    out.extend(activity::passive_square(ctx));
+    out.sort_by_key(|f| f.tag);
+    out
+}
+
+/// The weakness a capture forces on the opponent's pawns, if any (see
+/// [`positional_tags`]).
+pub fn forced_weakness(ctx: &MoveCtx<'_>) -> Option<Found> {
+    structure::forces_structure(ctx)
 }
 
 /// One tag found on one move.

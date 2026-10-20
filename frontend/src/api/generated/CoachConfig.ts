@@ -15,4 +15,10 @@ threat_search_depth: number,
  * Also run the threat search after the engine's best move, where the
  * played move is not it: what the best move would have threatened.
  */
-best_threat_search: boolean, };
+best_threat_search: boolean, 
+/**
+ * Leave out ideas above the player's rating (each coach tag has a
+ * minimum rating). The rating is the player's Elo from the PGN when
+ * `player_side` is known, else the rating used for expected points.
+ */
+rating_gates: boolean, };

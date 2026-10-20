@@ -18,6 +18,7 @@ our own paraphrases.
 | 2026-10-20 | `e4ead28` (main, phases 1–3) | 142 | 8,638 | same | [`runs/coach-main-e4ead28/coach-report.md`](../../tests/calibration/runs/coach-main-e4ead28/coach-report.md) |
 | 2026-10-20 | `cb1b475` (quick fixes of `coach-gap-analysis.md` §4.1) | 142 | 8,638 | same | [`runs/coach-quickfix/coach-report.md`](../../tests/calibration/runs/coach-quickfix/coach-report.md) |
 | 2026-10-20 | `14186c4` (quick fixes + Phase 2b) | 142 | 8,638 | same | [`runs/coach-phase2b/coach-report.md`](../../tests/calibration/runs/coach-phase2b/coach-report.md) |
+| 2026-10-20 | `118a076` (Phase 4) | 142 | 8,638 | same | [`runs/coach-phase4/coach-report.md`](../../tests/calibration/runs/coach-phase4/coach-report.md) |
 
 The quick fixes alone were measured twice in run `coach-quickfix`: a first pass at `d25b1b7`
 (29.0%, the figure quoted in "Results: Phase 2b") and the committed run at `cb1b475`, which adds the
@@ -409,6 +410,72 @@ By gap (exact, Phase 2b; all were 0 before):
 - The search after the best move ran 4,735 times (one per coached move that was not the best move,
   of 7,668). The run shared the machine with the quick-fix run, so its wall-clock time (6,957 s)
   does not measure the cost; see `implementation-notes.md` "Coach phase 2b".
+
+## Results: Phase 4 (`118a076`, 142 games)
+
+Phase 4 of [`coach-gap-analysis.md`](../coach-gap-analysis.md) §4.3: positional tags, rating gates
+and the optional Maia-2 framing ([`implementation-notes.md`](../implementation-notes.md) "Coach
+phase 4"). Run `coach-phase4`: a fresh review of every game (no engine results reused). Labels are
+unchanged (68.7% exact). The column "main before" is current main (`bda974d`: Phase 2b plus the
+taken-back refinement `cb1b475`), measured the same way; it is slightly above the Phase 2b run.
+
+| | Phase 2b (`14186c4`) | main before (`bda974d`) | **Phase 4** (`118a076`) | target |
+|---|---:|---:|---:|---:|
+| good moves both label good (5,349): exact | 44.3% | 44.4% | **58.3%** | ≥ 52% |
+| … they explain, we say nothing | 17.4% | 17.4% | 2.9% | |
+| bad moves both label bad (1,641): exact | 35.4% | 36.0% | **39.2%** | |
+| opening-phase bad moves (Chess.com bad, 602): exact | 26.9% | 27.6% | **34.4%** | ≥ 33% |
+| … the same, both label bad (491) | 33.0% | 33.8% | 42.2% | |
+| Blunders (228): exact | 58.3% (133) | 60.1% (137) | **60.5% (138)** | no drop |
+| best-move sentence: exact | 37.6% | 37.6% | **46.0%** | |
+| book moves (816): same event as Chess.com | 0 | 0 | 97 | |
+
+The opening-phase row follows the report's "By phase" table (every ply Chess.com labels bad); the
+row below it counts only plies both apps label bad.
+
+By Chess.com's group of positional tags (plies where theirs is the main event; exact before → after):
+
+| group | good moves | bad moves | best-move sentence |
+|---|---|---|---|
+| development and castling | 0 → 501 of 598 | 0 → 24 of 63 | 0 → 79 of 153 |
+| centre (strikes, breaks, pawn in the centre, chains) | 0 → 72 of 127 | 0 → 13 of 27 | 0 → 31 of 75 |
+| activity (open files, outposts, batteries, active squares, the king) | 0 → 114 of 193 | 0 → 6 of 32 | 0 → 27 of 76 |
+| pawn structure (doubled, isolated, passed pawns) | 0 → 72 of 119 | 0 → 8 of 66 | 0 → 7 of 40 |
+| opening errors (same piece twice, early queen, f3, king's shelter) | 0 of 19 | 0 → 10 of 64 | 0 of 15 |
+
+- **What moved.** On good moves the development and castling ideas carry most of the gain (+501
+  exact): DevelopsCenter (123), PreparesToCastleKingside (76), CastlesKingSide (63),
+  PreparesBishopDevelopment (55), CastlesSameSide (53), PushesPassedPawnEndgame (42). A forced
+  doubled pawn is said before the trade (30 exact, where we said `equal_trade`).
+- **Mapping choice.** Chess.com splits development and castling by circumstance (toward the centre
+  or not; the other king castled or not). `coach_tags.py` counts our variants as one tag with all of
+  theirs. Only 12 of the 383 exact development and castling plies match across variants (mostly
+  DevelopsLastPiece), so this changes the totals by about 0.2 points.
+- **Rating gates.** Without `player_side`, the gate rating is `rating_used` (the higher Elo plus 200,
+  at least 1000), so in this run only `backward_pawn` (1100) is ever gated; with gates off
+  (`--config '{"coach": {"rating_gates": false}}'`) one bad move changes. Reviewing every game as
+  White and as Black (`compare.py --player-side`, new) gates each side's moves at its own Elo, mostly
+  800–1000. Then good-move exact is 57.7% (−0.6 points: 36 positional ideas fewer, mainly
+  structure), bad 38.9% (−0.3), opening-phase 33.7%, Blunders unchanged. Tactics and captures have
+  no gate, so the routine captures where Chess.com stays quiet (G7) are not affected: we still
+  speak on 381 of the 743 good moves where Chess.com says nothing (383 without gates; 294 before
+  Phase 4, the rise is positional remarks).
+- **Book moves.** We now explain 716 of 816 book moves, Chess.com 147; on 97 we say its event.
+  Chess.com's other book remarks are FEN-specific opening notes (§3.4 of the gap analysis).
+- **Still different:** a developing move that pins (Bg5) is said as the pin, Chess.com says
+  DevelopsOpening (15); pawn chains we do not name (CreatesPawnChain, 14); StrikesAtCenter where we
+  say `kicks` (14); and on bad moves Chess.com's "missed a capture threat" (B1) still meets our
+  best move's development idea (5).
+- **Maia-2** does not change agreement: the comparison reads tags and circumstances, and the model
+  only picks wordings. A run with the real model (rapid, local run `coach-p4-maia`) gives the same
+  58.3% / 39.2%; its wording counts and cost are in `implementation-notes.md` "Coach phase 4".
+- **Cost.** The positional detectors are static board tests. The fresh run took 2,647 s against
+  2,868 s for main before on the same machine, within the noise.
+- **Tuning runs** (local only, `~/work/p4/runs`): `coach-p4-a` (first pass: good 58.0%, bad 39.0%),
+  then forced isolated pawns after trades, centre-pawn hits always strikes, king activity only from
+  the back two ranks and the central push only in the opening (`coach-p4-b`, the committed code);
+  `coach-p4-nogates`, `coach-p4-as-white` / `-as-black` for the gates. These reused the engine
+  results of the main-before run through a local disk cache that is not part of the code.
 
 ## Files
 

@@ -238,6 +238,10 @@ Expected gain: about +12 points on bad moves, +12 on good moves, and +25 on the 
 - Rating gates (Chess.com hides structure ideas below 900–1100) also decide G7: when to stay quiet.
 - Maia-2 changes the *framing* ("hard to find at your level"), not the tags. Agreement does not
   measure it.
+- **Done** (`118a076`, run `coach-phase4`, [`calibration/coach-log.md`](calibration/coach-log.md)
+  "Results: Phase 4"): good-move exact 58.3%, bad-move exact 39.2%, opening-phase bad moves 34.4%,
+  best-move sentence 46.0%. The gates barely touch G7: tactics and captures have no gate, and we
+  still speak on 381 of the 743 good moves where Chess.com says nothing.
 
 ### 4.4 Phase 5 (planned): optional LLM wording
 
