@@ -4,15 +4,17 @@
 //! (the opponent's best reply: the next position's engine line 1 and its PV),
 //! B (the best alternative: this position's engine line 1), N (the null-move
 //! threat after P: what the mover would play if the opponent passed) and
-//! N_prev (the opponent's null-move threat before P). Detectors run on P for
-//! BASE, along R's PV for PERMITS, along B's PV for MISSES, along N's for
-//! THREATENS and along N_prev's for PREVENTS. On a line that wins material, the
+//! N_prev (the opponent's null-move threat before P), plus N_B (the null-move
+//! threat after B). Detectors run on P for BASE, along R's PV for PERMITS,
+//! along N's for THREATENS and along N_prev's for PREVENTS. B is said like a
+//! played good move under MISSES: its own line, what it does by itself, N_B
+//! for what it threatens and N_prev for what it stops. On a line that wins material, the
 //! tactic is looked for at every move of its side up to the ply where the
 //! material is won: found on the first move it WINS_MATERIAL, found later the
 //! line LEADS_TO it.
 
 use serde::Serialize;
-use shakmaty::{Chess, Color, Move, Position, Role};
+use shakmaty::{Chess, Color, Move, Position, Role, Square};
 use ts_rs::TS;
 
 use super::detect::{self, Found, MoveCtx, Tag};
@@ -57,6 +59,8 @@ pub enum LineKind {
     Threat,
     /// N_prev's PV: the position before the played move with the opponent to move.
     PrevThreat,
+    /// N_B's PV: the position after the best move with its mover to move again.
+    BestThreat,
 }
 
 /// Smallest material gain (cp) that counts as winning material.
@@ -218,7 +222,12 @@ pub fn base_events(
         first: true,
     };
     let gain = reply.and_then(gain_of);
-    detect::bad_tags(&ctx, best.and_then(|b| b.moves.first().copied()))
+    let mut found = detect::bad_tags(&ctx, best.and_then(|b| b.moves.first().copied()));
+    if !found.iter().any(|f| f.tag == Tag::BadTrade) {
+        found.extend(detect::loses_trade(&ctx, reply.map_or(0, Line::net)));
+        found.sort_by_key(|f| f.tag);
+    }
+    found
         .into_iter()
         .map(|found| Event {
             chain: vec![Circ::Base],
@@ -387,37 +396,139 @@ pub fn own_line(line: &Line, previous: Option<Move>) -> Option<Event> {
     line_event(line, LineKind::Played, Circ::Base, previous)
 }
 
-/// BASE defence events of the played move (good moves). `own` is its own line;
-/// `prev_threat` is N_prev, the opponent's null-move line before it.
-pub fn defence_events(
+/// What a good move does by itself (trades, defence, tempo; see
+/// [`detect::good_tags`]), said under `circ`: BASE for the played move on its
+/// own line, MISSES for the best move on the best line. `line` is that move's
+/// line (the move first); `prev_threat` is N_prev, the opponent's null-move
+/// line before it.
+pub fn good_base_events(
     before: &Chess,
-    played: Move,
-    after: &Chess,
+    m: Move,
     previous: Option<Move>,
-    own: Option<&Line>,
+    line: Option<&Line>,
+    kind: LineKind,
+    circ: Circ,
     prev_threat: Option<&Line>,
 ) -> Vec<Event> {
-    let rest = own.and_then(|l| l.moves.get(1..)).unwrap_or(&[]);
+    let mut after = before.clone();
+    after.play_unchecked(m);
+    let rest = line.and_then(|l| l.moves.get(1..)).unwrap_or(&[]);
     let ctx = MoveCtx {
         before,
-        m: played,
-        after,
+        m,
+        after: &after,
         previous,
         rest,
         first: true,
     };
-    detect::defence_tags(&ctx, prev_threat.map(|l| &l.moves[..]))
+    // Taking back can itself come out ahead (a rook taken back with a knight
+    // nets the exchange): the gain settles on the move.
+    let settles = line.and_then(gain_of).filter(|g| g.ply == 0);
+    detect::good_tags(&ctx, prev_threat.map(|l| &l.moves[..]))
         .into_iter()
-        .map(|found| Event {
-            chain: vec![Circ::Base],
-            found,
-            actor: before.turn(),
-            line: LineKind::Played,
-            ply: 0,
-            gain: None,
-            mate_in: None,
+        .map(|found| {
+            let gain = settles.filter(|_| found.tag == Tag::Recapture);
+            Event {
+                chain: if gain.is_some() {
+                    vec![circ, Circ::WinsMaterial]
+                } else {
+                    vec![circ]
+                },
+                found,
+                actor: before.turn(),
+                line: kind,
+                ply: 0,
+                gain,
+                mate_in: None,
+            }
         })
         .collect()
+}
+
+/// An event about the move as a whole (no line of its own to show beyond
+/// `line`): a sacrifice, the only good move, a slide in the evaluation.
+pub fn move_event(chain: Vec<Circ>, found: Found, actor: Color, line: LineKind) -> Event {
+    Event {
+        chain,
+        found,
+        actor,
+        line,
+        ply: 0,
+        gain: None,
+        mate_in: None,
+    }
+}
+
+/// A sacrifice of the move `m`: the piece on `sq` (after the move) can be
+/// taken, and that is the point. The moved piece itself is a `Sacrifice`;
+/// another piece left to be taken is `OffersPiece`.
+pub fn sacrifice(before: &Chess, m: Move, sq: Square, circ: Circ, line: LineKind) -> Option<Event> {
+    let mut after = before.clone();
+    after.play_unchecked(m);
+    let piece = PieceAt::on(after.board(), sq).filter(|p| p.color == before.turn())?;
+    let moved = sq == m.to() && !m.is_castle();
+    let geometry = match facts::least_valuable_attacker(after.board(), sq, piece.color.other()) {
+        Some(from) => Geometry::Relation { from, to: sq },
+        None => Geometry::Squares(vec![sq]),
+    };
+    let found = Found {
+        tag: if moved {
+            Tag::Sacrifice
+        } else {
+            Tag::OffersPiece
+        },
+        focus: Some(piece),
+        targets: Vec::new(),
+        geometry,
+        stake: 0,
+    };
+    Some(move_event(vec![circ], found, before.turn(), line))
+}
+
+/// The best alternative B said like a played good move, every event under
+/// MISSES: what B wins or mates on its own line (with MISSES_SAME for the
+/// piece just left hanging), what it does by itself (trades, defence, tempo),
+/// what it threatens (N_B, the null-move line after it) and which threat of
+/// the opponent it stops (N_prev).
+pub fn best_events(
+    before: &Chess,
+    best: &Line,
+    previous: Option<Move>,
+    prev_threat: Option<&Line>,
+    best_threat: Option<&Line>,
+    horizon: u32,
+) -> Vec<Event> {
+    let Some(&b) = best.moves.first() else {
+        return Vec::new();
+    };
+    let mut events: Vec<Event> = misses(best, previous).into_iter().collect();
+    events.extend(good_base_events(
+        before,
+        b,
+        previous,
+        Some(best),
+        LineKind::Best,
+        Circ::Misses,
+        prev_threat,
+    ));
+    // The opponent's best line after B, for what B's threat and defence leave.
+    let after_b = Line::parse(&best.positions[1], &best.uci[1..], None, horizon, Some(b));
+    let missed = |mut e: Event| {
+        e.chain.insert(0, Circ::Misses);
+        e
+    };
+    events.extend(
+        best_threat
+            .and_then(|t| threatens(t, before, b, Some(&after_b)))
+            .map(|mut e| {
+                e.line = LineKind::BestThreat;
+                missed(e)
+            }),
+    );
+    if !after_b.moves.is_empty() {
+        events.extend(prev_threat.and_then(|p| prevents(p, &after_b)).map(missed));
+    }
+    events
 }
 
 /// Where a line makes its gain: the square of the move at the gain ply.
@@ -436,7 +547,10 @@ fn immediate(e: &Event) -> bool {
 /// null-move line after the move), when it mates or wins material. Winning a
 /// piece the mover could already win before the move is no new threat, and
 /// nothing is threatened when the opponent's best reply simply takes the
-/// moved piece (a trade, or a piece given up).
+/// moved piece (a trade, or a piece given up). A threat to take one piece that
+/// can simply move to a safe square is no threat either: the move gains a
+/// tempo (`Kicks`, `GainsTempo`). Double attacks and other tactics stay
+/// threats, since moving one piece does not answer them.
 pub fn threatens(
     threat: &Line,
     before: &Chess,
@@ -460,6 +574,14 @@ pub fn threatens(
             before.board().piece_at(sq) == threat.positions[gain.ply].board().piece_at(sq);
         if same_piece && facts::threat(before.board(), sq, threat.solver()) > 0 {
             return None;
+        }
+        let single = matches!(e.tag(), Tag::FreePiece | Tag::WinsTrade | Tag::MaterialGain);
+        if single && same_piece {
+            let mut after = before.clone();
+            after.play_unchecked(played);
+            if facts::has_safe_square(&after, sq) {
+                return None;
+            }
         }
     }
     Some(e)

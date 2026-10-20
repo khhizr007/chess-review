@@ -15,8 +15,11 @@ our own paraphrases.
 | date | measured commit | games | plies | engine (ours / theirs) | report |
 |---|---|---:|---:|---|---|
 | 2026-10-20 | `f5f0b35` (main, phase 1 coach) | 142 | 8,638 | Stockfish 18 depth 18 MultiPV 3 / Stockfish 18 (CEE 1.198.16) | [`runs/coach-phase0/coach-report.md`](../../tests/calibration/runs/coach-phase0/coach-report.md) |
-
 | 2026-10-20 | `e4ead28` (main, phases 1–3) | 142 | 8,638 | same | [`runs/coach-main-e4ead28/coach-report.md`](../../tests/calibration/runs/coach-main-e4ead28/coach-report.md) |
+| 2026-10-20 | `14186c4` (quick fixes + Phase 2b) | 142 | 8,638 | same | [`runs/coach-phase2b/coach-report.md`](../../tests/calibration/runs/coach-phase2b/coach-report.md) |
+
+The quick fixes alone (`d25b1b7`, run `coach-quickfix`) were measured in their own worktree; the
+numbers are quoted in "Results: Phase 2b" below.
 
 The second run adds:
 
@@ -315,6 +318,53 @@ references, is in the report.
   - pawn moves in front of the king (15);
   - evaluation-swing remarks (18).
 - 81 plies are explained only by us. On those, Chess.com's speech is generic or unmatched.
+
+## Results: Phase 2b (`14186c4`, 142 games)
+
+Phase 2b of [`coach-gap-analysis.md`](../coach-gap-analysis.md) §4.2, on top of the quick fixes (§4.1).
+Same labels as before. Run `coach-phase2b`, mapping in `coach_tags.py` extended with the new tags.
+
+| | phases 1–3 (`e4ead28`) | quick fixes (`d25b1b7`) | **Phase 2b** (`14186c4`) | §5 target |
+|---|---:|---:|---:|---:|
+| bad moves both label bad (1,641): exact | 22.6% | 29.0% | **35.4%** | not below the quick fixes |
+| … they explain, we say nothing | 18.3% | 18.5% | 7.1% | |
+| good moves both label good (5,349): exact | 23.1% | 23.4% | **44.3%** | ≥ 35% |
+| … they explain, we say nothing | 30.1% | 30.1% | 17.4% | |
+| best-move sentence: exact | 11.9% | 12.1% | **37.6%** | ≥ 30% |
+| … they explain, we say nothing | 60.5% | 60.9% | 15.1% | |
+
+By gap (exact, Phase 2b; all were 0 before):
+
+| gap | Chess.com says | exact |
+|---|---|---:|
+| G1 | a recapture (ObviousRecapture, ImmediateRecapture, DevelopsRecapture) | 412 / 475 |
+| G1 | EqualTrade | 216 / 290 |
+| G1 | wins a pile trade (PileTrade) | 8 / 38 |
+| G3 | EvadesCheck | 234 / 265 |
+| G4 | Kicks, WinsTempo | 179 / 204 |
+| G5 | Brilliant | 9 / 13 |
+| B1 | misses > CaptureThreat (played-move speech) | 42 / 155 |
+| B4 | best move: DefendsPiece, Retreat, EscapesThreat, ObviousRetreat | 132 / 207 |
+| B4 | best move: EvadesCheck | 48 / 54 |
+| B4 | best move: Kicks, WinsTempo | 52 / 75 |
+| B4 | best move: EqualTrade, ObviousRecapture | 55 / 87 |
+| B5 | misses > Critical / best move Critical | 9 / 40 and 7 / 22 |
+| B9 | an evaluation slide | 7 / 27 |
+| B10 | permits > PileTrade | 0 / 20 |
+
+- Our "threatens to win the piece" on good moves fell from 351 to 37: those are now kicks and
+  tempo moves.
+- By Chess.com class, bad-move exact went up for Inaccuracies (9.8% → 17.6%), Mistakes
+  (26.0% → 30.7%) and Misses (31.0% → 35.7%). Blunders slipped by 3 plies (59.6% → 58.3%).
+- **Mapping choice.** When the best move attacks a piece that can move away, Chess.com's played-move
+  speech says "missed a capture threat" (CaptureThreat) and its best-move speech says Kicks or
+  WinsTempo. Ours says `kicks` / `gains_tempo` under MISSES, mapped to both.
+- **Still open:** B10 (we name the reply's free piece, not a won trade), B1 on moves where the
+  best move's threat is not a tempo (we say a defence or nothing), and the positional families
+  (Phase 4).
+- The search after the best move ran 4,735 times (one per coached move that was not the best move,
+  of 7,668). The run shared the machine with the quick-fix run, so its wall-clock time (6,957 s)
+  does not measure the cost; see `implementation-notes.md` "Coach phase 2b".
 
 ## Files
 

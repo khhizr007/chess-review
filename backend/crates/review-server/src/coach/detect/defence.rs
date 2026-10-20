@@ -20,6 +20,7 @@ pub fn defence_tags(ctx: &MoveCtx<'_>, threat: Option<&[Move]>) -> Vec<Found> {
         defends_piece(ctx, threat),
         escapes_threat(ctx, threat),
         blocks_check(ctx),
+        evades_check(ctx),
         counter_threat(ctx, threat),
     ]
     .into_iter()
@@ -119,6 +120,31 @@ fn blocks_check(ctx: &MoveCtx<'_>) -> Option<Found> {
             attacker: checker,
             front: ctx.to(),
             behind: king,
+        },
+        stake: 0,
+    })
+}
+
+/// The king steps out of a check (not by castling, which cannot happen in
+/// check), or a piece captures the only checking piece.
+fn evades_check(ctx: &MoveCtx<'_>) -> Option<Found> {
+    let checkers = ctx.before.checkers();
+    let checker = checkers.first()?;
+    let moved = ctx.moved()?;
+    let king = ctx.before.board().king_of(ctx.mover())?;
+    let captures_checker = checkers.count() == 1 && ctx.to() == checker;
+    if moved.role != Role::King && !captures_checker {
+        return None;
+    }
+    Some(Found {
+        tag: Tag::EvadesCheck,
+        focus: Some(moved),
+        targets: PieceAt::on(ctx.before.board(), checker)
+            .into_iter()
+            .collect(),
+        geometry: Geometry::Relation {
+            from: checker,
+            to: king,
         },
         stake: 0,
     })

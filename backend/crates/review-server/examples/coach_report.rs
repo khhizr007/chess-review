@@ -3,7 +3,7 @@
 //!
 //! ```text
 //! STOCKFISH_PATH=/path/to/stockfish \
-//!   cargo run --release -p review-server --example coach_report -- <game.pgn> [depth] [threat depth]
+//!   cargo run --release -p review-server --example coach_report -- <game.pgn> [depth] [threat depth] [no-best-threat]
 //! ```
 
 use std::process::ExitCode;
@@ -42,7 +42,16 @@ async fn run() -> Result<(), String> {
             review_config.coach.threat_search_depth = number(t)?;
             (p, number(d)?)
         }
-        _ => return Err("usage: coach_report <game.pgn> [depth] [threat depth]".to_owned()),
+        [p, d, t, b] if b == "no-best-threat" => {
+            review_config.coach.threat_search_depth = number(t)?;
+            review_config.coach.best_threat_search = false;
+            (p, number(d)?)
+        }
+        _ => {
+            return Err(
+                "usage: coach_report <game.pgn> [depth] [threat depth] [no-best-threat]".to_owned(),
+            );
+        }
     };
     let pgn = std::fs::read_to_string(pgn_path).map_err(|e| format!("{pgn_path}: {e}"))?;
     let game = parse_pgn(&pgn)

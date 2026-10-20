@@ -12,6 +12,8 @@
 #   {line}        the moves of the line before {reply}
 #   {best}        the engine's best move
 #   {mover}       who played {move}: "you", "your opponent", "White", "Black"
+#   {mover_s}     the same as an owner: "your", "their", "White's", "Black's"
+#   {from} {to}   how the game stood for {mover} before and after {move} ("equal", "worse")
 #   {piece}       the piece in focus with its owner and square ("your knight on f6")
 #   {piece_role}  the same without the square ("your knight")
 #   {square}      the square in focus
@@ -66,6 +68,31 @@ you = ["You missed {reply}, which wins {piece}: it had just been left hanging."]
 opponent = ["Your opponent missed {reply}, which wins {piece}: it had just been left hanging."]
 neutral = ["{mover} missed {reply}, which wins {piece}: it had just been left hanging."]
 
+# The best move would have threatened something: {reply} is the threat, the
+# move that would follow if the other side did nothing.
+[frame.misses_threatens]
+you = ["You missed {best}, which threatens {reply}: it {pred}."]
+opponent = ["Your opponent missed {best}, which threatens {reply}: it {pred}."]
+neutral = ["{mover} missed {best}, which threatens {reply}: it {pred}."]
+
+# The best move would have stopped the other side's threat {reply}.
+[frame.misses_prevents]
+you = ["You missed {best}, which stops {reply}: it {pred}."]
+opponent = ["Your opponent missed {best}, which stops {reply}: it {pred}."]
+neutral = ["{mover} missed {best}, which stops {reply}: it {pred}."]
+
+# The best move was a sacrifice.
+[frame.misses_sacrifice]
+you = ["You missed {best}, a sacrifice that works."]
+opponent = ["Your opponent missed {best}, a sacrifice that works."]
+neutral = ["{mover} missed {best}, a sacrifice that works."]
+
+# The best move was the only one that kept the game in hand.
+[frame.misses_only]
+you = ["You missed {best}, the only good move here."]
+opponent = ["Your opponent missed {best}, the only good move here."]
+neutral = ["{mover} missed {best}, the only good move here."]
+
 # A forced move: there was no other legal move.
 [frame.forced]
 you = ["{move} was your only legal move."]
@@ -85,6 +112,22 @@ neutral = ["Better was {best}: after {line}, {reply} {pred}."]
 [frame.best_long]
 neutral = ["Better was {best}, starting a sequence that ends with {reply}, which {pred}."]
 
+[frame.best_threatens]
+neutral = ["Better was {best}, threatening {reply}, which {pred}.", "{best} was better: it threatens {reply}, which {pred}."]
+
+[frame.best_prevents]
+neutral = ["Better was {best}, stopping {reply}, which {pred}.", "{best} was better: it stops {reply}, which {pred}."]
+
+[frame.best_sacrifice]
+neutral = ["Better was {best}, a sacrifice that works."]
+
+[frame.best_only]
+neutral = ["Better was {best}, the only good move here.", "{best} was the only good move here."]
+
+# A move that let the game slip by a step with no tactic to name.
+[frame.slide]
+neutral = ["{move} lets {mover_s} position slide from {from} to {to}."]
+
 # A good move: what it does by itself or on its own line. {reply} is the move
 # that does it ({move} itself when the event is on the first move).
 [frame.good]
@@ -95,6 +138,14 @@ neutral = ["After {line}, {reply} {pred}.", "{line}, and then {reply} {pred}."]
 
 [frame.good_long]
 neutral = ["{move} starts a sequence that ends with {reply}, which {pred}."]
+
+# A good move that gives up material on purpose (followed by what it leads to).
+[frame.sacrifice]
+neutral = ["{move} {pred}, and it pays off."]
+
+# A good move that is the only one keeping the game in hand.
+[frame.only]
+neutral = ["{move} is the only good move here."]
 
 # What the move threatens: the mover's next move if the other side did nothing.
 [frame.threatens]
@@ -125,6 +176,9 @@ neutral = ["{move} is a sacrifice that works: it threatens {reply}, which {pred}
 [frame.brilliant_prevents]
 neutral = ["{move} is a sacrifice that works: it stops {reply}, which {pred}."]
 
+[frame.brilliant_sacrifice]
+neutral = ["{move} is a sacrifice: it {pred}, and that pays off."]
+
 [frame.great_find]
 neutral = ["{move} is the one strong move here: the others are clearly worse."]
 
@@ -142,6 +196,9 @@ neutral = ["{move} is the one strong move here: it threatens {reply}, which {pre
 
 [frame.great_find_prevents]
 neutral = ["{move} is the one strong move here: it stops {reply}, which {pred}."]
+
+[frame.great_find_only]
+neutral = ["{move} is the one strong move here: the others all fall short."]
 
 # ---------------------------------------------------------------- tags
 #
@@ -167,6 +224,10 @@ label = "Show the mate"
 vp = "wins {piece}"
 wins = "wins {piece}"
 label = "Show the capture"
+
+[tag.wins_trade]
+vp = "wins the trade on {square}"
+label = "Show the trade"
 
 [tag.trapped_piece]
 vp = "traps {piece}"
@@ -240,6 +301,10 @@ label = "Show the punishment"
 vp = "gives up {piece_role} for {targets}"
 label = "Show the punishment"
 
+[tag.loses_trade]
+vp = "takes {targets}, but loses the trade that follows"
+label = "Show the trade"
+
 [tag.hangs_piece]
 vp = "leaves {piece} hanging"
 label = "Show the punishment"
@@ -247,6 +312,22 @@ label = "Show the punishment"
 [tag.hangs_pawn]
 vp = "leaves {piece} hanging"
 label = "Show the punishment"
+
+[tag.recapture]
+vp = "takes back on {square}"
+label = "Show the line"
+
+[tag.equal_trade]
+vp = "trades on {square}: the exchange comes out even"
+label = "Show the trade"
+
+[tag.blocks_check]
+vp = "blocks the check"
+label = "Show the line"
+
+[tag.evades_check]
+vp = "gets out of the check from {targets}"
+label = "Show the line"
 
 [tag.defends_piece]
 vp = "defends {piece}"
@@ -256,12 +337,36 @@ label = "Show the line"
 vp = "moves {piece_role} out of danger"
 label = "Show the line"
 
-[tag.blocks_check]
-vp = "blocks the check"
-label = "Show the line"
-
 [tag.counter_threat]
 vp = "hits back at {piece} instead of saving {targets}"
+label = "Show the line"
+
+[tag.kicks]
+vp = "chases away {piece}"
+label = "Show the line"
+
+[tag.gains_tempo]
+vp = "attacks {piece}, gaining time as it moves away"
+label = "Show the line"
+
+[tag.offers_trade]
+vp = "offers to trade {targets} for {piece}"
+label = "Show the line"
+
+[tag.sacrifice]
+vp = "gives up {piece_role} on {square}"
+label = "Show the sacrifice"
+
+[tag.offers_piece]
+vp = "leaves {piece} to be taken"
+label = "Show the sacrifice"
+
+[tag.only_move]
+vp = "is the only good move here"
+label = "Show the line"
+
+[tag.slide]
+vp = "lets the position slide"
 label = "Show the line"
 
 [tag.material_gain]
@@ -314,3 +419,11 @@ gain_exchange = "the exchange"
 gain_pawns = "{count} pawns"
 gain_material = "material worth about {count} pawns"
 numbers = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
+# How the game stands for a side, in five steps.
+[outlook]
+losing = "losing"
+worse = "worse"
+equal = "equal"
+better = "better"
+winning = "winning"

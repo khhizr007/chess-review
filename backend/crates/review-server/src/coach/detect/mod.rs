@@ -12,6 +12,8 @@ mod lines;
 mod mate;
 mod material;
 mod promotion;
+mod tempo;
+mod trade;
 
 use serde::Serialize;
 use shakmaty::{Chess, Color, Move, Position, Square};
@@ -20,8 +22,20 @@ use ts_rs::TS;
 use super::facts::PieceAt;
 use super::geometry::Geometry;
 
-pub use bad::bad_tags;
+pub use bad::{bad_tags, loses_trade};
 pub use defence::defence_tags;
+pub use tempo::tempo_tags;
+pub use trade::trade_tags;
+
+/// What a good move does by itself (groups 8–10: trades, defence, tempo),
+/// best first. `threat` is the opponent's null-move line before the move.
+pub fn good_tags(ctx: &MoveCtx<'_>, threat: Option<&[Move]>) -> Vec<Found> {
+    let mut out = defence_tags(ctx, threat);
+    out.extend(trade_tags(ctx));
+    out.extend(tempo_tags(ctx));
+    out.sort_by_key(|f| f.tag);
+    out
+}
 
 /// Our board-event vocabulary. **Declaration order is priority order**: when
 /// several tags apply, the earlier one is said.
@@ -39,6 +53,10 @@ pub enum Tag {
     // 2. Free material.
     /// Captures a piece the opponent cannot win back by exchange.
     FreePiece,
+    /// Captures on a square where the opponent can take back, and still comes
+    /// out ahead: a cheaper piece takes a dearer one, or more attackers than
+    /// defenders.
+    WinsTrade,
     /// Attacks a piece that has no safe square.
     TrappedPiece,
     // 3. Double attacks.
@@ -68,27 +86,54 @@ pub enum Tag {
     IgnoresThreat,
     RemovesOwnDefender,
     BadTrade,
+    /// Captures, and the opponent's reply takes back and comes out ahead.
+    LosesTrade,
     HangsPiece,
     HangsPawn,
-    // 8. Defence (said about a good move itself).
+    // 8. Trades (said about a good move itself).
+    /// Takes back on the square where the opponent just captured.
+    Recapture,
+    /// Captures a piece that will be taken back, for an even trade.
+    EqualTrade,
+    // 9. Defence (said about a good move itself).
+    /// Puts a piece between a checking piece and the king.
+    BlocksCheck,
+    /// Answers a check by moving the king, or by capturing the checking piece.
+    EvadesCheck,
     /// Guards a threatened piece, or blocks the attack on it.
     DefendsPiece,
     /// Moves a threatened piece to a safe square.
     EscapesThreat,
-    /// Puts a piece between a checking piece and the king.
-    BlocksCheck,
     /// Leaves a threatened piece and attacks a piece worth at least as much.
     CounterThreat,
+    // 10. Tempo (said about a good move itself).
+    /// A pawn attacks a piece, which has a safe square and has to go there.
+    Kicks,
+    /// A piece attacks a piece, which has a safe square and has to go there.
+    GainsTempo,
+    /// Offers to trade a piece for one of the same value.
+    OffersTrade,
+    // 11. Sacrifices (Brilliant moves, and a best move that gives up material).
+    /// The moved piece can be taken, and that is the point.
+    Sacrifice,
+    /// Another piece is left to be taken, and that is the point.
+    OffersPiece,
+    // 12. The move as a whole.
+    /// The only move that keeps a Good result: every other line loses more.
+    OnlyMove,
+    /// The evaluation slides a bucket (say, from equal to worse).
+    Slide,
     /// Fallback: the line wins material through no named tactic.
     MaterialGain,
 }
 
 impl Tag {
-    pub const ALL: [Tag; 29] = [
+    pub const ALL: [Tag; 41] = [
         Tag::BackRankMate,
         Tag::Checkmate,
         Tag::ForcedMate,
         Tag::FreePiece,
+        Tag::WinsTrade,
         Tag::TrappedPiece,
         Tag::DoubleCheck,
         Tag::RoyalFork,
@@ -107,12 +152,23 @@ impl Tag {
         Tag::IgnoresThreat,
         Tag::RemovesOwnDefender,
         Tag::BadTrade,
+        Tag::LosesTrade,
         Tag::HangsPiece,
         Tag::HangsPawn,
+        Tag::Recapture,
+        Tag::EqualTrade,
+        Tag::BlocksCheck,
+        Tag::EvadesCheck,
         Tag::DefendsPiece,
         Tag::EscapesThreat,
-        Tag::BlocksCheck,
         Tag::CounterThreat,
+        Tag::Kicks,
+        Tag::GainsTempo,
+        Tag::OffersTrade,
+        Tag::Sacrifice,
+        Tag::OffersPiece,
+        Tag::OnlyMove,
+        Tag::Slide,
         Tag::MaterialGain,
     ];
 
@@ -123,6 +179,7 @@ impl Tag {
             Tag::Checkmate => "checkmate",
             Tag::ForcedMate => "forced_mate",
             Tag::FreePiece => "free_piece",
+            Tag::WinsTrade => "wins_trade",
             Tag::TrappedPiece => "trapped_piece",
             Tag::DoubleCheck => "double_check",
             Tag::RoyalFork => "royal_fork",
@@ -141,12 +198,23 @@ impl Tag {
             Tag::IgnoresThreat => "ignores_threat",
             Tag::RemovesOwnDefender => "removes_own_defender",
             Tag::BadTrade => "bad_trade",
+            Tag::LosesTrade => "loses_trade",
             Tag::HangsPiece => "hangs_piece",
             Tag::HangsPawn => "hangs_pawn",
+            Tag::Recapture => "recapture",
+            Tag::EqualTrade => "equal_trade",
+            Tag::BlocksCheck => "blocks_check",
+            Tag::EvadesCheck => "evades_check",
             Tag::DefendsPiece => "defends_piece",
             Tag::EscapesThreat => "escapes_threat",
-            Tag::BlocksCheck => "blocks_check",
             Tag::CounterThreat => "counter_threat",
+            Tag::Kicks => "kicks",
+            Tag::GainsTempo => "gains_tempo",
+            Tag::OffersTrade => "offers_trade",
+            Tag::Sacrifice => "sacrifice",
+            Tag::OffersPiece => "offers_piece",
+            Tag::OnlyMove => "only_move",
+            Tag::Slide => "slide",
             Tag::MaterialGain => "material_gain",
         }
     }
@@ -164,17 +232,33 @@ impl Tag {
                 | Tag::IgnoresThreat
                 | Tag::RemovesOwnDefender
                 | Tag::BadTrade
+                | Tag::LosesTrade
                 | Tag::HangsPiece
                 | Tag::HangsPawn
         )
     }
 
-    /// Group 8: said about a good move itself (BASE).
+    /// Group 9: how a good move answers a threat or a check (BASE).
     pub fn is_defence(self) -> bool {
         matches!(
             self,
-            Tag::DefendsPiece | Tag::EscapesThreat | Tag::BlocksCheck | Tag::CounterThreat
+            Tag::BlocksCheck
+                | Tag::EvadesCheck
+                | Tag::DefendsPiece
+                | Tag::EscapesThreat
+                | Tag::CounterThreat
         )
+    }
+
+    /// Groups 8–10: what a good move does by itself without winning anything
+    /// (trades, defence, tempo). Said before a tactic that wins nothing.
+    pub fn is_good_base(self) -> bool {
+        (Tag::Recapture..=Tag::OffersTrade).contains(&self)
+    }
+
+    /// Group 11.
+    pub fn is_sacrifice(self) -> bool {
+        matches!(self, Tag::Sacrifice | Tag::OffersPiece)
     }
 }
 

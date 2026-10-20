@@ -30,7 +30,9 @@ the defaults. The fields are documented in `backend/crates/review-core/src/confi
 
 `coach.threat_search_depth` (default 10) sets the depth of the coach's null-move threat search, which
 finds what a move threatens and what threat it stops. `{"coach": {"threat_search_depth": 0}}` turns it
-off; classifications do not change, only the coach's notes.
+off; classifications do not change, only the coach's notes. `coach.best_threat_search` (default
+`true`) also runs it after the engine's best move wherever the played move was not that move, so the
+coach can say what the better move would have threatened.
 
 ## Frontend
 

@@ -8,7 +8,10 @@ use crate::coach::facts::{self, PieceAt, value};
 use crate::coach::geometry::Geometry;
 
 /// The first move of a line captures a piece that the other side cannot win
-/// back by exchange (undefended, or defended too little). Taking back on the
+/// back by exchange (undefended, or defended too little): a free piece. When
+/// the other side can take back with profit but the exchange still nets the
+/// mover a pawn or more (a knight takes a rook guarded by a pawn), it is a
+/// trade the mover wins (`WinsTrade`). Taking back on the
 /// square where the other side just captured is never a free piece, whatever
 /// the values: it ends an exchange, and what the exchange nets (say, the
 /// exchange for a rook taken back with a knight) is the line's gain. A capture
@@ -23,9 +26,15 @@ pub fn free_piece(ctx: &MoveCtx<'_>) -> Option<Found> {
     if recapture || !facts::pinned_guards(ctx.before.board(), to, ctx.mover().other()).is_empty() {
         return None;
     }
-    let net = value(captured) - see::capture_gain(ctx.after, to);
+    // What the other side wins back by taking on the square.
+    let back = see::capture_gain(ctx.after, to);
+    let net = value(captured) - back;
     (net >= 100).then(|| Found {
-        tag: Tag::FreePiece,
+        tag: if back > 0 {
+            Tag::WinsTrade
+        } else {
+            Tag::FreePiece
+        },
         focus: Some(PieceAt {
             role: captured,
             color: ctx.mover().other(),
