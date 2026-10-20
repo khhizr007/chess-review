@@ -12,7 +12,8 @@
 //!    move would have done it (MISSES), later in the line (LEADS_TO), winning
 //!    material.
 //! 4. [`priority`]: one main event, plus, for a bad move, at most one about the
-//!    best move.
+//!    best move (said like a good move: what it wins, does, threatens or
+//!    stops), and for a Brilliant sacrifice what it leads to.
 //! 5. [`realise`]: sentences from `text/en.toml`, with board marks per fragment
 //!    and show-lines narrated move by move.
 //!
@@ -27,9 +28,10 @@ pub mod geometry;
 pub mod priority;
 pub mod realise;
 
+use review_core::expected_points::ExpectedOutcome;
 use review_core::{Classification, Eval, Side};
 use serde::Serialize;
-use shakmaty::{Chess, Color, Move, Position, Role};
+use shakmaty::{Chess, Color, Move, Position, Role, Square};
 use ts_rs::TS;
 
 use crate::analysis::model::MoveRef;
@@ -179,6 +181,19 @@ pub struct CoachInput<'a> {
     /// N_prev: the null-move threat search before the played move (the
     /// opponent to move).
     pub prev_threat: Option<LineInput<'a>>,
+    /// N_B: the null-move threat search after the best move B (its mover to
+    /// move again), when B is not the played move.
+    pub best_threat: Option<LineInput<'a>>,
+    /// B is the only move within the Good band: every other engine line loses
+    /// more expected points than a Good move may.
+    pub only_move: bool,
+    /// The square of the piece the played move gives up, when it is a
+    /// sacrifice (static exchange; see `analysis::detectors::static_sacrifice`).
+    pub sacrifice: Option<Square>,
+    /// The same for the best move B.
+    pub best_sacrifice: Option<Square>,
+    /// The expected outcome for the mover before and after the move.
+    pub swing: Option<(ExpectedOutcome, ExpectedOutcome)>,
     pub classification: Option<Classification>,
     pub style: Style,
     /// Plies of a line to inspect for material (extended through exchanges).
@@ -293,17 +308,22 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
     };
     let threat = null_line(&after, input.threat, mover);
     let prev_threat = null_line(before, input.prev_threat, mover.other());
+    let best_threat = best
+        .as_ref()
+        .and_then(|b| null_line(&b.positions[1], input.best_threat, mover));
 
     let good = is_good(input.classification);
+    let brilliant = input.classification == Some(Classification::Brilliant);
     let mut events = Vec::new();
     if good {
         events.extend(own.as_ref().and_then(|o| circ::own_line(o, input.previous)));
-        events.extend(circ::defence_events(
+        events.extend(circ::good_base_events(
             before,
             input.played,
-            &after,
             input.previous,
             own.as_ref(),
+            LineKind::Played,
+            Circ::Base,
             prev_threat.as_ref(),
         ));
         events.extend(
@@ -312,6 +332,23 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
                 .zip(reply.as_ref())
                 .and_then(|(p, r)| circ::prevents(p, r)),
         );
+        if brilliant && let Some(sq) = input.sacrifice {
+            events.extend(circ::sacrifice(
+                before,
+                input.played,
+                sq,
+                Circ::Base,
+                LineKind::Played,
+            ));
+        }
+        if input.only_move && own.is_some() {
+            events.push(whole_move(
+                Tag::OnlyMove,
+                Circ::Base,
+                mover,
+                LineKind::Played,
+            ));
+        }
     } else {
         events.extend(circ::base_events(
             before,
@@ -322,7 +359,40 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
             best.as_ref(),
         ));
         events.extend(reply.as_ref().and_then(|r| circ::permits(r, input.played)));
-        events.extend(best.as_ref().and_then(|b| circ::misses(b, input.previous)));
+        if let Some(b) = best.as_ref() {
+            events.extend(circ::best_events(
+                before,
+                b,
+                input.previous,
+                prev_threat.as_ref(),
+                best_threat.as_ref(),
+                input.horizon,
+            ));
+            // Answering a check is the point of the move, not what it leaves.
+            if let Some(sq) = input.best_sacrifice.filter(|_| !before.is_check()) {
+                events.extend(circ::sacrifice(
+                    before,
+                    b.moves[0],
+                    sq,
+                    Circ::Misses,
+                    LineKind::Best,
+                ));
+            }
+            if input.only_move {
+                events.push(whole_move(
+                    Tag::OnlyMove,
+                    Circ::Misses,
+                    mover,
+                    LineKind::Best,
+                ));
+            }
+        }
+        let slid = input
+            .swing
+            .is_some_and(|(from, to)| realise::Outlook::of(to) < realise::Outlook::of(from));
+        if input.classification == Some(Classification::Inaccuracy) && slid && reply.is_some() {
+            events.push(whole_move(Tag::Slide, Circ::Base, mover, LineKind::Reply));
+        }
     }
     events.extend(
         threat
@@ -350,6 +420,8 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
         own: own.as_ref(),
         threat: threat.as_ref(),
         prev_threat: prev_threat.as_ref(),
+        best_threat: best_threat.as_ref(),
+        swing: input.swing,
         miss,
         good,
         special: match input.classification {
@@ -365,6 +437,19 @@ pub fn coach_move(input: &CoachInput<'_>) -> CoachNote {
         show_lines,
         events: events.iter().map(|e| view(e, line_of(e.line))).collect(),
     }
+}
+
+/// An event about a move as a whole, with no piece in focus: the only good
+/// move, or a slide in the evaluation.
+fn whole_move(tag: Tag, circ: Circ, mover: Color, line: LineKind) -> Event {
+    let found = detect::Found {
+        tag,
+        focus: None,
+        targets: Vec::new(),
+        geometry: geometry::Geometry::Squares(Vec::new()),
+        stake: 0,
+    };
+    circ::move_event(vec![circ], found, mover, line)
 }
 
 fn view(e: &Event, line: Option<&Line>) -> CoachEvent {

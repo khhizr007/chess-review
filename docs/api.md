@@ -76,8 +76,8 @@ tagged `PgnError` (`illegal_move` with game, ply and SAN; `invalid_start_positio
 
 ### `GET /api/reviews/{id}`
 Returns the status with `state` (`queued | running | completed | failed | cancelled`) and `progress`
-(searches done out of the total: one per position, plus the coach's null-move threat searches). Poll
-it every 0.5–1 s.
+(searches done out of the total: one per position, plus the coach's null-move threat searches; the
+short threat searches after the best move run last and are not counted). Poll it every 0.5–1 s.
 
 ### `DELETE /api/reviews/{id}`
 Requests cancellation. Running searches receive `stop`, and the job ends as `cancelled`.

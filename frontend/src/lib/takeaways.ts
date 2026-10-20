@@ -31,7 +31,7 @@ function kindOf(ply: PlyReview, e: CoachEvent): TakeawayKind | null {
       return bad ? "missed" : null;
     case "base":
       if (bad) return tagWords(e.tag).error ? "error" : null;
-      return e.actor === ply.mover ? "found" : null;
+      return e.actor === ply.mover && !tagWords(e.tag).routine ? "found" : null;
     default:
       return null;
   }

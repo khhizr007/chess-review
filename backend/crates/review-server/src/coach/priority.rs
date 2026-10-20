@@ -1,11 +1,13 @@
 //! Choosing what to say about a move (`docs/coach-analysis.md` §6.5).
 //!
 //! A bad move is explained first by what it allows, then by what was missed;
-//! for a Miss the order is the other way round. A good move is explained by
-//! what it does on its own line, then by what it threatens or stops. Inside
-//! each block the slots are tried in order, and inside a slot the tag order
-//! decides. One main event is said, plus, for a bad move, at most one sentence
-//! about the best move.
+//! for a Miss the order is the other way round. What was missed is the best
+//! move B said like a played good move. A good move is explained by what it
+//! does on its own line, then by what it does by itself, threatens or stops.
+//! Inside each block the slots are tried in order, and inside a slot the tag
+//! order decides. One main event is said, plus, for a bad move, at most one
+//! sentence about the best move, and for a Brilliant sacrifice what it leads
+//! to.
 
 use super::circ::{Circ, Event};
 use super::detect::Tag;
@@ -20,7 +22,12 @@ pub struct Selection {
     pub main: Option<usize>,
     /// Index of the best-move event, said after the main one.
     pub best: Option<usize>,
+    /// Index of a good move's second event, said after the main one: what a
+    /// Brilliant sacrifice leads to.
+    pub follow: Option<usize>,
 }
+
+type Slot<'a> = Box<dyn Fn(&Event) -> bool + 'a>;
 
 fn first_by_tag(events: &[Event], keep: impl Fn(&Event) -> bool) -> Option<usize> {
     events
@@ -31,8 +38,27 @@ fn first_by_tag(events: &[Event], keep: impl Fn(&Event) -> bool) -> Option<usize
         .map(|(i, _)| i)
 }
 
+/// The first slot with an event, and inside it the first event by tag.
+fn first_slot(events: &[Event], slots: &[Slot<'_>]) -> Option<usize> {
+    slots.iter().find_map(|keep| first_by_tag(events, keep))
+}
+
+/// Material won by capturing a piece the opponent cannot profitably win back.
+fn takes_piece(tag: Tag) -> bool {
+    matches!(tag, Tag::FreePiece | Tag::WinsTrade)
+}
+
 fn named_tactic(e: &Event) -> bool {
-    !matches!(e.tag(), Tag::FreePiece | Tag::MaterialGain)
+    !takes_piece(e.tag()) && e.tag() != Tag::MaterialGain
+}
+
+/// A tactic of the move itself that wins nothing on its line.
+fn bare_tactic(e: &Event) -> bool {
+    e.gain.is_none()
+        && !e.tag().is_mate()
+        && !e.tag().is_good_base()
+        && !e.tag().is_sacrifice()
+        && !matches!(e.tag(), Tag::OnlyMove | Tag::Slide | Tag::MaterialGain)
 }
 
 /// The event wins the piece a base tag is about: it takes it, or attacks it.
@@ -51,7 +77,7 @@ fn wins_same_piece(e: &Event, base: &Event) -> bool {
 /// error puts at stake, unless that tactic just wins the same piece.
 fn permits_block(events: &[Event]) -> Option<usize> {
     let permits = |e: &Event| e.first() == Circ::Permits;
-    let base = first_by_tag(events, |e| e.first() == Circ::Base);
+    let base = first_by_tag(events, |e| e.first() == Circ::Base && e.tag().is_bad_base());
     let outweighed = |b: &Event| {
         let tactic_gain = events
             .iter()
@@ -80,61 +106,112 @@ fn permits_block(events: &[Event]) -> Option<usize> {
                 permits(e) && e.gain.is_some() && named_tactic(e)
             })
         })
-        .or_else(|| first_by_tag(events, |e| permits(e) && e.tag() == Tag::FreePiece))
+        .or_else(|| first_by_tag(events, |e| permits(e) && takes_piece(e.tag())))
         .or_else(|| first_by_tag(events, |e| permits(e) && e.tag() == Tag::MaterialGain))
         .or_else(|| first_by_tag(events, permits))
 }
 
+/// What the best move B would have done, said like a played good move: a
+/// mate on its line; the piece just left hanging; a sacrifice; the tactic
+/// that wins material; a piece it takes; a mate it threatens or stops; what
+/// it does by itself (a trade, a defence, a tempo); a tactic that wins
+/// nothing; any threat; any threat it stops; a plain material gain; and last
+/// that it was the only good move. This follows the good-move order of
+/// [`select_good`], with the piece just left hanging added.
 fn misses_block(events: &[Event]) -> Option<usize> {
     let misses = |e: &Event| matches!(e.first(), Circ::Misses | Circ::MissesSame);
-    first_by_tag(events, |e| misses(e) && e.tag().is_mate())
-        .or_else(|| first_by_tag(events, |e| e.first() == Circ::MissesSame))
-        .or_else(|| first_by_tag(events, |e| misses(e) && e.gain.is_some() && named_tactic(e)))
-        .or_else(|| first_by_tag(events, |e| misses(e) && e.tag() == Tag::FreePiece))
-        .or_else(|| first_by_tag(events, |e| misses(e) && e.tag() == Tag::MaterialGain))
-        .or_else(|| first_by_tag(events, misses))
+    // The circumstance after MISSES says whose line it is: B's own, or the
+    // null-move lines of what it threatens and stops.
+    let then = |e: &Event| e.chain.get(1).copied();
+    let own =
+        move |e: &Event| misses(e) && !matches!(then(e), Some(Circ::Threatens | Circ::Prevents));
+    let threat = move |e: &Event| misses(e) && then(e) == Some(Circ::Threatens);
+    let stops = move |e: &Event| misses(e) && then(e) == Some(Circ::Prevents);
+    let slots: [Slot<'_>; 13] = [
+        Box::new(move |e| own(e) && e.tag().is_mate()),
+        Box::new(|e| e.first() == Circ::MissesSame),
+        Box::new(move |e| own(e) && e.tag().is_sacrifice()),
+        Box::new(move |e| own(e) && e.gain.is_some() && named_tactic(e)),
+        Box::new(move |e| own(e) && takes_piece(e.tag())),
+        Box::new(move |e| threat(e) && e.tag().is_mate()),
+        Box::new(move |e| stops(e) && e.tag().is_mate()),
+        Box::new(move |e| own(e) && e.tag().is_good_base()),
+        Box::new(move |e| own(e) && bare_tactic(e)),
+        Box::new(threat),
+        Box::new(stops),
+        Box::new(move |e| own(e) && e.tag() == Tag::MaterialGain),
+        Box::new(move |e| misses(e) && e.tag() == Tag::OnlyMove),
+    ];
+    first_slot(events, &slots)
 }
 
 /// What to say about a bad move. `miss` puts the missed chance first. When
-/// neither what it allows nor what it misses has a motif, what it threatens
-/// is said (and the best move after it).
+/// neither what it allows nor what it misses has a motif, what it threatens is
+/// said; then that the best move was the only good one; then, last, that the
+/// evaluation slid. The best move is said after any main event that is not
+/// already about it.
 pub fn select_bad(events: &[Event], miss: bool) -> Selection {
     let permits = permits_block(events);
     let misses = misses_block(events);
+    // "The only good move" is said only when nothing else is.
+    let missed_idea = misses.filter(|&i| events[i].tag() != Tag::OnlyMove);
     let main = if miss {
-        misses.or(permits)
+        missed_idea.or(permits)
     } else {
-        permits.or(misses)
+        permits.or(missed_idea)
     }
-    .or_else(|| first_by_tag(events, |e| e.first() == Circ::Threatens));
+    .or_else(|| first_by_tag(events, |e| e.first() == Circ::Threatens))
+    .or(misses)
+    .or_else(|| first_by_tag(events, |e| e.tag() == Tag::Slide));
     let best = match main {
-        Some(i) if matches!(events[i].first(), Circ::Base | Circ::Permits) => misses,
-        _ => None,
+        Some(i) if matches!(events[i].first(), Circ::Misses | Circ::MissesSame) => None,
+        Some(_) => misses,
+        None => None,
     };
-    Selection { main, best }
+    Selection {
+        main,
+        best,
+        follow: None,
+    }
 }
 
-/// What to say about a good move: a mate on its own line; the tactic that
-/// wins material there; a mate it threatens; a mate it stops; a tactic or a
-/// defence of the move itself; any threat it makes; any threat it stops; and
-/// last a plain material gain on its line.
+/// What to say about a good move: a mate on its own line; a Brilliant
+/// sacrifice (then what it leads to); the tactic that wins material there; a
+/// mate it threatens; a mate it stops; what it does by itself (a trade, a
+/// defence, a tempo); a tactic that wins nothing; any threat it makes; any
+/// threat it stops; a plain material gain on its line; and last that it was
+/// the only good move.
 pub fn select_good(events: &[Event]) -> Selection {
     let own = |e: &Event| e.first() == Circ::Base;
     let threatens = |e: &Event| e.first() == Circ::Threatens;
     let prevents = |e: &Event| e.first() == Circ::Prevents;
-    let main = first_by_tag(events, |e| own(e) && e.tag().is_mate())
-        .or_else(|| {
-            first_by_tag(events, |e| {
-                own(e) && e.gain.is_some() && e.tag() != Tag::MaterialGain
-            })
-        })
-        .or_else(|| first_by_tag(events, |e| threatens(e) && e.tag().is_mate()))
-        .or_else(|| first_by_tag(events, |e| prevents(e) && e.tag().is_mate()))
-        .or_else(|| first_by_tag(events, |e| own(e) && e.gain.is_none()))
-        .or_else(|| first_by_tag(events, threatens))
-        .or_else(|| first_by_tag(events, prevents))
-        .or_else(|| first_by_tag(events, own));
-    Selection { main, best: None }
+    let mut slots: Vec<Slot<'_>> = vec![
+        Box::new(move |e| own(e) && e.tag().is_mate()),
+        Box::new(move |e| own(e) && e.tag().is_sacrifice()),
+        Box::new(move |e| own(e) && e.gain.is_some() && e.tag() != Tag::MaterialGain),
+        Box::new(move |e| threatens(e) && e.tag().is_mate()),
+        Box::new(move |e| prevents(e) && e.tag().is_mate()),
+        Box::new(move |e| own(e) && e.tag().is_good_base()),
+        Box::new(move |e| own(e) && bare_tactic(e)),
+        Box::new(threatens),
+        Box::new(prevents),
+        Box::new(move |e| own(e) && e.tag() == Tag::MaterialGain),
+        Box::new(move |e| own(e) && e.tag() == Tag::OnlyMove),
+    ];
+    let main = first_slot(events, &slots);
+    // A sacrifice is said with what it leads to.
+    let follow = match main {
+        Some(i) if events[i].tag().is_sacrifice() => {
+            drop(slots.remove(1));
+            first_slot(events, &slots).filter(|&j| events[j].tag() != Tag::OnlyMove)
+        }
+        _ => None,
+    };
+    Selection {
+        main,
+        best: None,
+        follow,
+    }
 }
 
 #[cfg(test)]
@@ -327,7 +404,8 @@ mod tests {
             s,
             Selection {
                 main: Some(1),
-                best: None
+                best: None,
+                follow: None,
             }
         );
         let s = select_bad(&events, false);
@@ -335,7 +413,8 @@ mod tests {
             s,
             Selection {
                 main: Some(0),
-                best: Some(1)
+                best: Some(1),
+                follow: None,
             }
         );
     }
@@ -358,5 +437,80 @@ mod tests {
             event(&[Circ::Misses, Circ::LeadsTo], Tag::Pin, 300, Some(500)),
         ];
         assert_eq!(select_bad(&events, true).main, Some(0));
+    }
+
+    #[test]
+    fn the_best_move_is_said_like_a_good_move() {
+        // B defends a piece and threatens to win one: the defence comes first,
+        // and either comes before "the only good move".
+        let events = vec![
+            event(&[Circ::Misses], Tag::OnlyMove, 0, None),
+            event(
+                &[Circ::Misses, Circ::Threatens, Circ::WinsMaterial],
+                Tag::FreePiece,
+                300,
+                Some(300),
+            ),
+            event(&[Circ::Misses], Tag::DefendsPiece, 300, None),
+        ];
+        assert_eq!(select_bad(&events, true).main, Some(2));
+        assert_eq!(select_bad(&events[..2], true).main, Some(1));
+        // After a base error, the best move's idea is the second sentence.
+        let mut with_base = events.clone();
+        with_base.push(event(&[Circ::Base], Tag::HangsPiece, 300, Some(300)));
+        let s = select_bad(&with_base, false);
+        assert_eq!((s.main, s.best), (Some(3), Some(2)));
+    }
+
+    #[test]
+    fn the_only_move_and_the_slide_are_fallbacks() {
+        let events = vec![
+            event(&[Circ::Base], Tag::Slide, 0, None),
+            event(&[Circ::Misses], Tag::OnlyMove, 0, None),
+        ];
+        assert_eq!(select_bad(&events, false).main, Some(1));
+        assert_eq!(select_bad(&events[..1], false).main, Some(0));
+        // A threat of the played move comes before both.
+        let mut events = events;
+        events.push(event(
+            &[Circ::Threatens, Circ::WinsMaterial],
+            Tag::Fork,
+            300,
+            Some(300),
+        ));
+        let s = select_bad(&events, false);
+        assert_eq!((s.main, s.best), (Some(2), Some(1)));
+    }
+
+    #[test]
+    fn trades_and_defences_come_before_bare_tactics() {
+        let events = vec![
+            event(&[Circ::Base], Tag::RemovesDefender, 0, None),
+            event(
+                &[Circ::Prevents, Circ::WinsMaterial],
+                Tag::FreePiece,
+                300,
+                Some(300),
+            ),
+            event(&[Circ::Base], Tag::Recapture, 0, None),
+        ];
+        assert_eq!(select_good(&events).main, Some(2));
+        assert_eq!(select_good(&events[..2]).main, Some(0));
+    }
+
+    #[test]
+    fn a_sacrifice_is_said_with_what_it_leads_to() {
+        let events = vec![
+            event(&[Circ::Base, Circ::LeadsTo], Tag::Fork, 500, Some(500)),
+            event(&[Circ::Base], Tag::Sacrifice, 0, None),
+        ];
+        let s = select_good(&events);
+        assert_eq!((s.main, s.follow), (Some(1), Some(0)));
+        // A mate is still said first.
+        let events = vec![
+            event(&[Circ::Base], Tag::Sacrifice, 0, None),
+            event(&[Circ::Base], Tag::ForcedMate, 0, None),
+        ];
+        assert_eq!(select_good(&events).main, Some(1));
     }
 }

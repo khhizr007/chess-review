@@ -83,7 +83,11 @@ export function geometryTargets(g: GeometryView): string[] {
 export function hintEvent(ply: PlyReview): CoachEvent | null {
   const note = ply.coach;
   if (!note || note.events.length === 0) return null;
-  const missed = note.events.find((e) => (e.chain[0] === "misses" || e.chain[0] === "misses_same") && e.actor === ply.mover);
+  const isMissed = (e: CoachEvent | undefined): e is CoachEvent =>
+    !!e && (e.chain[0] === "misses" || e.chain[0] === "misses_same") && e.actor === ply.mover;
+  // The best move's idea the coach says, else any it found (a move can have several).
+  const said = note.sentences.map((s) => (s.event == null ? undefined : note.events[s.event])).find(isMissed);
+  const missed = said ?? note.events.find(isMissed);
   if (missed) return missed;
   const main = note.sentences[0]?.event;
   return (main != null ? note.events[main] : undefined) ?? note.events[0] ?? null;

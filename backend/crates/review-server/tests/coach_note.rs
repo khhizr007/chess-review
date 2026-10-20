@@ -1,6 +1,7 @@
 //! The whole coach on hand-built positions and engine lines: circumstances,
 //! the choice of what to say, and the realised text with its board marks.
 
+use review_core::expected_points::ExpectedOutcome;
 use review_core::{Classification, Eval, Side};
 use review_server::board;
 use review_server::coach::circ::Circ;
@@ -8,7 +9,7 @@ use review_server::coach::detect::Tag;
 use review_server::coach::geometry::ArrowKind;
 use review_server::coach::{CoachInput, CoachNote, LineInput, Style, coach_move};
 use shakmaty::fen::Fen;
-use shakmaty::{CastlingMode, Chess, Move};
+use shakmaty::{CastlingMode, Chess, Move, Square};
 
 fn pos(fen: &str) -> Chess {
     fen.parse::<Fen>()
@@ -35,6 +36,12 @@ struct Case {
     threat_eval: Eval,
     prev_threat: Vec<String>,
     prev_threat_eval: Eval,
+    best_threat: Vec<String>,
+    best_threat_eval: Eval,
+    only_move: bool,
+    sacrifice: Option<Square>,
+    best_sacrifice: Option<Square>,
+    swing: Option<(ExpectedOutcome, ExpectedOutcome)>,
     class: Classification,
     style: Style,
     seed: u32,
@@ -56,6 +63,12 @@ impl Case {
             threat_eval: Eval::DRAW,
             prev_threat: Vec::new(),
             prev_threat_eval: Eval::DRAW,
+            best_threat: Vec::new(),
+            best_threat_eval: Eval::DRAW,
+            only_move: false,
+            sacrifice: None,
+            best_sacrifice: None,
+            swing: None,
             class: Classification::Blunder,
             style: Style::Neutral,
             seed: 0,
@@ -80,6 +93,33 @@ impl Case {
     fn prev_threat(mut self, moves: &[&str], eval: Eval) -> Case {
         self.prev_threat = pv(moves);
         self.prev_threat_eval = eval;
+        self
+    }
+
+    /// N_B: the null-move line after the best move.
+    fn best_threat(mut self, moves: &[&str], eval: Eval) -> Case {
+        self.best_threat = pv(moves);
+        self.best_threat_eval = eval;
+        self
+    }
+
+    fn only_move(mut self) -> Case {
+        self.only_move = true;
+        self
+    }
+
+    fn sacrifice(mut self, sq: Square) -> Case {
+        self.sacrifice = Some(sq);
+        self
+    }
+
+    fn best_sacrifice(mut self, sq: Square) -> Case {
+        self.best_sacrifice = Some(sq);
+        self
+    }
+
+    fn swing(mut self, from: ExpectedOutcome, to: ExpectedOutcome) -> Case {
+        self.swing = Some((from, to));
         self
     }
 
@@ -132,6 +172,14 @@ impl Case {
                 pv: &self.prev_threat,
                 eval: self.prev_threat_eval,
             }),
+            best_threat: (!self.best_threat.is_empty()).then(|| LineInput {
+                pv: &self.best_threat,
+                eval: self.best_threat_eval,
+            }),
+            only_move: self.only_move,
+            sacrifice: self.sacrifice,
+            best_sacrifice: self.best_sacrifice,
+            swing: self.swing,
             classification: Some(self.class),
             style: self.style,
             horizon: 6,
@@ -558,14 +606,14 @@ fn taking_back_a_rook_wins_the_exchange() {
     let best = &note.events[note.sentences[1].event.unwrap() as usize];
     assert_eq!(
         (best.tag, best.chain.clone()),
-        (Tag::MaterialGain, vec![Circ::Misses])
+        (Tag::Recapture, vec![Circ::Misses, Circ::WinsMaterial])
     );
     assert_eq!(best.gain_cp, Some(200));
     assert_eq!(
         note.text(),
         vec![
             "Ng4 does not take back White's rook on d7.",
-            "Better was Nxd7, which wins the exchange."
+            "Better was Nxd7, which takes back on d7, winning the exchange."
         ]
     );
 }
@@ -909,11 +957,13 @@ fn good_move_priority() {
 
 #[test]
 fn a_bad_move_with_nothing_else_to_say_names_its_threat() {
-    // Ra4 attacks the knight on h4, but Ke2 was better.
-    let note = Case::new("4k3/8/8/8/7n/8/8/R3K3 w - - 0 1", "a1a4")
-        .reply(&["h4f5"], cp(0))
-        .best(&["e1e2"], cp(30))
-        .threat(&["a4h4"], cp(300))
+    // Rb1 attacks the knight on h1, which has no safe square (f2 is the
+    // king's, g3 the pawn's); h3 was better.
+    let fen = "4k3/8/8/1R6/8/4K3/7P/7n w - - 0 1";
+    let note = Case::new(fen, "b5b1")
+        .reply(&["e8e7"], cp(0))
+        .best(&["h2h3"], cp(30))
+        .threat(&["b1h1"], cp(300))
         .class(Classification::Inaccuracy)
         .run();
     assert_well_formed(&note);
@@ -925,9 +975,39 @@ fn a_bad_move_with_nothing_else_to_say_names_its_threat() {
     assert_eq!(
         note.text(),
         vec![
-            "Ra4 threatens Rxh4, which wins Black's knight on h4.",
-            "Better was Ke2."
+            "Rb1 threatens Rxh1, which wins Black's knight on h1.",
+            "Better was h3."
         ]
+    );
+}
+
+#[test]
+fn attacking_a_piece_that_can_move_away_is_no_threat() {
+    // Ra4 attacks the knight on h4, which simply moves: no THREATENS.
+    let fen = "4k3/8/8/8/7n/8/8/R3K3 w - - 0 1";
+    let note = Case::new(fen, "a1a4")
+        .reply(&["h4f5"], cp(0))
+        .best(&["e1e2"], cp(30))
+        .threat(&["a4h4"], cp(300))
+        .class(Classification::Inaccuracy)
+        .run();
+    assert!(note.events.iter().all(|e| e.chain[0] != Circ::Threatens));
+    // As a good move it gains a tempo.
+    let note = Case::new(fen, "a1a4")
+        .own(&["a1a4", "h4f5"], cp(0))
+        .reply(&["h4f5"], cp(0))
+        .threat(&["a4h4"], cp(300))
+        .class(Classification::Best)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::GainsTempo, vec![Circ::Base])
+    );
+    assert_eq!(
+        note.text(),
+        vec!["Ra4 attacks Black's knight on h4, gaining time as it moves away."]
     );
 }
 
@@ -989,18 +1069,231 @@ fn every_tag_has_text() {
         "prevents",
         "brilliant",
         "great_find",
+        "misses_threatens",
+        "misses_prevents",
+        "misses_sacrifice",
+        "misses_only",
+        "best_threatens",
+        "best_prevents",
+        "best_sacrifice",
+        "best_only",
+        "slide",
+        "sacrifice",
+        "only",
+        "brilliant_sacrifice",
+        "great_find_only",
     ] {
         assert!(c.frame.contains_key(frame), "frame {frame}");
     }
 }
 
+// ---------------------------------------------------------------- the best move (phase 2b)
+
 #[test]
-fn a_piece_taken_back_is_said_as_material_won() {
-    // ...h6 leaves the rook on a5 to the bishop; the pawn takes back, so the
-    // rook is not free: Bxa5 wins the exchange.
-    let note = Case::new("4k3/7p/1p6/r7/8/8/3B4/6K1 b - - 0 1", "h7h6")
-        .reply(&["d2a5", "b6a5", "g1f2"], cp(200))
-        .best(&["a5a1"], cp(0))
+fn the_best_move_would_have_defended() {
+    // The rook on d8 attacks the knight on d4. Kf1 leaves it; c3 guards it.
+    let fen = "3rk3/8/8/8/3N4/8/2P5/4K3 w - - 0 1";
+    let note = Case::new(fen, "e1f1")
+        .reply(&["d8d4"], cp(-300))
+        .best(&["c2c3", "e8e7"], cp(0))
+        .prev_threat(&["d8d4"], cp(-300))
+        .class(Classification::Mistake)
+        .run();
+    assert_well_formed(&note);
+    // The knight is simply lost: the reply that takes it is said first.
+    assert_eq!(note.main_event().map(|e| e.tag), Some(Tag::FreePiece));
+    let best = &note.events[note.sentences[1].event.unwrap() as usize];
+    assert_eq!(
+        (best.tag, best.chain.clone()),
+        (Tag::DefendsPiece, vec![Circ::Misses])
+    );
+    assert_eq!(
+        note.text()[1],
+        "Better was c3, which defends White's knight on d4."
+    );
+    // The threat it stops is an event too, said after the defence.
+    assert!(note.events.iter().any(|e| e.tag == Tag::FreePiece
+        && e.chain == vec![Circ::Misses, Circ::Prevents, Circ::WinsMaterial]));
+}
+
+#[test]
+fn the_best_move_would_have_threatened_mate() {
+    // Rd2 would threaten Rd8 mate; White played Kf1.
+    let fen = "6k1/p4ppp/8/8/8/8/R4PPP/6K1 w - - 0 1";
+    let note = Case::new(fen, "g1f1")
+        .reply(&["a7a5"], cp(0))
+        .best(&["a2d2", "a7a5"], cp(80))
+        .best_threat(&["d2d8"], mate(Side::White, 1))
+        .class(Classification::Inaccuracy)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::BackRankMate, vec![Circ::Misses, Circ::Threatens])
+    );
+    assert_eq!(main.line, vec!["d2d8"]);
+    assert_eq!(
+        note.text(),
+        vec!["Better was Rd2, threatening Rd8#, which mates on the back rank."]
+    );
+    assert_eq!(note.show_lines[0].label, "Show the threat");
+    // As a Miss it is what was missed.
+    let note = Case::new(fen, "g1f1")
+        .reply(&["a7a5"], cp(0))
+        .best(&["a2d2", "a7a5"], cp(80))
+        .best_threat(&["d2d8"], mate(Side::White, 1))
+        .class(Classification::Miss)
+        .run();
+    assert_eq!(
+        note.text(),
+        vec!["White missed Rd2, which threatens Rd8#: it mates on the back rank."]
+    );
+}
+
+#[test]
+fn the_only_good_move() {
+    let note = Case::new(FORK, "d8e8")
+        .reply(&["e1e2"], cp(0))
+        .best(&["d8c8"], cp(0))
+        .only_move()
+        .class(Classification::Mistake)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::OnlyMove, vec![Circ::Misses])
+    );
+    assert_eq!(
+        note.text(),
+        vec!["Better was Kc8, the only good move here."]
+    );
+    // A Great Find that is the only good move says so in its own words.
+    let note = Case::new(FORK, "d8c8")
+        .own(&["d8c8"], cp(0))
+        .reply(&["b5a7"], cp(0))
+        .only_move()
+        .class(Classification::GreatFind)
+        .run();
+    assert_eq!(
+        note.text(),
+        vec!["Kc8 is the one strong move here: the others all fall short."]
+    );
+}
+
+#[test]
+fn an_inaccuracy_with_nothing_to_name_slides() {
+    let note = Case::new(FORK, "d8e8")
+        .reply(&["e1e2"], cp(0))
+        .best(&["d8c8"], cp(0))
+        .swing(ExpectedOutcome::Equal, ExpectedOutcome::Worse)
+        .class(Classification::Inaccuracy)
+        .run();
+    assert_well_formed(&note);
+    assert_eq!(note.main_event().map(|e| e.tag), Some(Tag::Slide));
+    assert_eq!(
+        note.text(),
+        vec![
+            "Ke8 lets Black's position slide from equal to worse.",
+            "Better was Kc8."
+        ]
+    );
+    // Within one step (better and winning count as one each) nothing slides.
+    let note = Case::new(FORK, "d8e8")
+        .reply(&["e1e2"], cp(0))
+        .best(&["d8c8"], cp(0))
+        .swing(ExpectedOutcome::CompletelyWinning, ExpectedOutcome::Winning)
+        .class(Classification::Inaccuracy)
+        .run();
+    assert!(note.main_event().is_none());
+}
+
+// ---------------------------------------------------------------- trades, checks, sacrifices
+
+#[test]
+fn a_recapture_is_a_recapture() {
+    // Black has just played ...exd5; exd5 takes back. The null-move line says
+    // Black would otherwise keep the pawn, but that is not how to say it.
+    let prior = pos("4k3/8/4p3/3N4/4P3/8/8/4K3 b - - 0 1");
+    let previous = board::parse_uci(&prior, "e6d5").unwrap();
+    let mut case = Case::new("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1", "e4d5")
+        .own(&["e4d5", "e8e7"], cp(0))
+        .reply(&["e8e7"], cp(0))
+        .class(Classification::Best);
+    case.previous = Some(previous);
+    let note = case.run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::Recapture, vec![Circ::Base])
+    );
+    assert_eq!(note.text(), vec!["exd5 takes back on d5."]);
+}
+
+#[test]
+fn stepping_out_of_check() {
+    let note = Case::new("4k3/8/8/8/8/3n4/8/2B1K3 w - - 0 1", "e1e2")
+        .own(&["e1e2", "d3c1"], cp(-300))
+        .reply(&["d3c1"], cp(-300))
+        .class(Classification::Best)
+        .run();
+    assert_well_formed(&note);
+    assert_eq!(note.main_event().map(|e| e.tag), Some(Tag::EvadesCheck));
+    assert_eq!(
+        note.text(),
+        vec!["Ke2 gets out of the check from Black's knight on d3."]
+    );
+}
+
+#[test]
+fn a_brilliant_sacrifice_then_what_it_leads_to() {
+    let note = Case::new("1q4k1/8/8/4N3/8/8/8/5RK1 w - - 0 1", "f1f8")
+        .own(&["f1f8", "g8f8", "e5d7", "f8e7", "d7b8"], cp(400))
+        .sacrifice(Square::F8)
+        .class(Classification::Brilliant)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::Sacrifice, vec![Circ::Base])
+    );
+    assert_eq!(
+        note.text(),
+        vec![
+            "Rf8+ is a sacrifice: it gives up White's rook on f8, and that pays off.",
+            "After Rf8+ Kxf8, Nd7+ forks Black's king and queen on b8, winning material worth about 4 pawns."
+        ]
+    );
+    // The best move as a sacrifice, after a bad move.
+    let note = Case::new("1q4k1/8/8/4N3/8/8/8/5RK1 w - - 0 1", "g1h1")
+        .reply(&["b8b1"], cp(0))
+        .best(&["f1f8", "g8f8", "e5d7", "f8e7", "d7b8"], cp(400))
+        .best_sacrifice(Square::F8)
+        .class(Classification::Mistake)
+        .run();
+    assert_well_formed(&note);
+    let main = note.main_event().unwrap();
+    assert_eq!(
+        (main.tag, main.chain.clone()),
+        (Tag::Sacrifice, vec![Circ::Misses])
+    );
+    assert_eq!(
+        note.text(),
+        vec!["Better was Rf8+, a sacrifice that works."]
+    );
+}
+
+#[test]
+fn a_free_piece_the_line_outgrows_is_said_as_material_won() {
+    // ...h6 leaves the knight on a5 to the bishop, which then takes the rook
+    // on d8 as well: the reply wins more than the knight, so the move allows
+    // White to win material.
+    let note = Case::new("3rk3/7p/8/n7/8/8/3B4/6K1 b - - 0 1", "h7h6")
+        .reply(&["d2a5", "e8e7", "a5d8", "e7d8"], cp(500))
+        .best(&["a5c4"], cp(0))
         .run();
     assert_well_formed(&note);
     let main = note.main_event().unwrap();
@@ -1008,5 +1301,6 @@ fn a_piece_taken_back_is_said_as_material_won() {
         (main.tag, main.chain.clone()),
         (Tag::MaterialGain, vec![Circ::Permits])
     );
-    assert_eq!(note.text()[0], "h6 allows Bxa5, which wins the exchange.");
+    assert_eq!(main.square.as_deref(), Some("a5"));
+    assert!(note.text()[0].starts_with("h6 allows Bxa5, which wins"));
 }

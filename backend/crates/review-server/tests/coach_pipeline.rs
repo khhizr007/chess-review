@@ -229,10 +229,11 @@ async fn a_scripted_threat_search_before_the_move_is_stopped() {
 async fn the_threat_search_can_be_turned_off() {
     let pgn = common::fixture("opera_game.pgn");
     let mut calls = Vec::new();
-    for depth in [0, 10] {
+    for (depth, after_best) in [(0, true), (10, false), (10, true)] {
         let engine = Arc::new(FakeEngine::default());
         let mut config = ReviewConfig::default();
         config.coach.threat_search_depth = depth;
+        config.coach.best_threat_search = after_best;
         let r = review_with(&pgn, engine.clone(), config).await;
         let threats = r
             .plies
@@ -247,16 +248,21 @@ async fn the_threat_search_can_be_turned_off() {
         );
         calls.push(engine.calls.load(Ordering::SeqCst));
     }
-    // One null-move search per position next to a move that is not book or forced.
+    // One null-move search per position next to a move that is not book or
+    // forced, and one after the best move of each of those moves that was not
+    // the best move.
     assert!(calls[1] > calls[0], "{calls:?}");
     let r = review("opera_game.pgn").await;
-    let coached = r
+    let coached: Vec<_> = r
         .plies
         .iter()
         .filter(|p| !p.is_book && p.classification != Some(Classification::Forced))
-        .count() as u32;
+        .collect();
+    let n = coached.len() as u32;
+    assert!(calls[1] - calls[0] <= n + 1, "{calls:?} for {n} plies");
+    let not_best = coached.iter().filter(|p| !p.played_is_best).count() as u32;
     assert!(
-        calls[1] - calls[0] <= coached + 1,
-        "{calls:?} for {coached} plies"
+        calls[2] - calls[1] <= not_best,
+        "{calls:?}: {not_best} plies not the best move"
     );
 }

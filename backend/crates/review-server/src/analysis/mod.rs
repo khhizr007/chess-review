@@ -71,6 +71,10 @@ struct PositionInfo {
     /// Best line of the null-move threat search: this position with the other
     /// side to move (for the coach).
     threat: Option<EngineLine>,
+    /// Best line of the null-move threat search after the engine's best move
+    /// from this position, its mover to move again (for the coach, where the
+    /// played move is not the best move).
+    best_threat: Option<EngineLine>,
 }
 
 pub async fn run_review(
@@ -247,7 +251,61 @@ async fn analyse_positions(
             is_draw: draws[i],
             shallow_best: None,
             threat: threat.and_then(|a| a.best().cloned()),
+            best_threat: None,
         });
+    }
+
+    // The coach's threat search after the best move B, where the played move
+    // is not B: what B would have threatened (said in the best-move sentence).
+    if threat_depth > 0 && request.config.coach.best_threat_search {
+        let after_best: Vec<(usize, AnalysisRequest)> = game
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| coached[*i])
+            .filter_map(|(i, parsed)| {
+                let best = infos[i].analysis.as_ref()?.best()?.pv.first()?;
+                if *best == parsed.uci {
+                    return None;
+                }
+                let mut pos = game.positions[i].clone();
+                pos.play_unchecked(board::parse_uci(&pos, best)?);
+                let null = board::null_move(&pos)?;
+                Some((
+                    i,
+                    AnalysisRequest {
+                        fen: board::fen(&null),
+                        limit: SearchLimit::Depth {
+                            depth: threat_depth,
+                        },
+                        multipv: 1,
+                        chess960,
+                        searchmoves: None,
+                    },
+                ))
+            })
+            .collect();
+        let results = futures::stream::iter(
+            after_best
+                .into_iter()
+                .map(|(i, req)| async move { (i, evaluator.analyze(&req, cancel).await) }),
+        )
+        .buffered(evaluator.parallelism().max(1))
+        .collect::<Vec<_>>()
+        .await;
+        for (i, result) in results {
+            match result {
+                Ok(analysis) => infos[i].best_threat = analysis.best().cloned(),
+                Err(EngineError::Cancelled) => return Err(ReviewError::Cancelled),
+                // Like the other threat searches, a failure only costs a sentence.
+                Err(e) => {
+                    tracing::warn!(error = %e, "null-move threat search after the best move failed")
+                }
+            }
+        }
+        if cancel.is_cancelled() {
+            return Err(ReviewError::Cancelled);
+        }
     }
 
     // "Easy to find" proxy for Great Find: where the played move is the engine's
@@ -623,6 +681,12 @@ fn build_review(
                 other => other,
             },
         };
+        // The coach's "only good move": every other engine line loses more
+        // than a Good move may.
+        let only_move = lines.get(1).is_some_and(|l| {
+            let v = Value::after_move(eval_after_first_move(l, mover), mover);
+            ep_best - node_expected_points(v, false, rating) > cfg.precision_thresholds[1]
+        });
         let coach = coach::coach_move(&coach::CoachInput {
             before,
             played: m,
@@ -635,6 +699,14 @@ fn build_review(
             }),
             threat: infos[i + 1].threat.as_ref().map(line_input),
             prev_threat: infos[i].threat.as_ref().map(line_input),
+            best_threat: infos[i].best_threat.as_ref().map(line_input),
+            only_move,
+            sacrifice: sacrifice.map(|s| s.square),
+            best_sacrifice: best_move
+                .filter(|_| !played_is_best)
+                .and_then(|bm| static_sacrifice(before, bm, bc, pawns))
+                .map(|s| s.square),
+            swing: Some((oc(mover_value_before), oc(played_value))),
             classification: outcome.classification,
             style: coach::Style::for_player(request.player_side, mover),
             horizon,

@@ -12,6 +12,8 @@ export interface TagWords {
   error?: { one: string; many: (n: number) => string };
   /** Retry hint for the error tags, said without naming the move. */
   hint?: string;
+  /** What a good move does as a matter of course (a recapture, a defence): not praised in takeaways. */
+  routine?: boolean;
 }
 
 const MATE: TagWords = { one: "a mating attack", many: "mating attacks", family: "mate" };
@@ -22,6 +24,7 @@ const TAG_WORDS: Partial<Record<Tag, TagWords>> = {
   checkmate: { ...MATE, one: "a checkmate" },
   forced_mate: { ...MATE, one: "a forced mate" },
   free_piece: { one: "a free piece", many: "free pieces" },
+  wins_trade: { one: "a trade that wins material", many: "trades that win material" },
   trapped_piece: { one: "a trapped piece", many: "trapped pieces" },
   double_check: { one: "a double check", many: "double checks" },
   royal_fork: { one: "a fork of the king", many: "forks", family: "fork" },
@@ -77,6 +80,32 @@ const TAG_WORDS: Partial<Record<Tag, TagWords>> = {
     many: "hanging pawns",
     error: { one: "Left a pawn hanging", many: (n) => `Left ${n} pawns hanging` },
     hint: "Check that your pawns stay protected.",
+  },
+  loses_trade: {
+    one: "a losing trade",
+    many: "losing trades",
+    family: "trade",
+    error: { one: "Lost a trade", many: (n) => `Lost ${n} trades` },
+    hint: "Count the attackers and defenders before you capture.",
+  },
+  recapture: { one: "a recapture", many: "recaptures", routine: true },
+  equal_trade: { one: "an even trade", many: "even trades", routine: true },
+  blocks_check: { one: "a way to block the check", many: "check blocks", family: "check", routine: true },
+  evades_check: { one: "a way out of check", many: "ways out of check", family: "check", routine: true },
+  defends_piece: { one: "a way to defend a piece", many: "defences", routine: true },
+  escapes_threat: { one: "a way to save a piece", many: "escapes", routine: true },
+  counter_threat: { one: "a counter-attack", many: "counter-attacks", routine: true },
+  kicks: { one: "a pawn move that chases a piece", many: "pawn moves that chase pieces", family: "tempo", routine: true },
+  gains_tempo: { one: "an attack that gains time", many: "attacks that gain time", family: "tempo", routine: true },
+  offers_trade: { one: "a trade offer", many: "trade offers", routine: true },
+  sacrifice: { one: "a sacrifice", many: "sacrifices", family: "sacrifice" },
+  offers_piece: { one: "a sacrifice", many: "sacrifices", family: "sacrifice" },
+  only_move: { one: "the only good move", many: "only good moves" },
+  slide: {
+    one: "a slide in the position",
+    many: "slides in the position",
+    error: { one: "Let the position slip", many: (n) => `Let the position slip ${n} times` },
+    hint: "Look for the move that keeps your position together.",
   },
   material_gain: { one: "a way to win material", many: "chances to win material" },
 };

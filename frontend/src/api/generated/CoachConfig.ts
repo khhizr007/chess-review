@@ -10,4 +10,9 @@ export type CoachConfig = {
  * and which threat it stops. Book and forced moves are skipped. 0 turns it
  * off.
  */
-threat_search_depth: number, };
+threat_search_depth: number, 
+/**
+ * Also run the threat search after the engine's best move, where the
+ * played move is not it: what the best move would have threatened.
+ */
+best_threat_search: boolean, };
