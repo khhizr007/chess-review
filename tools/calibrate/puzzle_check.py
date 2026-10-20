@@ -277,7 +277,6 @@ def cmd_report(args) -> None:
     c = Counter("/".join(p["misses"]["chain"]) if p.get("misses") else "(none)" for p in puzzles)
     w(", ".join(f"{k} {v}" for k, v in c.most_common()))
 
-    rng = random.Random(1)
     w("\n## Examples\n")
     for tag in SAID_MAP:
         for reading, mapping in (("said", SAID_MAP), ("fired", FIRED_MAP)):
@@ -289,8 +288,9 @@ def cmd_report(args) -> None:
             if not fp:
                 continue
             w(f"\n### {tag}: {reading}, theme absent ({len(fp)})\n")
-            for p in rng.sample(fp, min(args.examples, len(fp))):
-                w(f"- `{p['id']}` `{p['fen']}` `{solution_san(p)}` themes {' '.join(p['themes'])}; "
+            # A draw of its own per list, so lists do not shift when another changes.
+            for p in random.Random(f"{tag} {reading}").sample(fp, min(args.examples, len(fp))):
+                w(f"- `{p['id']}` `{p['fen']}` `{p['moves']}` themes {' '.join(p['themes'])}; "
                   f"said {said_text(p, 'misses')}; fired {fired_text(p)}")
     for theme in THEMES:
         ours = THEME_TAGS["said"][theme]
@@ -298,8 +298,8 @@ def cmd_report(args) -> None:
         if not fn:
             continue
         w(f"\n### {theme}: theme present, not said ({len(fn)})\n")
-        for p in rng.sample(fn, min(args.examples, len(fn))):
-            w(f"- `{p['id']}` `{p['fen']}` `{solution_san(p)}` themes {' '.join(p['themes'])}; "
+        for p in random.Random(theme).sample(fn, min(args.examples, len(fn))):
+            w(f"- `{p['id']}` `{p['fen']}` `{p['moves']}` themes {' '.join(p['themes'])}; "
               f"said {said_text(p, 'misses')}; fired {fired_text(p)}")
     text = "\n".join(out) + "\n"
     if args.out:
