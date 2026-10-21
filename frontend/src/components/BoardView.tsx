@@ -3,7 +3,9 @@ import type { Arrow } from "react-chessboard";
 import type { CSSProperties } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Side } from "../api/generated/Side";
+import type { PromotionPiece } from "../lib/chess";
 import { ClassificationIcon } from "./ClassificationIcon";
+import { Piece } from "./pieces";
 import { boardPieces } from "../lib/boardPieces";
 
 export interface BoardBadge {
@@ -11,11 +13,20 @@ export interface BoardBadge {
   classification: Classification;
 }
 
-export interface BoardRetry {
-  /** Only this side's pieces can be dragged. */
-  side: Side;
+/** Moving pieces on the board (a retry, or exploring a sideline). */
+export interface BoardMoves {
+  /** Whether the piece on `square` (of `side`) can be picked up. */
+  canDrag: (square: string, side: Side) => boolean;
   /** Returns whether the piece stays on the target square. */
   onDrop: (from: string, to: string) => boolean;
+}
+
+/** A pawn waiting on its promotion square for the reader to choose a piece. */
+export interface BoardPromotion {
+  square: string;
+  side: Side;
+  /** The chosen piece, or null to take the move back. */
+  onPick: (piece: PromotionPiece | null) => void;
 }
 
 interface Props {
@@ -24,22 +35,60 @@ interface Props {
   arrows: Arrow[];
   squareStyles: Record<string, CSSProperties>;
   badge?: BoardBadge | null;
-  retry?: BoardRetry | null;
+  moves?: BoardMoves | null;
+  promotion?: BoardPromotion | null;
+}
+
+/** Position of a square's top-left corner, in % of the board. */
+function topLeft(square: string, flipped: boolean): { col: number; row: number } {
+  const file = square.charCodeAt(0) - 97;
+  const rank = Number(square[1]);
+  return { col: flipped ? 7 - file : file, row: flipped ? rank - 1 : 8 - rank };
 }
 
 /** Position of a square's top-right corner, in % of the board, for the badge overlay. */
 function corner(square: string, flipped: boolean): { left: string; top: string } {
-  const file = square.charCodeAt(0) - 97;
-  const rank = Number(square[1]);
-  const col = flipped ? 7 - file : file;
-  const row = flipped ? rank - 1 : 8 - rank;
+  const { col, row } = topLeft(square, flipped);
   return { left: `${(col + 1) * 12.5}%`, top: `${row * 12.5}%` };
 }
 
 const NOTATION: CSSProperties = { fontSize: "clamp(10px, 2.05cqw, 17px)", fontWeight: 600, lineHeight: 1 };
+const PROMOTION_PIECES: PromotionPiece[] = ["q", "n", "r", "b"];
+const PROMOTION_NAMES: Record<PromotionPiece, string> = { q: "Queen", n: "Knight", r: "Rook", b: "Bishop" };
 
-/** Read-only board (draggable only in retry mode); positions and annotations come from the backend. */
-export function BoardView({ fen, flipped, arrows, squareStyles, badge, retry }: Props) {
+/** The four promotion pieces, stacked from the promotion square towards the middle of the board. */
+function PromotionPicker({ promotion, flipped }: { promotion: BoardPromotion; flipped: boolean }) {
+  const { col, row } = topLeft(promotion.square, flipped);
+  const down = row === 0;
+  const colour = promotion.side === "white" ? "w" : "b";
+  return (
+    <div className="promotion" role="dialog" aria-label="Choose a promotion piece" onClick={() => promotion.onPick(null)}>
+      {PROMOTION_PIECES.map((piece, i) => (
+        <button
+          key={piece}
+          type="button"
+          className="promotion__piece"
+          style={{ left: `${col * 12.5}%`, top: `${(down ? row + i : row - i) * 12.5}%` }}
+          aria-label={PROMOTION_NAMES[piece]}
+          title={PROMOTION_NAMES[piece]}
+          autoFocus={i === 0}
+          onClick={(e) => {
+            e.stopPropagation();
+            promotion.onPick(piece);
+          }}
+        >
+          <Piece kind={piece} colour={colour} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The board. Positions and annotations come from the backend, except in sidelines the reader plays
+ * (docs/explore-mode.md §5.1); pieces can be moved only when `moves` is given.
+ */
+export function BoardView({ fen, flipped, arrows, squareStyles, badge, moves, promotion }: Props) {
   return (
     <div className="board-wrap">
       <div className="board">
@@ -49,10 +98,11 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, retry }: 
             pieces: boardPieces,
             position: fen,
             boardOrientation: flipped ? "black" : "white",
-            allowDragging: !!retry,
-            canDragPiece: ({ piece }) => !!retry && piece.pieceType.startsWith(retry.side === "white" ? "w" : "b"),
+            allowDragging: !!moves && !promotion,
+            canDragPiece: ({ piece, square }) =>
+              !!moves && !!square && moves.canDrag(square, piece.pieceType.startsWith("w") ? "white" : "black"),
             onPieceDrop: ({ sourceSquare, targetSquare }) =>
-              !!retry && !!targetSquare && targetSquare !== sourceSquare && retry.onDrop(sourceSquare, targetSquare),
+              !!moves && !!targetSquare && targetSquare !== sourceSquare && moves.onDrop(sourceSquare, targetSquare),
             allowDrawingArrows: true,
             arrows,
             squareStyles,
@@ -74,6 +124,7 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, retry }: 
           <ClassificationIcon value={badge.classification} size={64} />
         </div>
       )}
+      {promotion && <PromotionPicker promotion={promotion} flipped={flipped} />}
     </div>
   );
 }

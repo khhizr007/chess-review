@@ -4,10 +4,12 @@ import type { ApiErrorEnvelope } from "./generated/ApiErrorEnvelope";
 import type { CreateReviewRequest } from "./generated/CreateReviewRequest";
 import type { Defaults } from "./generated/Defaults";
 import type { Health } from "./generated/Health";
+import type { JudgeMoveRequest } from "./generated/JudgeMoveRequest";
 import type { ParseResponse } from "./generated/ParseResponse";
 import type { PositionAnalysisResponse } from "./generated/PositionAnalysisResponse";
 import type { ReviewResult } from "./generated/ReviewResult";
 import type { ReviewStatus } from "./generated/ReviewStatus";
+import type { SidelineJudgement } from "./generated/SidelineJudgement";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -71,4 +73,7 @@ export const api = {
   cancelReview: (id: string) => request<ReviewStatus>("DELETE", `/api/reviews/${encodeURIComponent(id)}`),
   analyzePosition: (fen: string, multipv = 3) =>
     request<PositionAnalysisResponse>("POST", "/api/positions/analyze", { fen, multipv }),
+  /** Classifies a sideline move with the review's rules, from the browser engine's lines. */
+  judgeMove: (id: string, req: JudgeMoveRequest, signal?: AbortSignal) =>
+    request<SidelineJudgement>("POST", `/api/reviews/${encodeURIComponent(id)}/judge`, req, signal),
 };

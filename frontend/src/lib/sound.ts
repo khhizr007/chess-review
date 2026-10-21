@@ -50,6 +50,16 @@ export function navigationSounds(plies: PlyReview[], from: number, to: number, p
   return sounds;
 }
 
+/**
+ * Sounds for moving through a sideline from position `from` to `to` (0 = branch position), by the
+ * same rules as the game: one step back plays the move taken back, anything else the move arrived at.
+ */
+export function sidelineSounds(moves: { flags: MoveFlags }[], from: number, to: number): SoundName[] {
+  if (to === from) return [];
+  const move = to === from - 1 ? moves[from - 1] : moves[to - 1];
+  return move ? [moveSound(move.flags)] : [];
+}
+
 /** The sound for a solved retry, by how the move found is classified. */
 export function retrySound(classification: Classification): SoundName {
   switch (classification) {

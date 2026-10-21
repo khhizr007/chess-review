@@ -1,22 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Arrow } from "react-chessboard";
 import type { ArrowKind } from "../api/generated/ArrowKind";
+import type { Eval } from "../api/generated/Eval";
 import type { MoveRef } from "../api/generated/MoveRef";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
+import { useLiveEngine } from "../hooks/useLiveEngine";
+import { useSidelineJudge } from "../hooks/useSidelineJudge";
+import { canMoveFrom, ending, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
+import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
 import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format";
 import { materialFromFen } from "../lib/material";
-import { hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
+import { expectedPointsFor, hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
 import { FILTERS, fenAt, nextPlyAt, plyAt, stepFiltered, type MoveFilter } from "../lib/review";
-import { moveSound, navigationSounds, playSounds, retrySound, sanFlags } from "../lib/sound";
-import { BoardView, type BoardBadge, type BoardRetry } from "./BoardView";
+import { moveSound, navigationSounds, playSounds, retrySound, sanFlags, sidelineSounds } from "../lib/sound";
+import { BoardView, type BoardBadge, type BoardMoves, type BoardPromotion } from "./BoardView";
 import { ClassificationIcon } from "./ClassificationIcon";
 import {
   CoachActions,
   CoachBubble,
   EvalPill,
+  LiveLines,
   MoveDetails,
   MoveVerdict,
   ShowLineMoves,
@@ -36,6 +42,8 @@ import { ReportView } from "./ReportView";
 
 interface Props {
   review: ReviewResult;
+  /** The review's id on the server (sideline moves are judged against it). */
+  reviewId: string;
   onNewGame: () => void;
 }
 
@@ -61,6 +69,15 @@ const SUGGEST_ARROW = "rgba(92, 139, 176, 0.85)";
 const PREVIEW_TINT = "rgba(255, 196, 64, 0.5)";
 const HINT_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(255, 196, 64, 0.95)", background: "rgba(255, 196, 64, 0.25)" };
 const MARK_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(250, 65, 45, 0.8)", background: "rgba(250, 65, 45, 0.2)" };
+const CHECK_GLOW: CSSProperties = {
+  backgroundImage: "radial-gradient(circle, rgba(235,40,40,.9) 0%, rgba(235,40,40,.4) 45%, transparent 72%)",
+};
+const ENDINGS: Record<Ending, string> = {
+  checkmate: "Checkmate.",
+  stalemate: "Stalemate: a draw.",
+  insufficient_material: "Neither side can mate: a draw.",
+  fifty_moves: "Fifty moves without a capture or pawn move: either side can claim a draw.",
+};
 /** Pause between moves when a coach line plays itself. */
 const LINE_STEP_MS = 1400;
 const COACH_ARROW: Record<ArrowKind, string> = {
@@ -104,7 +121,7 @@ function tint(color: string, pct: number): CSSProperties {
   return { background: `color-mix(in srgb, ${color} ${pct}%, transparent)` };
 }
 
-export function ReviewScreen({ review, onNewGame }: Props) {
+export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   const total = review.plies.length;
   const [mode, setMode] = useState<Mode>("report");
   const [ply, setPly] = useState(0);
@@ -119,7 +136,11 @@ export function ReviewScreen({ review, onNewGame }: Props) {
   const [linePlaying, setLinePlaying] = useState(false);
   const [hovered, setHovered] = useState<Mark | null>(null);
   const [pinned, setPinned] = useState<Mark | null>(null);
+  const [sideline, setSideline] = useState<Sideline | null>(null);
+  /** A pawn move waiting for its promotion piece. */
+  const [promotion, setPromotion] = useState<{ from: string; to: string } | null>(null);
 
+  // Every game navigation leaves the sideline.
   const go = useCallback(
     (target: number) => {
       setPreview(null);
@@ -127,6 +148,8 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       setRetry(null);
       setPinned(null);
       setHovered(null);
+      setSideline(null);
+      setPromotion(null);
       setPly(Math.max(0, Math.min(total, target)));
     },
     [total],
@@ -134,6 +157,28 @@ export function ReviewScreen({ review, onNewGame }: Props) {
 
   const current = plyAt(review, ply);
   const next = nextPlyAt(review, ply);
+  // The sideline move shown, when the board is inside the sideline rather than at its branch.
+  const shownMove = sideline && sideline.cursor > 0 ? sideline.moves[sideline.cursor - 1] : undefined;
+  const shownEnd = shownMove ? ending(shownMove.fen) : null;
+  // A finished game needs no engine; a claimable fifty-move draw is still played on.
+  const shownOver = !!shownEnd && shownEnd !== "fifty_moves";
+  // The position the shown sideline move was played from: the branch (a game position) or the
+  // sideline move before it.
+  const shownFrom =
+    sideline && shownMove
+      ? sideline.cursor > 1
+        ? sideline.moves[sideline.cursor - 2]!.fen
+        : fenAt(review, sideline.fromPly)
+      : null;
+  // The browser engine searches sideline positions only, and the position each sideline move was
+  // played from, so the move can be judged on one engine's lines (docs/explore-mode.md §5.4–5.5).
+  const live = useLiveEngine(shownMove && !shownOver ? shownMove.fen : null, shownFrom, review, review.game.chess960);
+  const liveLines = live.analysis?.lines ?? [];
+  const judgements = useSidelineJudge(reviewId, sideline, live, shownOver);
+  const shownJudged = sideline && shownMove ? judgements[sideline.cursor - 1] : undefined;
+  const shownClass = shownJudged?.judgement.classification ?? null;
+  const shownMover: Side = shownFrom?.split(" ")[1] === "b" ? "black" : "white";
+  const liveBest = liveLines[0]?.moves[0];
 
   const showLine = preview?.source === "coach" ? current?.coach?.show_lines[preview.line] : undefined;
   const previewLine: MoveRef[] | undefined = useMemo(() => {
@@ -177,6 +222,33 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       if (target !== null) go(target);
     },
     [filter, go, ply, review],
+  );
+
+  /** Moves the board to sideline position `cursor`, with the sideline's sounds. */
+  const showSideline = useCallback(
+    (cursor: number) => {
+      if (!sideline || cursor === sideline.cursor) return;
+      if (soundOn) playSounds(sidelineSounds(sideline.moves, sideline.cursor, cursor));
+      setPromotion(null);
+      setSideline({ ...sideline, cursor });
+    },
+    [sideline, soundOn],
+  );
+
+  /**
+   * ← / → and the nav buttons. While a sideline is open they walk it; back from its branch position
+   * leaves it for the game, and forward past its end does nothing.
+   */
+  const stepBoard = useCallback(
+    (dir: 1 | -1) => {
+      if (sideline) {
+        const next = stepSideline(sideline, dir);
+        if (next) return showSideline(next.cursor);
+        if (dir === 1) return;
+      }
+      step(dir);
+    },
+    [sideline, showSideline, step],
   );
 
   const advance = useCallback(() => {
@@ -232,25 +304,30 @@ export function ReviewScreen({ review, onNewGame }: Props) {
         stepPreview(e.key === "ArrowRight" ? 1 : -1);
       } else if (e.key === "ArrowLeft") {
         setMode("review");
-        step(-1);
+        stepBoard(-1);
       } else if (e.key === "ArrowRight") {
         setMode("review");
-        step(1);
+        stepBoard(1);
       } else if (e.key === "Home" || e.key === "End") {
         setMode("review");
         go(e.key === "Home" ? 0 : total);
       } else if (e.key === "f") setFlipped((f) => !f);
       else if (e.key === "Escape") {
-        setPreview(null);
-        setLinePlaying(false);
-        setRetry(null);
-        setPinned(null);
+        // A promotion choice is taken back first, then the sideline is left for its branch position.
+        if (promotion) setPromotion(null);
+        else if (sideline) go(sideline.fromPly);
+        else {
+          setPreview(null);
+          setLinePlaying(false);
+          setRetry(null);
+          setPinned(null);
+        }
       } else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, step, stepPreview, preview, total]);
+  }, [go, stepBoard, stepPreview, preview, promotion, sideline, total]);
 
   // Board sounds when the game moves (rules in docs/sound.md).
   const lastPly = useRef(ply);
@@ -305,7 +382,43 @@ export function ReviewScreen({ review, onNewGame }: Props) {
 
   const displayFen = activeRetry
     ? (solvedMove?.fen ?? current?.fen_before ?? fenAt(review, ply))
-    : (previewMove?.fen ?? (showLine && previewing ? showLine.start_fen : fenAt(review, ply)));
+    : (shownMove?.fen ?? previewMove?.fen ?? (showLine && previewing ? showLine.start_fen : fenAt(review, ply)));
+  const toMove: Side = displayFen.split(" ")[1] === "b" ? "black" : "white";
+
+  /**
+   * Plays moves from the shown position, one after another: the game's own move follows the game,
+   * any other one explores. The last move played sounds.
+   */
+  const playMoves = (moves: PlayedMove[]) => {
+    const last = moves.at(-1);
+    if (!last) return;
+    setPlaying(false);
+    setMode("review");
+    const after = moves.reduce<BoardState>((s, m) => play(s, review.plies, m), { ply, sideline });
+    if (!after.sideline) {
+      go(after.ply);
+      return;
+    }
+    setPinned(null);
+    setHovered(null);
+    setSideline(after.sideline);
+    if (soundOn) playSounds([moveSound(last.flags)]);
+  };
+
+  /** Plays a dragged move from the shown position; false leaves the piece where it was. */
+  const exploreMove = (from: string, to: string, piece?: PromotionPiece): boolean => {
+    const move = playMove(displayFen, from, to, piece, review.game.chess960);
+    if (move) playMoves([move]);
+    return !!move;
+  };
+
+  const onExploreDrop = (from: string, to: string): boolean => {
+    if (needsPromotion(displayFen, from, to)) {
+      setPromotion({ from, to });
+      return false;
+    }
+    return exploreMove(from, to);
+  };
 
   const { arrows, squareStyles, badge } = useMemo(() => {
     const arrows: Arrow[] = [];
@@ -326,6 +439,19 @@ export function ReviewScreen({ review, onNewGame }: Props) {
           if (rung.kind === "area") for (const s of rung.squares) styles[s] = HINT_SQUARE;
         }
       }
+      return { arrows, squareStyles: styles, badge };
+    }
+
+    if (shownMove) {
+      // Coloured by its classification once judged, as game moves are.
+      const color = shownClass ? CLASSIFICATIONS[shownClass].color : PREVIEW_TINT;
+      styles[shownMove.from] = tint(color, shownClass ? 42 : 45);
+      styles[shownMove.to] = tint(color, shownClass ? 58 : 65);
+      if (shownClass) badge = { square: shownMove.to, classification: shownClass };
+      const king = shownMove.flags.check ? kingSquareToMove(shownMove.fen) : null;
+      if (king) styles[king] = { ...styles[king], ...CHECK_GLOW };
+      // The engine arrow shows the live engine's top move.
+      if (showSuggestion && liveBest) arrows.push({ startSquare: liveBest.from, endSquare: liveBest.to, color: SUGGEST_ARROW });
       return { arrows, squareStyles: styles, badge };
     }
 
@@ -370,7 +496,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       }
       if (current.flags.check) {
         const king = kingSquareToMove(current.fen_after);
-        if (king) styles[king] = { ...styles[king], backgroundImage: "radial-gradient(circle, rgba(235,40,40,.9) 0%, rgba(235,40,40,.4) 45%, transparent 72%)" };
+        if (king) styles[king] = { ...styles[king], ...CHECK_GLOW };
       }
     }
     if (showSuggestion && next?.lines[0]?.moves[0]) {
@@ -380,13 +506,39 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       }
     }
     return { arrows, squareStyles: styles, badge };
-  }, [activeRetry, solvedMove, bestMove, ladder, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
+  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, shownClass, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
 
-  const boardRetry: BoardRetry | null =
-    activeRetry && current && !retrySolved ? { side: current.mover, onDrop: onRetryDrop } : null;
+  // Retry takes the mover's pieces; otherwise any legal move explores, except while a line plays.
+  const boardMoves: BoardMoves | null = activeRetry
+    ? current && !retrySolved
+      ? { canDrag: (_square, side) => side === current.mover, onDrop: onRetryDrop }
+      : null
+    : preview
+      ? null
+      : { canDrag: (square) => canMoveFrom(displayFen, square), onDrop: onExploreDrop };
+  const boardPromotion: BoardPromotion | null = promotion
+    ? {
+        square: promotion.to,
+        side: toMove,
+        onPick: (piece) => {
+          setPromotion(null);
+          if (piece) exploreMove(promotion.from, promotion.to, piece);
+        },
+      }
+    : null;
+
+  /** The bar in a sideline: the game's result when it is over, else the live engine's top line. */
+  const sidelineBar: { eval: Eval; ep: number } | null = !shownMove
+    ? null
+    : shownOver
+      ? shownEnd === "checkmate"
+        ? { eval: { kind: "mate", winner: toMove === "white" ? "black" : "white", moves: 0 }, ep: toMove === "white" ? 0 : 1 }
+        : { eval: { kind: "cp", cp: 0 }, ep: 0.5 }
+      : liveLines[0]
+        ? { eval: liveLines[0].eval, ep: expectedPointsFor(liveLines[0].eval, "white", review.rating_used) }
+        : null;
 
   const material = materialFromFen(displayFen);
-  const toMove: Side = displayFen.split(" ")[1] === "b" ? "black" : "white";
   const bottom: Side = flipped ? "black" : "white";
   const top: Side = flipped ? "white" : "black";
   const point = review.graph[ply];
@@ -493,6 +645,61 @@ export function ReviewScreen({ review, onNewGame }: Props) {
             </div>
           </CoachBubble>
           <CoachActions actions={actions} />
+        </>
+      );
+    }
+
+    // Exploring a sideline the reader played on the board.
+    if (sideline && shownMove) {
+      const first = sideline.moves[0]!;
+      const replaced = review.plies[sideline.fromPly];
+      const branchMover: Side = fenAt(review, sideline.fromPly).split(" ")[1] === "b" ? "black" : "white";
+      return (
+        <>
+          <CoachBubble>
+            <div className="coach__head">
+              <span className="coach__glyph">{Icons.eye}</span>
+              <h2 className="coach__title">
+                {replaced ? (
+                  <>
+                    Exploring <San san={first.san} side={branchMover} /> instead of <San san={replaced.san} side={replaced.mover} />
+                  </>
+                ) : (
+                  "Exploring after the game"
+                )}
+              </h2>
+              {sidelineBar && <EvalPill value={sidelineBar.eval} />}
+            </div>
+            <div className="coach__body">
+              {shownClass ? (
+                <p className="explore-verdict">
+                  <ClassificationIcon value={shownClass} size={20} />
+                  <span>
+                    <San san={shownMove.san} side={shownMover} /> is {CLASSIFICATIONS[shownClass].phrase}.
+                    {shownJudged?.judgement.show_best_move && shownJudged.judgement.best_move && (
+                      <>
+                        {" "}
+                        <San san={shownJudged.judgement.best_move.san} side={shownMover} /> was best.
+                      </>
+                    )}
+                  </span>
+                  {!shownJudged?.final && <span className="explore-verdict__note">refining…</span>}
+                </p>
+              ) : (
+                !shownJudged && live.status !== "error" && <p className="coach__note">Judging the move…</p>
+              )}
+              {shownEnd && (
+                <p className="coach__end">
+                  {shownEnd === "checkmate" ? `Checkmate. ${toMove === "white" ? "Black" : "White"} wins.` : ENDINGS[shownEnd]}
+                </p>
+              )}
+              <p>
+                {shownOver ? "" : "Drag a piece to keep exploring. "}
+                Step through your moves with ← →, or press Esc to go back to the game.
+              </p>
+            </div>
+          </CoachBubble>
+          <CoachActions actions={[{ label: "Back to game", icon: Icons.back, onClick: () => go(sideline.fromPly), primary: true, hint: "Back to the game (Esc)" }]} />
         </>
       );
     }
@@ -653,8 +860,10 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       <section className="board-col" aria-label="Board">
         {strip(top)}
         <div className="board-row">
-          {point && (
-            <EvalBar whiteExpectedPoints={point.white_expected_points} evaluation={point.eval} flipped={flipped} />
+          {shownMove ? (
+            <EvalBar whiteExpectedPoints={sidelineBar?.ep ?? null} evaluation={sidelineBar?.eval ?? null} flipped={flipped} />
+          ) : (
+            point && <EvalBar whiteExpectedPoints={point.white_expected_points} evaluation={point.eval} flipped={flipped} />
           )}
           <BoardView
             fen={displayFen}
@@ -662,7 +871,8 @@ export function ReviewScreen({ review, onNewGame }: Props) {
             arrows={arrows}
             squareStyles={squareStyles}
             badge={badge}
-            retry={boardRetry}
+            moves={boardMoves}
+            promotion={boardPromotion}
           />
         </div>
         {strip(bottom)}
@@ -716,12 +926,34 @@ export function ReviewScreen({ review, onNewGame }: Props) {
               <div className="review-pane__coach" aria-live="polite">
                 {coach}
               </div>
-              {explain && current && msg && !activeRetry && (
+              {explain && current && msg && !activeRetry && !shownMove && (
                 <div className="review-pane__details">
                   <MoveDetails ply={current} facts={msg.facts} preview={preview} onPreview={setPreview} />
                 </div>
               )}
-              <MoveList plies={review.plies} current={ply} filter={filter} onSelect={go} />
+              {shownMove && !shownOver && (
+                <div className="review-pane__details">
+                  <LiveLines
+                    fen={shownMove.fen}
+                    engine={live}
+                    onPlay={(line, move) => playMoves(liveLines[line]?.moves.slice(0, move + 1) ?? [])}
+                  />
+                </div>
+              )}
+              <MoveList
+                plies={review.plies}
+                current={ply}
+                filter={filter}
+                onSelect={go}
+                sideline={
+                  sideline && {
+                    line: sideline,
+                    branchFen: fenAt(review, sideline.fromPly),
+                    onSelect: showSideline,
+                    classes: judgements.map((j) => j?.judgement.classification ?? null),
+                  }
+                }
+              />
               <div className="review-pane__graph">
                 <EvalGraph
                   points={review.graph}
@@ -738,7 +970,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
               <button type="button" className="nav__btn" onClick={() => go(0)} aria-label="First move" title="First move (Home)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2.5v14H6zM19 5.5v13L9.5 12z" /></svg>
               </button>
-              <button type="button" className="nav__btn" onClick={() => step(-1)} aria-label="Previous move" title="Previous (←)">
+              <button type="button" className="nav__btn" onClick={() => stepBoard(-1)} aria-label="Previous move" title="Previous (←)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 4.5L8 12l7.5 7.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </button>
               <button
@@ -754,7 +986,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 4.5v15L19.5 12z" /></svg>
                 )}
               </button>
-              <button type="button" className="nav__btn" onClick={() => step(1)} aria-label="Next move" title="Next (→)">
+              <button type="button" className="nav__btn" onClick={() => stepBoard(1)} aria-label="Next move" title="Next (→)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4.5L16 12l-7.5 7.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </button>
               <button type="button" className="nav__btn" onClick={() => go(total)} aria-label="Last move" title="Last move (End)">

@@ -244,3 +244,56 @@ async fn the_player_side_is_kept_with_the_review() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+/// Line from a review's JSON as the judge endpoint takes it.
+fn judge_line(line: &Value) -> Value {
+    let pv: Vec<&Value> = line["moves"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| &m["uci"])
+        .collect();
+    json!({ "eval": line["eval"], "depth": line["depth"], "pv": pv })
+}
+
+#[tokio::test]
+async fn judging_a_sideline_move() {
+    let app = app(true);
+    let pgn = common::fixture("scholars_mate.pgn");
+    let (_, created) = call(&app, "POST", "/api/reviews", Some(json!({ "pgn": pgn }))).await;
+    let id = created["id"].as_str().unwrap().to_owned();
+    for _ in 0..100 {
+        let (_, status) = call(&app, "GET", &format!("/api/reviews/{id}"), None).await;
+        if status["state"] == "completed" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let (_, result) = call(&app, "GET", &format!("/api/reviews/{id}/result"), None).await;
+    let plies = result["plies"].as_array().unwrap();
+
+    // The game's 3...Nf6 asked as a sideline from ply 5 is judged as the review judged it.
+    let nf6 = &plies[5];
+    let body = json!({
+        "from_ply": 5,
+        "moves": [nf6["uci"]],
+        "before": nf6["lines"].as_array().unwrap().iter().map(judge_line).collect::<Vec<_>>(),
+        "after": judge_line(&plies[6]["lines"][0]),
+    });
+    let uri = format!("/api/reviews/{id}/judge");
+    let (status, judged) = call(&app, "POST", &uri, Some(body.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{judged}");
+    assert_eq!(judged["classification"], nf6["classification"]);
+    assert_eq!(judged["ep_lost"], nf6["ep_lost"]);
+    assert_eq!(judged["best_move"]["san"], nf6["best_move"]["san"]);
+
+    let mut illegal = body.clone();
+    illegal["moves"] = json!(["e8e6"]);
+    let (status, err) = call(&app, "POST", &uri, Some(illegal)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["code"], "illegal_move");
+
+    let unknown = format!("/api/reviews/{}/judge", uuid::Uuid::new_v4());
+    let (status, _) = call(&app, "POST", &unknown, Some(body)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

@@ -115,6 +115,43 @@ Each `PlyReview` contains:
 ### `GET /api/reviews/{id}/plies/{ply}`
 Returns one `PlyReview` (1-based ply).
 
+### `POST /api/reviews/{id}/judge`
+Classifies a move the reader played in a sideline of a finished review, with the review's own rules
+(`docs/explore-mode.md` §5.5). The server runs no engine search: the engine lines come from the
+browser engine, and the game's context comes from the stored review. That context is the rating,
+repetitions, phase, book and the previous move's loss.
+
+Request:
+
+```json
+{
+  "from_ply": 3,
+  "moves": ["b8c6", "f1b5"],
+  "before": [{ "eval": { "kind": "cp", "cp": 30 }, "depth": 18, "pv": ["f1b5", "a7a6"] }],
+  "after": { "eval": { "kind": "cp", "cp": 25 }, "depth": 18, "pv": ["a7a6", "b5a4"] },
+  "previous_ep_lost": 0.01
+}
+```
+
+- `from_ply` is the game ply the sideline branches from.
+- `moves` is the sideline up to and including the move judged, in UCI.
+- `before` holds the engine lines of the position before the judged move, best first. At least two
+  are needed for Brilliant and Great Find.
+- `after` is the best line of the position after the move. It can be left out when the move is one
+  of `before`'s lines, or when the game is over after it.
+- `previous_ep_lost` is the previous sideline move's `ep_lost`. For the first sideline move, the
+  game's previous move is used.
+
+Response (`SidelineJudgement`):
+- `classification`, `miss_kind` and `rule`.
+- `ep_lost`, `ep_before` and `ep_after`.
+- `played_is_best`, `show_best_move` and `best_move`.
+- `explanation[]`, as for game moves.
+
+Errors:
+- 404 if the review is not held, and 409 if it has not finished.
+- 400 for invalid input. The codes are `invalid_ply`, `invalid_moves`, `illegal_move`, `invalid_lines` and `missing_after`.
+
 ### `POST /api/positions/analyze`
 Request: `{ "fen": "…", "depth": 18, "multipv": 3 }`. Analyses any position on demand and returns
 `lines` (same shape as above), or `terminal: "checkmate" | "stalemate"`.

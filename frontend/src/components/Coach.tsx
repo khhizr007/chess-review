@@ -7,6 +7,8 @@ import type { ShowLine } from "../api/generated/ShowLine";
 import type { Side } from "../api/generated/Side";
 import { favouredSide, formatEval, formatEvalPill, moveNumberLabel, percent, sideLabel } from "../lib/format";
 import type { CoachMessage, CoachMood } from "../lib/coach";
+import { ENGINE_NAME } from "../lib/engine/controller";
+import type { LiveEngine } from "../hooks/useLiveEngine";
 import { ClassificationIcon } from "./ClassificationIcon";
 import { Icons } from "./icons";
 import { PieceIcon, San } from "./PieceIcon";
@@ -285,6 +287,69 @@ export function LineView({
         })}
       </span>
     </li>
+  );
+}
+
+/**
+ * The browser engine's lines for a sideline position, with the depth reached and where the numbers
+ * come from (docs/explore-mode.md §5.4). Clicking a move plays the line up to it.
+ */
+export function LiveLines({
+  fen,
+  engine,
+  onPlay,
+}: {
+  fen: string;
+  engine: LiveEngine;
+  onPlay: (line: number, move: number) => void;
+}) {
+  const fields = fen.split(" ");
+  const mover: Side = fields[1] === "b" ? "black" : "white";
+  const number = Number(fields[5]) || 1;
+  const { analysis, status, target } = engine;
+  const searching = !!analysis && !engine.finished;
+  return (
+    <section className="details live-lines" aria-label="Engine lines">
+      <h3 className="section-label live-lines__head">
+        Engine
+        <span className="live-lines__meta" aria-live="off">
+          {analysis ? `depth ${analysis.depth}${searching ? `/${target}` : ""}` : status === "error" ? "unavailable" : "starting…"}
+          {" · "}
+          {ENGINE_NAME}, in your browser
+        </span>
+        {searching && <span className="live-lines__spinner" aria-hidden="true" />}
+      </h3>
+      {status === "error" ? (
+        <p className="details__hint">The engine could not start in this browser{engine.error ? ` (${engine.error})` : ""}.</p>
+      ) : analysis ? (
+        <ol>
+          {analysis.lines.map((line, i) => (
+            <LineView
+              key={line.rank}
+              source="next"
+              line={line}
+              index={i}
+              firstMoveNumber={number}
+              firstMover={mover}
+              preview={null}
+              onPreview={(p) => p && onPlay(i, p.move)}
+            />
+          ))}
+        </ol>
+      ) : (
+        <p className="details__hint">Loading the engine…</p>
+      )}
+      {analysis && (
+        <p className="details__hint">
+          Click a move to play the line up to it.
+          {engine.deeper && (
+            <button type="button" className="link-btn live-lines__deeper" onClick={engine.deeper}>
+              Go deeper
+            </button>
+          )}
+        </p>
+      )}
+    </section>
   );
 }
 

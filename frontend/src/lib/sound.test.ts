@@ -3,7 +3,7 @@ import type { Classification } from "../api/generated/Classification";
 import type { MoveFlags } from "../api/generated/MoveFlags";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { Side } from "../api/generated/Side";
-import { moveSound, navigationSounds, retrySound, sanFlags } from "./sound";
+import { moveSound, navigationSounds, retrySound, sanFlags, sidelineSounds } from "./sound";
 
 const NONE: MoveFlags = {
   check: false,
@@ -81,5 +81,17 @@ describe("retrySound", () => {
     expect(retrySound("excellent")).toBe("result_good");
     expect(retrySound("good")).toBe("result_ok");
     expect(retrySound("mistake")).toBe("result_bad");
+  });
+});
+
+describe("sidelineSounds", () => {
+  const moves = [{ flags: NONE }, { flags: { ...NONE, capture: true } }, { flags: { ...NONE, check: true } }];
+  it("plays the move arrived at, or the move taken back on one step back", () => {
+    expect(sidelineSounds(moves, 0, 1)).toEqual(["move"]);
+    expect(sidelineSounds(moves, 1, 2)).toEqual(["capture"]);
+    expect(sidelineSounds(moves, 3, 2)).toEqual(["check"]);
+    expect(sidelineSounds(moves, 1, 0)).toEqual(["move"]);
+    expect(sidelineSounds(moves, 3, 1)).toEqual(["move"]);
+    expect(sidelineSounds(moves, 2, 2)).toEqual([]);
   });
 });

@@ -75,7 +75,13 @@ answer, reviews go on without it (a warning is logged).
 
 ## Installing Stockfish
 
-Stockfish is GPL-3.0 and is **not** bundled. Install it from your package manager
+The server's Stockfish is GPL-3.0 and is **not** bundled. Install it from your package manager
 (`apt install stockfish`, `brew install stockfish`) or from https://stockfishchess.org/download/.
 Then point `STOCKFISH_PATH` at the binary. Any UCI engine with `MultiPV` support works. The
 reference application used Stockfish 16.1.
+
+The live engine for sidelines is a separate, bundled WebAssembly build (Stockfish 19 Lite,
+`frontend/public/engine/`, see `THIRD_PARTY.md`). It runs in the reader's browser, needs no
+configuration, and adds no work to the server (`docs/explore-mode.md`).
+- **How it is served.** With `STATIC_DIR`, the backend serves it from `frontend/dist/engine/`.
+- **Changing the server.** Any server that serves `.wasm` as `application/wasm` works.
