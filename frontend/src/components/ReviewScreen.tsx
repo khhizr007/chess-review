@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Arrow } from "react-chessboard";
 import type { ArrowKind } from "../api/generated/ArrowKind";
 import type { MoveRef } from "../api/generated/MoveRef";
@@ -10,6 +10,7 @@ import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format"
 import { materialFromFen } from "../lib/material";
 import { hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
 import { FILTERS, fenAt, nextPlyAt, plyAt, stepFiltered, type MoveFilter } from "../lib/review";
+import { moveSound, navigationSounds, playSounds, retrySound, sanFlags } from "../lib/sound";
 import { BoardView, type BoardBadge, type BoardRetry } from "./BoardView";
 import { ClassificationIcon } from "./ClassificationIcon";
 import {
@@ -69,8 +70,17 @@ const COACH_ARROW: Record<ArrowKind, string> = {
   best: BEST_ARROW,
 };
 
+/** Input types that take no text, so the board keys still apply while one has focus. */
+const KEYLESS_INPUTS = new Set(["checkbox", "radio", "button", "submit", "reset"]);
+
+/**
+ * Whether a key press belongs to a text field rather than the board. A focused switch or menu (after a
+ * click on "Engine arrow" or "Step through") must not swallow ← →, or the arrows stop working.
+ */
 function isTyping(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target.tagName === "TEXTAREA") return true;
+  return target instanceof HTMLInputElement && !KEYLESS_INPUTS.has(target.type);
 }
 
 function loadFlag(key: string, fallback: boolean): boolean {
@@ -104,6 +114,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
   const [retry, setRetry] = useState<Retry | null>(null);
   const [showSuggestion, setShowSuggestion] = useState(() => loadFlag("review.engineArrow", false));
   const [explain, setExplain] = useState(() => loadFlag("review.explain", false));
+  const [soundOn, setSoundOn] = useState(() => loadFlag("review.sound", true));
   const [playing, setPlaying] = useState(false);
   const [linePlaying, setLinePlaying] = useState(false);
   const [hovered, setHovered] = useState<Mark | null>(null);
@@ -241,6 +252,22 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [go, step, stepPreview, preview, total]);
 
+  // Board sounds when the game moves (rules in docs/sound.md).
+  const lastPly = useRef(ply);
+  useEffect(() => {
+    const from = lastPly.current;
+    lastPly.current = ply;
+    // Older servers leave player_side out when no side was chosen.
+    if (soundOn) playSounds(navigationSounds(review.plies, from, ply, review.settings.player_side ?? null));
+  }, [ply, review, soundOn]);
+
+  const lastPreview = useRef(previewMove);
+  useEffect(() => {
+    const before = lastPreview.current;
+    lastPreview.current = previewMove;
+    if (soundOn && previewMove && previewMove !== before) playSounds([moveSound(sanFlags(previewMove.san))]);
+  }, [previewMove, soundOn]);
+
   const canRetry = !!current?.best_move && current.show_best_move && !current.played_is_best;
   const activeRetry = retry && current && retry.ply === current.ply && current.best_move ? retry : null;
   const bestMove = current?.best_move ?? null;
@@ -259,9 +286,12 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     if (!current?.best_move || !activeRetry) return false;
     const answer = judgeRetry(current, review.rating_used, from, to);
     if (answer) {
+      if (soundOn) playSounds([moveSound(sanFlags(answer.move.san)), retrySound(answer.best ? "best" : "excellent")]);
       setRetry({ ...activeRetry, status: "correct", attempt: null, answer });
       return true;
     }
+    // Not observed in the reference client, which sounds only the finished retry.
+    if (soundOn) playSounds(["incorrect"]);
     const uci = `${from}${to}`;
     const known = current.lines.find((l) => l.moves[0]?.uci.startsWith(uci))?.moves[0]?.san ?? null;
     setRetry({ ...activeRetry, status: "wrong", attempt: known ?? (current.uci.startsWith(uci) ? current.san : null) });
@@ -754,6 +784,18 @@ export function ReviewScreen({ review, onNewGame }: Props) {
                 />
                 <span className="switch" aria-hidden="true" />
                 Engine arrow
+              </label>
+              <label className="tool tool--toggle" title="Play move and review sounds">
+                <input
+                  type="checkbox"
+                  checked={soundOn}
+                  onChange={(e) => {
+                    setSoundOn(e.target.checked);
+                    saveFlag("review.sound", e.target.checked);
+                  }}
+                />
+                <span className="switch" aria-hidden="true" />
+                Sound
               </label>
               <span className="tool__ply" aria-label={`Move ${ply} of ${total}`}>
                 {ply}/{total}

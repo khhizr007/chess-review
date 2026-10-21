@@ -25,6 +25,8 @@ The review rules were recovered by analysing a commercial Android application. T
   independently in `backend/crates/review-core`.
 - Book moves use the public-domain opening list above, not the reference app's embedded book.
 - The UI uses its own styling and symbols.
+- Sounds play on the reference client's events (`docs/sound.md`), but each one is synthesised in the browser by
+  this project's code (`frontend/src/lib/synth.ts`). No audio files are included.
 - The web UI's colour values and spacing follow the reference website's published dark theme, observed in its
   public stylesheets. No images, piece sets, logos, fonts or code from it are included.
 
