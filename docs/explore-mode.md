@@ -156,7 +156,22 @@ the wiring in `ReviewScreen.tsx`.
     a piece change, and `onPieceDrop` reports just the piece and the two squares (checked in Phase 0).
     - **How it works.** A pawn dropped on the last rank snaps back, and four pieces appear over the promotion file.
     - **Taking it back.** A click elsewhere or Esc takes the move back.
-  - **Click-to-move** is not built. `onSquareClick` and `onPieceClick` are available for it.
+  - **Click-to-move and move hints (built 2026-10-22), as on Chess.com.** Clicking a piece picks it
+    up, and clicking a highlighted square moves it there. A click on the piece again, an empty
+    square or the opponent's piece puts it down.
+    - **What a picked-up piece shows,** while dragging too. The values were read from Chess.com's
+      stylesheets on 2026-10-22:
+      - its square fills with a yellow circle growing from the centre (`#ffff33` at 50%, 0.2 s ease-out);
+      - free target squares get a dot a third of the square wide (`rgba(0,0,0,.14)`), and pieces it
+        can take get a ring. Both pop in over 0.15 s with a slight overshoot.
+    - **Castling.** A castling king's hint is on its landing square in standard chess, and on its
+      rook in Chess960.
+    - **Moves glide with ease-in-out** over 0.18 s, Chess.com's duration and easing. react-chessboard
+      sets only the duration inline; a CSS rule sets the easing.
+    - **Where it lives.** `BoardView` draws the layers with react-chessboard's `squareRenderer`;
+      `lib/chess.ts` `legalTargets` gives the targets. Retry shows the same hints: all legal moves,
+      so nothing is given away.
+    - **Not copied.** The captured piece's fade-out and the drag hover outline (ours is an inset white edge).
 - **The sideline model.** `Sideline = { fromPly, moves, cursor }`. It is one sideline at a time, as
   Chess.com does; a variation tree is out of scope for v1.
   - **The cursor.** It counts the sideline moves shown. 0 is the branch position, which is also the

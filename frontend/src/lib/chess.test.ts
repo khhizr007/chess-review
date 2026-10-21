@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canMoveFrom, ending, legalMoveCount, lineMoves, needsPromotion, nullMoveFen, playMove } from "./chess";
+import { canMoveFrom, ending, legalMoveCount, legalTargets, lineMoves, needsPromotion, nullMoveFen, playMove } from "./chess";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const CASTLE = "r3k2r/pppqbppp/2np1n2/4p1B1/2B1P1b1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 6 8";
@@ -101,5 +101,35 @@ describe("nullMoveFen", () => {
     expect(nullMoveFen("4k3/8/8/8/8/8/8/K3R3 b - - 0 1")).toBeNull();
     // Passing would leave White, with only a boxed-in king and a blocked pawn, without a legal move.
     expect(nullMoveFen("8/8/8/8/8/1k6/p7/K7 b - - 0 1")).toBeNull();
+  });
+});
+
+describe("legalTargets", () => {
+  const sorted = (t: { square: string; capture: boolean }[]) => [...t].sort((a, b) => a.square.localeCompare(b.square));
+
+  it("lists the squares a piece can go to, marking captures", () => {
+    expect(sorted(legalTargets(START, "g1"))).toEqual([
+      { square: "f3", capture: false },
+      { square: "h3", capture: false },
+    ]);
+    // After 1. e4 d5 the e4 pawn can push or take on d5.
+    const fen = "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2";
+    expect(sorted(legalTargets(fen, "e4"))).toEqual([
+      { square: "d5", capture: true },
+      { square: "e5", capture: false },
+    ]);
+  });
+
+  it("shows a castling king where it lands, or on its rook in Chess960", () => {
+    const king = legalTargets(CASTLE, "e1").map((t) => t.square);
+    expect(king).toContain("g1");
+    expect(king).toContain("c1");
+    expect(king).not.toContain("h1");
+    expect(legalTargets(CASTLE, "e1", true).map((t) => t.square)).toContain("h1");
+  });
+
+  it("has nothing for an empty square or the side not to move", () => {
+    expect(legalTargets(START, "e4")).toEqual([]);
+    expect(legalTargets(START, "e7")).toEqual([]);
   });
 });

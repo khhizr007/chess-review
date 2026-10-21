@@ -8,7 +8,7 @@ import type { Sentence } from "../api/generated/Sentence";
 import type { Side } from "../api/generated/Side";
 import { useLiveEngine } from "../hooks/useLiveEngine";
 import { useSidelineJudge } from "../hooks/useSidelineJudge";
-import { canMoveFrom, ending, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
+import { canMoveFrom, ending, legalTargets, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
 import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
@@ -538,13 +538,15 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   }, [activeRetry, solvedMove, bestMove, ladder, shownMove, shownClass, shownSentences, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
 
   // Retry takes the mover's pieces; otherwise any legal move explores, except while a line plays.
+  // The move hints show every legal move of the position, in a retry too (they give nothing away).
+  const targets = (square: string) => legalTargets(displayFen, square, review.game.chess960);
   const boardMoves: BoardMoves | null = activeRetry
     ? current && !retrySolved
-      ? { canDrag: (_square, side) => side === current.mover, onDrop: onRetryDrop }
+      ? { canDrag: (_square, side) => side === current.mover, onDrop: onRetryDrop, targets }
       : null
     : preview
       ? null
-      : { canDrag: (square) => canMoveFrom(displayFen, square), onDrop: onExploreDrop };
+      : { canDrag: (square) => canMoveFrom(displayFen, square), onDrop: onExploreDrop, targets };
   const boardPromotion: BoardPromotion | null = promotion
     ? {
         square: promotion.to,

@@ -43,6 +43,35 @@ export function canMoveFrom(fen: string, square: string): boolean {
   return pos.board[pos.turn].has(sq) && pos.dests(sq).nonEmpty();
 }
 
+/** A square the selected piece can move to, and whether the move takes a piece there. */
+export interface MoveTarget {
+  square: string;
+  capture: boolean;
+}
+
+/**
+ * The squares the piece on `square` can legally move to, for the board's move hints. A castling
+ * king is shown its target square (g1, c1…) in standard chess and its rook's square in Chess960, as
+ * the drop it accepts there.
+ */
+export function legalTargets(fen: string, square: string, chess960 = false): MoveTarget[] {
+  const pos = position(fen);
+  const from = parseSquare(square);
+  if (!pos || from === undefined || !pos.board[pos.turn].has(from)) return [];
+  const king = pos.board.getRole(from) === "king";
+  const out: MoveTarget[] = [];
+  for (const to of pos.dests(from)) {
+    const own = pos.board[pos.turn].has(to);
+    if (own && king && !chess960) {
+      // Castling: chessops moves the king onto its rook; the board shows where the king lands.
+      out.push({ square: makeSquare((to > from ? 6 : 2) + (pos.turn === "white" ? 0 : 56)), capture: false });
+      continue;
+    }
+    out.push({ square: makeSquare(to), capture: !own && pos.board.occupied.has(to) });
+  }
+  return out.filter((t, i) => out.findIndex((u) => u.square === t.square) === i);
+}
+
 /** Whether moving `from`→`to` is a legal pawn move that needs a promotion piece. */
 export function needsPromotion(fen: string, from: string, to: string): boolean {
   const pos = position(fen);
