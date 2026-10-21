@@ -26,7 +26,7 @@ Sources:
 
 **The visible gaps are around the review, not in it.** The four that matter most:
 1. There is no **Game Rating** or **Advanced Stats** on the report.
-2. There is no **game import by username**: you paste a PGN.
+2. ~~There is no **game import by username**.~~ Done: a Chess.com or Lichess username lists your recent games (§4, #1).
 3. There is no **coach text on explored moves**.
 4. The **analysis board** allows only one sideline at a time.
 
@@ -54,7 +54,7 @@ Sources:
 | Engine choice (full Stockfish, Torch), 1 to 5 lines, depth presets | Yes | Fixed: Lite, 3 lines, depth 18 with "Go deeper" | Minor gap |
 | Several sidelines per position, saving, PGN export with variations | Yes | One sideline at a time, not saved | **Gap** |
 | Opening explorer (games database) | Yes | Opening names only | Gap |
-| **Your games appear automatically / import by username** | Yes | Paste a PGN or open a file | **Gap** |
+| **Your games appear automatically / import by username** | Yes | A Chess.com or Lichess username lists the 20 most recent games; one click imports one. You can also paste a PGN or open a file | **Close.** You type the username once; it is remembered |
 | Account history and insights across games | Yes | No: one game at a time | Out of scope for now |
 | Mobile | Apps and mobile web | Responsive web layout (breakpoints at 900 and 480 px). The live engine has not been timed on a phone | Partly |
 
@@ -74,7 +74,7 @@ Sources:
 
 | # | Work | Why | Size | Feasibility |
 |---|---|---|---|---|
-| 1 | **Import games by username** (Chess.com and Lichess public APIs): a username box, recent games, then the existing import | The most visible gap. On Chess.com your games are just there | S | High. Both APIs are public and return PGN |
+| 1 | ~~**Import games by username**~~ **Done (2026-10-22)**: `lib/onlineGames.ts`, `components/OnlineImport.tsx` | The most visible gap. On Chess.com your games are just there | S | Built. The browser calls the public APIs directly (CORS allowed), so the username never reaches our server |
 | 2 | **Game Rating estimate** | The headline number on Chess.com's report | M | Medium. The formula is server-side. Plan: capture "Game Rating" for the 142 calibration games from their review pages (the summary shows it), then fit an estimate from our per-game statistics and report its error. It must be labelled an estimate. All 142 games come from one account rated about 950, so a second rating band is needed before trusting it widely |
 | 3 | **Coach text on explored moves** | Explored moves get a label but no "why" | M | High. The coach needs threat searches: run the browser engine on the null-move position, or add a depth-10 server search (about 0.04 s per move) |
 | 4 | **Label and coach calibration at other ratings** (1200–2200), plus the near-threshold hedge | Everything is tuned on players rated about 950; also fixes about 440 praise-or-blame contradictions | M | High. The capture tooling exists |

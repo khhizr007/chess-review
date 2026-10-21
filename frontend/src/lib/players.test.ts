@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mySide, myUsernames, rememberChoice } from "./players";
+import { mySide, myUsernames, rememberChoice, rememberUsername } from "./players";
 
 function memory() {
   const data = new Map<string, string>();
@@ -36,5 +36,13 @@ describe("players", () => {
     expect(myUsernames({ getItem: () => "{not json", setItem: () => {} })).toEqual([]);
     expect(myUsernames(null)).toEqual([]);
     expect(() => rememberChoice({ white: "A", black: "B" }, "white", null)).not.toThrow();
+  });
+
+  it("remembers a username the user fetched their games with", () => {
+    const store = memory();
+    rememberUsername(" Khhizr7 ", store);
+    rememberUsername("khhizr7", store);
+    expect(myUsernames(store)).toEqual(["khhizr7"]);
+    expect(mySide({ white: "bob", black: "KHHIZR7" }, myUsernames(store))).toBe("black");
   });
 });

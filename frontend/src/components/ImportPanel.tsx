@@ -5,8 +5,9 @@ import type { Health } from "../api/generated/Health";
 import type { ParseEntry } from "../api/generated/ParseEntry";
 import type { Side } from "../api/generated/Side";
 import type { Strength } from "../api/generated/Strength";
-import { mySide, myUsernames, rememberChoice } from "../lib/players";
+import { mySide, myUsernames, rememberChoice, rememberUsername } from "../lib/players";
 import { SAMPLE_PGN } from "../samples";
+import { OnlineImport } from "./OnlineImport";
 
 interface Props {
   onStart: (req: CreateReviewRequest) => void;
@@ -94,8 +95,8 @@ export function ImportPanel({ onStart, busy }: Props) {
         <span className="import__eyebrow">Engine-graded review</span>
         <h1 id="import-title">Find the moments that decided your game</h1>
         <p>
-          Paste a PGN or drop a file. Every move is searched with the engine and graded for accuracy, so you can
-          step through your best moves, mistakes and missed chances.
+          Load one of your recent games from Chess.com or Lichess, or paste a PGN. Every move is searched with the
+          engine and graded for accuracy, so you can step through your best moves, mistakes and missed chances.
         </p>
       </div>
 
@@ -108,57 +109,66 @@ export function ImportPanel({ onStart, busy }: Props) {
       )}
 
       <div className="import__grid">
-        <div
-          className={`card card--pgn ${dragging ? "is-dragging" : ""}`}
-          onDragOver={(e) => {
-            if (!e.dataTransfer.types.includes("Files")) return;
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            void onFile(e.dataTransfer.files[0]);
-          }}
-        >
-          <div className="card__header">
-            <label htmlFor="pgn-input" className="card__title">
-              PGN
-            </label>
-            <div className="row gap-s">
-              <label className="button button--ghost">
-                Open file…
-                <input
-                  type="file"
-                  accept=".pgn,.txt,application/x-chess-pgn,text/plain"
-                  className="visually-hidden"
-                  onChange={(e) => void onFile(e.target.files?.[0])}
-                />
-              </label>
-              <button type="button" className="button button--ghost" onClick={() => setPgn(SAMPLE_PGN)}>
-                Load sample
-              </button>
-            </div>
-          </div>
-          <textarea
-            id="pgn-input"
-            className="pgn-input"
-            spellCheck={false}
-            placeholder={'[Event "…"]\n[White "…"]\n[Black "…"]\n\n1. e4 e5 2. Nf3 …'}
-            value={pgn}
-            onChange={(e) => setPgn(e.target.value)}
+        <div className="import__main">
+          <OnlineImport
+            currentPgn={pgn}
+            onPick={(game, username) => {
+              rememberUsername(username);
+              setPgn(game.pgn);
+            }}
           />
-          {dragging && (
-            <div className="dropzone" aria-hidden="true">
-              <strong>Drop the PGN file</strong>
-              <span>.pgn or .txt, up to 5 MB</span>
+          <div
+            className={`card card--pgn ${dragging ? "is-dragging" : ""}`}
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes("Files")) return;
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              void onFile(e.dataTransfer.files[0]);
+            }}
+          >
+            <div className="card__header">
+              <label htmlFor="pgn-input" className="card__title">
+                PGN
+              </label>
+              <div className="row gap-s">
+                <label className="button button--ghost">
+                  Open file…
+                  <input
+                    type="file"
+                    accept=".pgn,.txt,application/x-chess-pgn,text/plain"
+                    className="visually-hidden"
+                    onChange={(e) => void onFile(e.target.files?.[0])}
+                  />
+                </label>
+                <button type="button" className="button button--ghost" onClick={() => setPgn(SAMPLE_PGN)}>
+                  Load sample
+                </button>
+              </div>
             </div>
-          )}
-          {parsing && <p className="muted small">Checking PGN…</p>}
-          {parseError && <div className="notice notice--error">{parseError}</div>}
+            <textarea
+              id="pgn-input"
+              className="pgn-input"
+              spellCheck={false}
+              placeholder={'[Event "…"]\n[White "…"]\n[Black "…"]\n\n1. e4 e5 2. Nf3 …'}
+              value={pgn}
+              onChange={(e) => setPgn(e.target.value)}
+            />
+            {dragging && (
+              <div className="dropzone" aria-hidden="true">
+                <strong>Drop the PGN file</strong>
+                <span>.pgn or .txt, up to 5 MB</span>
+              </div>
+            )}
+            {parsing && <p className="muted small">Checking PGN…</p>}
+            {parseError && <div className="notice notice--error">{parseError}</div>}
+          </div>
         </div>
 
         <div className="card card--settings">

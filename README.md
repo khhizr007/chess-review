@@ -40,7 +40,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173, then click **Load sample** (or paste or open a PGN) and **Start review**.
+Open http://localhost:5173. Then type your Chess.com or Lichess username under **Your games** and pick a game, or click **Load sample**, or paste or open a PGN. Then click **Start review**.
 At the Standard preset (depth 18) a 40-move game takes about a minute on a 4-core machine. **Fast** is
 much quicker.
 
