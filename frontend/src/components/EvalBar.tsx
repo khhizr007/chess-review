@@ -2,14 +2,29 @@ import type { Eval } from "../api/generated/Eval";
 import { favouredSide, formatEval, formatEvalShort, percent } from "../lib/format";
 
 interface Props {
-  /** White's expected points (0–1) for the shown position, from the backend. */
-  whiteExpectedPoints: number;
-  evaluation: Eval;
+  /** White's expected points (0–1) for the shown position, from the backend; null when not evaluated. */
+  whiteExpectedPoints: number | null;
+  evaluation: Eval | null;
   flipped: boolean;
 }
 
 /** Vertical evaluation bar; White's share grows from White's side of the board. */
 export function EvalBar({ whiteExpectedPoints, evaluation, flipped }: Props) {
+  if (whiteExpectedPoints === null || evaluation === null) {
+    return (
+      <div
+        className={`eval-bar eval-bar--idle ${flipped ? "eval-bar--flipped" : ""}`}
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="No evaluation for this position"
+        title="No evaluation for this position"
+      >
+        <div className="eval-bar__white" style={{ height: "50%" }} />
+        <span className="eval-bar__label eval-bar__label--white">–</span>
+      </div>
+    );
+  }
   const white = Math.min(1, Math.max(0, whiteExpectedPoints));
   const favoured = favouredSide(evaluation);
   return (

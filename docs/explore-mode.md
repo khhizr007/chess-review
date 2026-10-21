@@ -7,7 +7,7 @@ October 2026. This document analyses and plans a feature. Sources:
 **Status:**
 - The hybrid design and the §5.1 principle change were approved on 2026-10-21.
 - Phase 0 (the spike) is done. Its measurements are in §10, and the decisions it settled are folded into §5–§9.
-- Nothing has been built in the app yet.
+- Phase 1 (the sideline board, no engine) is built (§5.2).
 
 ## 1. Summary
 
@@ -138,24 +138,45 @@ Amend `architecture.md` "The frontend is a renderer" as follows:
 
 - Add `chessops` (GPL-3.0, TypeScript, about 30 KB). It is from the same author as `shakmaty`, so FEN
   normalisation and SAN match the backend.
-- **When dragging is allowed.** It is always on outside Retry mode. Retry keeps its own drag semantics
-  (it is a quiz).
+**Built in Phase 1.** The rules are in `lib/chess.ts`, the sideline model in `lib/explore.ts`, and
+the wiring in `ReviewScreen.tsx`.
+
+- **When dragging is allowed.** It is on whenever no Retry and no line preview is open. Retry keeps
+  its own drag semantics (it is a quiz).
+  - **Only the side to move.** Only its pieces with a legal move can be picked up.
+  - **From the report.** Dragging on the report screen switches to the review.
+- **Castling.** The king can be dropped on its target square or on its rook. UCI follows the backend:
+  king squares in standard chess, king-takes-rook in Chess960.
 - **Promotion and clicks.**
-  - **We build the promotion picker.** react-chessboard 5.12.1 has no promotion dialog: its promotion code
-    only animates a piece change, and `onPieceDrop` reports just the piece and the two squares (checked in Phase 0).
-  - **Click-to-move** is a nice-to-have. `onSquareClick` and `onPieceClick` are available for it.
-- **The sideline model.** `explore = { fromPly, moves: MoveRef[], cursor }` in `ReviewScreen`. It is
-  one sideline at a time, as Chess.com does; a variation tree is out of scope for v1.
-  - **Branch point.** Dragging from game ply *p* starts a sideline at *p*.
-  - **Extending.** Dragging inside the sideline truncates it after the cursor and appends the move.
-  - **Matching the game.** If the dragged move equals the game's next move, the board just advances
-    the mainline.
-- **Move list.** The sideline is shown indented under the branch move.
-  - The board shows a "Back to game" control.
-  - Esc and Home leave the sideline.
-  - ←/→ step inside the sideline, reusing the preview stepping in `ReviewScreen.tsx:201-212`.
-- **Sounds.** Move, capture, check and castle sounds follow the existing rules in `docs/sound.md`,
-  using chessops' move flags.
+  - **Our own promotion picker.** react-chessboard 5.12.1 has no promotion dialog: its promotion code only animates
+    a piece change, and `onPieceDrop` reports just the piece and the two squares (checked in Phase 0).
+    - **How it works.** A pawn dropped on the last rank snaps back, and four pieces appear over the promotion file.
+    - **Taking it back.** A click elsewhere or Esc takes the move back.
+  - **Click-to-move** is not built. `onSquareClick` and `onPieceClick` are available for it.
+- **The sideline model.** `Sideline = { fromPly, moves, cursor }`. It is one sideline at a time, as
+  Chess.com does; a variation tree is out of scope for v1.
+  - **The cursor.** It counts the sideline moves shown. 0 is the branch position, which is also the
+    game position at `fromPly`.
+  - **Branch point.** A move on game ply *p* that is not the game's own starts a sideline at *p*. It
+    replaces any open sideline.
+  - **Extending.** A move inside the sideline drops everything after the cursor and appends itself.
+    Replaying the sideline's own next move keeps the rest of the line.
+  - **Matching the game.** If the move equals the game's next move, the board just advances the game.
+- **Move list.** The sideline is listed under the row of the game move it replaces, numbered from the
+  branch position, for example "1... c5 2. Nf3". While the board is inside the sideline, no game move is marked current.
+- **Navigation.**
+  - **← / → and the nav buttons** walk the open sideline, down to its branch position.
+  - **Back from the branch position** leaves the sideline and steps back in the game.
+  - **Forward past the sideline's end** does nothing.
+  - **Leaving.** Esc, the "Back to game" button, or any game navigation (clicking a game move, the graph, Home/End, autoplay)
+    leaves the sideline and closes it.
+- **What the panel shows.**
+  - **The coach panel** says what is being explored, for example "Exploring d4 instead of e4", and names
+    checkmate, stalemate, dead material and the fifty-move rule.
+  - **The eval bar** shows "–" in sideline positions until Phase 2.
+  - **Last move.** The sideline's last move is highlighted, and a check is marked as on game moves.
+- **Sounds.** Move, capture, check and castle sounds follow `docs/sound.md` ("Sidelines"), using
+  chessops' move flags.
 - **Engine lines.** These become playable. Clicking a line chip in explore mode appends those moves to the sideline.
 
 ### 5.3 Browser engine
@@ -300,7 +321,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 | Phase | Scope | Exit criteria | Size |
 |---|---|---|---|
 | **0. Spike (done 2026-10-21)** | Load a candidate Stockfish WASM build in a worker inside our app (throwaway branch). Measure time to depth 12/16/18 and memory on this PC, and on a throttled profile. Check react-chessboard v5's promotion support. List which `MoveFacts` inputs need a server search. | Done; see §10. Build `stockfish@19.0.1` lite-single; cap 18, adaptive to 16; `judge` needs no search; we build the promotion picker. No phone was measured. | S |
-| **1. Sideline board** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "—". | Vitest: sideline reducer (branch, truncate, match the game move, leave). A manual check in the browser preview. | M |
+| **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
 | **2. Live engine** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Vitest with a fake worker: superseding, stale-info discard, mate/cp conversion, bound skipping. In the browser: an eval appears within 100 ms, nothing runs on mainline plies, nothing runs while the tab is hidden. | M |
 | **3. Move feedback** | `POST /api/positions/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Rust test with `FakeEngine`: the same position judged through `judge` and through a review gives the same class when given the same evals. A frontend test for the spinner→icon flow. | M |
 | **4. Later, each optional** | Coach sentences for explored moves; server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |

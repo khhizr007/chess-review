@@ -2,7 +2,7 @@
 
 A chess game-review application. Import a PGN, have every move searched with Stockfish and graded,
 then step through the game with move classifications, best moves, alternative lines, accuracy, an
-evaluation graph and a summary.
+evaluation graph and a summary. You can also play your own moves on the board to explore sidelines.
 
 The grading rules reproduce the review logic recovered from a reference application. That logic is
 documented in [`docs/functional-spec.md`](docs/functional-spec.md):
@@ -85,6 +85,7 @@ npm test && npm run typecheck && npm run lint && npm run build
 | [`docs/coach-analysis.md`](docs/coach-analysis.md) | How the reference coach explains moves, and the design for ours |
 | [`docs/coach-research-notes.md`](docs/coach-research-notes.md) | Research on chess commentary, tactic detection and feedback |
 | [`docs/coach-gap-analysis.md`](docs/coach-gap-analysis.md) | Where the coach stands against the reference after phases 0–3, and the revised plan |
+| [`docs/explore-mode.md`](docs/explore-mode.md) | Exploring your own moves with a live engine: analysis, measurements and plan |
 | [`tests/fixtures/`](tests/fixtures/README.md) | Sample PGNs and the test corpus |
 
 ## License

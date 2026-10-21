@@ -800,6 +800,41 @@ select option {
   animation: badge-pop 0.28s cubic-bezier(0.3, 1.6, 0.6, 1);
 }
 
+/* Promotion: the four pieces over the promotion file; a click elsewhere takes the move back. */
+.promotion {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.promotion__piece {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  padding: 1.2%;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(240, 240, 240, 0.92);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: background-color 0.1s, border-radius 0.1s;
+}
+
+.promotion__piece:hover,
+.promotion__piece:focus-visible {
+  border-radius: var(--r-sm);
+  background: #fff;
+  outline: none;
+}
+
+.promotion__piece svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .board-badge svg {
   display: block;
   width: 100%;
@@ -1025,6 +1060,15 @@ select option {
 .eval-bar--flipped .eval-bar__label--black {
   top: auto;
   bottom: 6px;
+}
+
+/* No evaluation for the shown position (a sideline before the engine runs there). */
+.eval-bar--idle .eval-bar__white {
+  opacity: 0.35;
+}
+
+.eval-bar--idle .eval-bar__label {
+  color: var(--faint);
 }
 
 /* =================================================================== panel */
@@ -1471,6 +1515,11 @@ select option {
   color: var(--bubble-text);
 }
 
+.coach__note {
+  font-size: 0.85rem;
+  color: var(--bubble-muted);
+}
+
 .retry-wrong {
   color: #c2412f;
   font-weight: 600;
@@ -1814,8 +1863,39 @@ select option {
   table-layout: fixed;
 }
 
-.move-table tr:nth-child(even) {
+/* Every second game row; a sideline row in between does not shift the stripes. */
+.move-table tr.is-striped {
   background: rgba(255, 255, 255, 0.025);
+}
+
+/* The reader's sideline, under the game move it replaces. */
+.move-table__sideline > td {
+  padding: 2px 8px 4px 46px;
+}
+
+.sideline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1px 2px;
+  padding: 3px 4px;
+  border-left: 3px solid var(--c-best);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.sideline__number {
+  padding-left: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.move--sideline {
+  height: 26px;
+  padding: 0 6px;
+  font-size: 0.9rem;
 }
 
 .move-table__number {

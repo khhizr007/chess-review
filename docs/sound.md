@@ -40,6 +40,17 @@ in review plays only the check sound, with no game-end sound.
 | Step back one move (←) | the move **taken back**, not the one landed on |
 | Go to the start position (Home) | none |
 
+## Sidelines
+
+The reader's own moves (exploring a sideline, `docs/explore-mode.md`) follow the same rules.
+- **Playing a move** plays its move sound.
+- **Stepping back one move** plays the move taken back.
+- **Stepping forward, or clicking a sideline move,** plays the move arrived at.
+- **Brilliant** never sounds in a sideline, because sideline moves are not classified.
+- **Playing the game's own move** follows the game and sounds like stepping forward.
+
+This is this app's own choice. The reference client's analysis board was not examined for sound.
+
 ## Brilliant
 
 The brilliant sound plays together with the move sound when all of these hold:

@@ -14,6 +14,8 @@ rules and PGN libraries below are GPL-3.0.
 | [lichess puzzle database](https://database.lichess.org/#puzzles) | Independent check of the coach's tactic detectors against the puzzle themes (`tools/calibrate/puzzle_check.py`, `docs/calibration/detector-check.md`) | CC0 (public domain) | Partly: the ids of the 14,190 sampled puzzles (`tools/calibrate/puzzle_ids.tsv`), and the FEN, moves and themes of the 110 puzzles quoted in `docs/calibration/detector-check.md`. The database itself is downloaded separately and not committed. |
 | React, React DOM | UI | MIT | Bundled into the frontend build |
 | [react-chessboard](https://github.com/Clariity/react-chessboard) | Board rendering, arrows, highlights | MIT | Bundled into the frontend build |
+| [chessops](https://github.com/niklasf/chessops) | Legal moves, SAN and FEN for the reader's own sideline moves (`frontend/src/lib/chess.ts`) | GPL-3.0-or-later | Bundled into the frontend build |
+| [@badrap/result](https://github.com/badrap/result) (dependency of chessops) | Result type | MIT | Bundled into the frontend build |
 | Piece outlines by Colin M.L. Burnett ("cburnett", as shipped in react-chessboard) | Piece geometry in `frontend/src/components/pieces.tsx`; the shading and colours are this project's own | GPL-2.0-or-later / BSD / GFDL | Bundled into the frontend build |
 
 ## Reference application

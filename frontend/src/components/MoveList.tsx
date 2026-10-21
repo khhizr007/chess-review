@@ -1,15 +1,26 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import type { PlyReview } from "../api/generated/PlyReview";
+import { sidelineLabels, type Sideline } from "../lib/explore";
 import { CLASSIFICATIONS } from "../lib/format";
 import { matchesFilter, showsListIcon, type MoveFilter } from "../lib/review";
 import { ClassificationIcon } from "./ClassificationIcon";
 import { San } from "./PieceIcon";
+
+/** The sideline the reader is exploring, listed under the game move it replaces. */
+export interface ListSideline {
+  line: Sideline;
+  /** Position the sideline branches from (its move numbers count from there). */
+  branchFen: string;
+  /** Selects sideline move k (1-based), as the sideline's cursor. */
+  onSelect: (cursor: number) => void;
+}
 
 interface Props {
   plies: PlyReview[];
   current: number;
   filter: MoveFilter;
   onSelect: (ply: number) => void;
+  sideline?: ListSideline | null;
 }
 
 interface Row {
@@ -65,37 +76,79 @@ function MoveCell({
   );
 }
 
-export function MoveList({ plies, current, filter, onSelect }: Props) {
+function SidelineRow({ sideline }: { sideline: ListSideline }) {
+  const { line, branchFen, onSelect } = sideline;
+  const labels = sidelineLabels(branchFen, line.moves.length);
+  return (
+    <tr className="move-table__sideline">
+      <td colSpan={3}>
+        <div className="sideline" aria-label="Your sideline">
+          {line.moves.map((m, i) => {
+            const active = line.cursor === i + 1;
+            const label = labels[i]!;
+            return (
+              <Fragment key={i}>
+                {label.number && <span className="sideline__number">{label.number}</span>}
+                <button
+                  type="button"
+                  className={`move move--sideline ${active ? "move--active" : ""}`}
+                  aria-current={active ? "step" : undefined}
+                  data-sideline={i + 1}
+                  onClick={() => onSelect(i + 1)}
+                >
+                  <San san={m.san} side={label.mover} />
+                </button>
+              </Fragment>
+            );
+          })}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+export function MoveList({ plies, current, filter, onSelect, sideline }: Props) {
   const container = useRef<HTMLDivElement>(null);
+  const cursor = sideline?.line.cursor ?? 0;
 
   // Keep the current move visible inside the list without scrolling the page.
   useEffect(() => {
     const box = container.current;
-    const el = box?.querySelector<HTMLElement>(`[data-ply="${current}"]`);
+    const el = box?.querySelector<HTMLElement>(cursor > 0 ? `[data-sideline="${cursor}"]` : `[data-ply="${current}"]`);
     if (!box) return;
     if (!el) {
       if (current === 0) box.scrollTop = 0;
       return;
     }
-    const row = (el.closest("tr") ?? el).getBoundingClientRect();
+    // A game move scrolls by its row; a sideline move by itself, as its row may wrap.
+    const row = (cursor > 0 ? el : (el.closest("tr") ?? el)).getBoundingClientRect();
     const view = box.getBoundingClientRect();
     // Leave one row of context above/below the current move.
     if (row.top < view.top + row.height) box.scrollTop -= view.top + row.height - row.top;
     else if (row.bottom > view.bottom - row.height) box.scrollTop += row.bottom - (view.bottom - row.height);
-  }, [current]);
+  }, [current, cursor]);
+
+  // The sideline is listed under the row of the game move it replaces (the last row at the end).
+  const all = rows(plies);
+  const replaced = sideline ? Math.min(sideline.line.fromPly + 1, plies.length) : -1;
+  const at = sideline ? all.findIndex((r) => r.white?.ply === replaced || r.black?.ply === replaced) : -1;
 
   return (
     <div className="move-list" ref={container}>
       <table className="move-table">
         <tbody>
-          {rows(plies).map((row) => (
-            <tr key={`${row.number}-${row.white?.ply ?? row.black?.ply}`}>
-              <th scope="row" className="move-table__number">
-                {row.number}.
-              </th>
-              <MoveCell ply={row.white} current={current} filter={filter} onSelect={onSelect} />
-              <MoveCell ply={row.black} current={current} filter={filter} onSelect={onSelect} />
-            </tr>
+          {sideline && at < 0 && <SidelineRow sideline={sideline} />}
+          {all.map((row, i) => (
+            <Fragment key={`${row.number}-${row.white?.ply ?? row.black?.ply}`}>
+              <tr className={i % 2 ? "is-striped" : undefined}>
+                <th scope="row" className="move-table__number">
+                  {row.number}.
+                </th>
+                <MoveCell ply={row.white} current={cursor > 0 ? -1 : current} filter={filter} onSelect={onSelect} />
+                <MoveCell ply={row.black} current={cursor > 0 ? -1 : current} filter={filter} onSelect={onSelect} />
+              </tr>
+              {sideline && i === at && <SidelineRow sideline={sideline} />}
+            </Fragment>
           ))}
         </tbody>
       </table>
