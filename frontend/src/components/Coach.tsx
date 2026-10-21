@@ -307,7 +307,7 @@ export function LiveLines({
   const mover: Side = fields[1] === "b" ? "black" : "white";
   const number = Number(fields[5]) || 1;
   const { analysis, status, target } = engine;
-  const searching = !!analysis && !analysis.done;
+  const searching = !!analysis && !engine.finished;
   return (
     <section className="details live-lines" aria-label="Engine lines">
       <h3 className="section-label live-lines__head">

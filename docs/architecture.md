@@ -38,6 +38,9 @@
     such. The engine is a Stockfish WebAssembly build in a Web Worker
     (`frontend/src/lib/engine/`, `docs/explore-mode.md` §5.1, §5.3).
   - **What stays with the backend.** Classifications, accuracy and the coach still come only from the backend.
+    - **Sideline moves too.** These are classified by `POST /api/reviews/{id}/judge` on the browser
+      engine's lines, through the same facts builder as the review (`analysis/facts.rs`).
+    - **No engine search.** The server runs none for them.
 
 ## Concurrency and resources
 

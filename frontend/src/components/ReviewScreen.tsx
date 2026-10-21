@@ -6,6 +6,7 @@ import type { MoveRef } from "../api/generated/MoveRef";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
 import { useLiveEngine } from "../hooks/useLiveEngine";
+import { useSidelineJudge } from "../hooks/useSidelineJudge";
 import { canMoveFrom, ending, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
 import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
@@ -41,6 +42,8 @@ import { ReportView } from "./ReportView";
 
 interface Props {
   review: ReviewResult;
+  /** The review's id on the server (sideline moves are judged against it). */
+  reviewId: string;
   onNewGame: () => void;
 }
 
@@ -118,7 +121,7 @@ function tint(color: string, pct: number): CSSProperties {
   return { background: `color-mix(in srgb, ${color} ${pct}%, transparent)` };
 }
 
-export function ReviewScreen({ review, onNewGame }: Props) {
+export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   const total = review.plies.length;
   const [mode, setMode] = useState<Mode>("report");
   const [ply, setPly] = useState(0);
@@ -159,9 +162,22 @@ export function ReviewScreen({ review, onNewGame }: Props) {
   const shownEnd = shownMove ? ending(shownMove.fen) : null;
   // A finished game needs no engine; a claimable fifty-move draw is still played on.
   const shownOver = !!shownEnd && shownEnd !== "fifty_moves";
-  // The browser engine searches sideline positions only (docs/explore-mode.md §5.4).
-  const live = useLiveEngine(shownMove && !shownOver ? shownMove.fen : null, review, review.game.chess960);
+  // The position the shown sideline move was played from: the branch (a game position) or the
+  // sideline move before it.
+  const shownFrom =
+    sideline && shownMove
+      ? sideline.cursor > 1
+        ? sideline.moves[sideline.cursor - 2]!.fen
+        : fenAt(review, sideline.fromPly)
+      : null;
+  // The browser engine searches sideline positions only, and the position each sideline move was
+  // played from, so the move can be judged on one engine's lines (docs/explore-mode.md §5.4–5.5).
+  const live = useLiveEngine(shownMove && !shownOver ? shownMove.fen : null, shownFrom, review, review.game.chess960);
   const liveLines = live.analysis?.lines ?? [];
+  const judgements = useSidelineJudge(reviewId, sideline, live, shownOver);
+  const shownJudged = sideline && shownMove ? judgements[sideline.cursor - 1] : undefined;
+  const shownClass = shownJudged?.judgement.classification ?? null;
+  const shownMover: Side = shownFrom?.split(" ")[1] === "b" ? "black" : "white";
   const liveBest = liveLines[0]?.moves[0];
 
   const showLine = preview?.source === "coach" ? current?.coach?.show_lines[preview.line] : undefined;
@@ -427,8 +443,11 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     }
 
     if (shownMove) {
-      styles[shownMove.from] = tint(PREVIEW_TINT, 45);
-      styles[shownMove.to] = tint(PREVIEW_TINT, 65);
+      // Coloured by its classification once judged, as game moves are.
+      const color = shownClass ? CLASSIFICATIONS[shownClass].color : PREVIEW_TINT;
+      styles[shownMove.from] = tint(color, shownClass ? 42 : 45);
+      styles[shownMove.to] = tint(color, shownClass ? 58 : 65);
+      if (shownClass) badge = { square: shownMove.to, classification: shownClass };
       const king = shownMove.flags.check ? kingSquareToMove(shownMove.fen) : null;
       if (king) styles[king] = { ...styles[king], ...CHECK_GLOW };
       // The engine arrow shows the live engine's top move.
@@ -487,7 +506,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       }
     }
     return { arrows, squareStyles: styles, badge };
-  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
+  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, shownClass, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
 
   // Retry takes the mover's pieces; otherwise any legal move explores, except while a line plays.
   const boardMoves: BoardMoves | null = activeRetry
@@ -652,6 +671,23 @@ export function ReviewScreen({ review, onNewGame }: Props) {
               {sidelineBar && <EvalPill value={sidelineBar.eval} />}
             </div>
             <div className="coach__body">
+              {shownClass ? (
+                <p className="explore-verdict">
+                  <ClassificationIcon value={shownClass} size={20} />
+                  <span>
+                    <San san={shownMove.san} side={shownMover} /> is {CLASSIFICATIONS[shownClass].phrase}.
+                    {shownJudged?.judgement.show_best_move && shownJudged.judgement.best_move && (
+                      <>
+                        {" "}
+                        <San san={shownJudged.judgement.best_move.san} side={shownMover} /> was best.
+                      </>
+                    )}
+                  </span>
+                  {!shownJudged?.final && <span className="explore-verdict__note">refining…</span>}
+                </p>
+              ) : (
+                !shownJudged && live.status !== "error" && <p className="coach__note">Judging the move…</p>
+              )}
               {shownEnd && (
                 <p className="coach__end">
                   {shownEnd === "checkmate" ? `Checkmate. ${toMove === "white" ? "Black" : "White"} wins.` : ENDINGS[shownEnd]}
@@ -909,7 +945,14 @@ export function ReviewScreen({ review, onNewGame }: Props) {
                 current={ply}
                 filter={filter}
                 onSelect={go}
-                sideline={sideline && { line: sideline, branchFen: fenAt(review, sideline.fromPly), onSelect: showSideline }}
+                sideline={
+                  sideline && {
+                    line: sideline,
+                    branchFen: fenAt(review, sideline.fromPly),
+                    onSelect: showSideline,
+                    classes: judgements.map((j) => j?.judgement.classification ?? null),
+                  }
+                }
               />
               <div className="review-pane__graph">
                 <EvalGraph

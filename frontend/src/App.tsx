@@ -84,7 +84,7 @@ export function App() {
           </section>
         )}
 
-        {view.kind === "done" && <ReviewScreen review={view.result} onNewGame={startOver} />}
+        {view.kind === "done" && <ReviewScreen review={view.result} reviewId={view.id} onNewGame={startOver} />}
 
         {(view.kind === "error" || view.kind === "cancelled") && (
           <section className="card progress-card">

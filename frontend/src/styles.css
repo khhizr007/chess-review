@@ -1520,6 +1520,22 @@ select option {
   color: var(--bubble-muted);
 }
 
+/* The judged sideline move: its icon and verdict, as for game moves. */
+.explore-verdict {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--bubble-text);
+}
+
+.explore-verdict__note {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--bubble-muted);
+}
+
 .retry-wrong {
   color: #c2412f;
   font-weight: 600;

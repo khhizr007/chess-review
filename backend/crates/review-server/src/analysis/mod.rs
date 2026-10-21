@@ -2,8 +2,10 @@
 
 pub mod detectors;
 pub mod explain;
+mod facts;
 pub mod model;
 pub mod see;
+pub mod sideline;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,12 +13,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::StreamExt;
 use review_core::caps2::{self, Caps2Move, Caps2State, ScoredMove};
-use review_core::classification::{self, MaterialFacts, MissedChances, MoveEvents, MoveFacts};
 use review_core::expected_points::{
     ExpectedOutcome, expected_outcome, node_expected_points, rating_for_expected_points,
 };
 use review_core::summary::tally;
-use review_core::{Classification, Eval, Phase, Precision, ReviewConfig, Side, Value};
+use review_core::{Classification, Eval, Phase, ReviewConfig, Side, Value};
 use shakmaty::san::SanPlus;
 use shakmaty::{Chess, Color, Move, Position};
 use thiserror::Error;
@@ -30,10 +31,7 @@ use crate::engine::{
 use crate::human::{HumanModel, MoveQuery};
 use crate::openings::OpeningBook;
 use crate::pgn::ParsedGame;
-use detectors::{
-    LineMaterial, captures_free_piece, is_only_escape, is_quiet_retreat, is_recapture,
-    material_gate, static_sacrifice, takes_free_piece, threatens_promotion, walk_line,
-};
+use detectors::{static_sacrifice, takes_free_piece};
 use model::*;
 
 /// Moves shown per engine line in the UI.
@@ -530,191 +528,69 @@ fn build_review(
         let after = &game.positions[i + 1];
         let m = parsed.mv;
         let mover_color = before.turn();
-        let mover = side(mover_color);
-        let opponent = mover.opponent();
         let analysis = infos[i]
             .analysis
             .as_ref()
             .expect("a position with a played move was searched");
         let lines = &analysis.lines;
         let best_line = &lines[0];
-
-        // Scores of the position after the played move and after the best move.
-        let played_rank = lines.iter().position(|l| l.pv.first() == Some(&parsed.uci));
-        let played_is_best = played_rank == Some(0);
-        let best_eval = eval_after_first_move(best_line, mover);
-        let played_eval = match played_rank {
-            Some(0) => best_eval,
-            Some(k) => eval_after_first_move(&lines[k], mover),
-            None => infos[i + 1].eval,
-        };
-        let best_value = Value::after_move(best_eval, mover);
-        let played_value = Value::after_move(played_eval, mover);
-        let played_is_draw = infos[i + 1].is_draw && !after.is_checkmate();
-        let best_move = board::parse_uci(before, &best_line.pv[0]);
-        let best_is_draw = best_move.is_some_and(|bm| {
-            let mut p = before.clone();
-            p.play_unchecked(bm);
-            board::is_board_draw(&p)
-        });
-
-        let ep_played = node_expected_points(played_value, played_is_draw, rating);
-        let ep_best = node_expected_points(best_value, best_is_draw, rating);
-        let mover_value_before = Value::after_move(infos[i].eval, mover);
-        let ep_before = node_expected_points(mover_value_before, infos[i].is_draw, rating);
-        let opponent_value_before = Value::after_move(infos[i].eval, opponent);
-        let opponent_ep_before =
-            node_expected_points(opponent_value_before, infos[i].is_draw, rating);
-
-        let is_forced = before.legal_moves().len() == 1;
-        let is_book = book[i];
-
-        // Material along the engine lines.
-        let played_pv: Vec<String> = match played_rank {
-            Some(k) => lines[k].pv.clone(),
-            None => std::iter::once(parsed.uci.clone())
-                .chain(
-                    infos[i + 1]
-                        .analysis
-                        .as_ref()
-                        .and_then(PositionAnalysis::best)
-                        .map(|l| l.pv.clone())
-                        .unwrap_or_default(),
-                )
-                .collect(),
-        };
-        let played_walk = walk_line(before, mover_color, &played_pv, horizon);
-        let best_walk = walk_line(before, mover_color, &best_line.pv, horizon);
-        let material_lost = played_walk.lost();
-        let best_gain = best_walk.net();
-
-        let mut facts = MoveFacts {
-            played: played_value,
-            best: best_value,
-            played_is_draw,
-            best_is_draw,
-            played_is_best_move: played_is_best,
-            rating,
-            is_book,
-            is_forced,
-            scored: true,
-            has_siblings: lines.len() > 1,
-            events: MoveEvents::default(),
-            material: MaterialFacts {
-                loses_material_or_mated: material_lost >= cfg.blunder_material_threshold_cp
-                    || played_value.mate_moves().is_some_and(|n| n < 0),
-                // A margin keeps PV noise in lost positions (where every line sheds
-                // material) from flipping this fact.
-                loses_more_material_than_best: played_walk.end
-                    <= best_walk.end - cfg.forgiving_material_lost_cp,
-                // In forced-mate lines material is meaningless; the mate rules decide.
-                material_lost_cp: (!played_value.is_mate()).then_some(material_lost),
-                drops_material: !played_is_best
-                    && material_lost >= 100
-                    && material_lost > best_gain.max(0),
-            },
-            opponent_previous_ep_lost,
-            missed: MissedChances::default(),
-        };
-        let grade = classification::precision(&facts, cfg);
-        let good_grade = matches!(grade, Some(Precision::Best | Precision::Excellent));
-        let phase_after = phases[i + 1];
-        let endgame_gain_ok = |walk: &LineMaterial, min: i32| {
-            phase_after != Phase::Endgame || walk.max - walk.start >= min
-        };
         let previous_move = i.checked_sub(1).map(|p| game.moves[p].mv);
-        let recapture = is_recapture(previous_move, m);
-        let oc = |v: Value| expected_outcome(v, rating, cfg);
-        let mover_completely_winning_before =
-            oc(mover_value_before) == ExpectedOutcome::CompletelyWinning;
-
-        // Brilliant (Chess.com: "a good piece sacrifice"): the engine's best move
-        // gives up material (static exchange), the mover is not in a bad position
-        // after it and would not be completely winning without it, and the
-        // recovered gates hold.
+        let phase_after = phases[i + 1];
+        let judged = facts::judge_move(
+            &facts::MoveInput {
+                before,
+                after,
+                mv: m,
+                uci: &parsed.uci,
+                previous: previous_move,
+                lines,
+                eval_before: infos[i].eval,
+                before_is_draw: infos[i].is_draw,
+                eval_after: infos[i + 1].eval,
+                after_line: infos[i + 1]
+                    .analysis
+                    .as_ref()
+                    .and_then(PositionAnalysis::best),
+                after_is_draw: infos[i + 1].is_draw,
+                is_book: book[i],
+                phase_after,
+                has_previous_move: i > 0,
+                shallow_best: infos[i].shallow_best.as_deref(),
+                opponent_previous_ep_lost,
+                rating,
+                highest_elo,
+            },
+            cfg,
+        );
+        let facts::MoveJudgement {
+            mover,
+            played_rank,
+            played_is_best,
+            best_eval,
+            best_value,
+            played_value,
+            mover_value_before,
+            opponent_value_before,
+            ep_before,
+            ep_played,
+            ep_best,
+            best_move,
+            played_pv,
+            played_walk,
+            material_lost,
+            best_gain,
+            sacrifice,
+            pawns,
+            good_grade,
+            recapture,
+            mover_completely_winning_before,
+            ref facts,
+            outcome,
+        } = judged;
+        let is_book = facts.is_book;
+        let is_forced = facts.is_forced;
         let bc = &cfg.brilliant;
-        let second_value = lines
-            .get(1)
-            .map(|l| Value::after_move(eval_after_first_move(l, mover), mover));
-        let second_drops_bucket = second_value.is_some_and(|v| oc(v) < oc(played_value));
-        let second_clearly_worse = bc.min_gap_to_second_best <= 0.0
-            || second_drops_bucket
-            || second_value.is_some_and(|v| {
-                ep_played - node_expected_points(v, false, rating) >= bc.min_gap_to_second_best
-            });
-        // A forced mate on the second line is not "winning anyway": Chess.com rates
-        // mating sacrifices Brilliant even when other moves mate too.
-        let winning_without_it = second_value.is_some_and(|v| {
-            !v.mate_moves().is_some_and(|n| n > 0)
-                && node_expected_points(v, false, rating) >= bc.max_alternative_ep
-        });
-        let played_mate = played_value.mate_moves();
-        let pawns =
-            bc.pawn_sacrifice_below_elo > 0 && (highest_elo as i32) < bc.pawn_sacrifice_below_elo;
-        let sacrifice = played_is_best
-            .then(|| static_sacrifice(before, m, bc, pawns))
-            .flatten();
-        let balance_after = board::balance(after.board(), mover_color);
-        facts.events.brilliant = bc.enabled
-            && played_is_best
-            && second_clearly_worse
-            && !winning_without_it
-            && !played_mate.is_some_and(|n| n < 0)
-            && !(bc.exclude_mating_moves && played_mate.is_some_and(|n| n >= 0))
-            && ep_played >= bc.min_ep_after
-            && sacrifice.is_some_and(|s| {
-                material_gate(balance_after, see::value(s.role)) || opponent_ep_before >= 0.10
-            })
-            && (endgame_gain_ok(&played_walk, bc.endgame_min_gain_cp) || second_drops_bucket);
-
-        // Great Find: the only good move in a position that is not already won.
-        let other_ep = if played_is_best {
-            lines.get(1).map(|l| {
-                let v = Value::after_move(eval_after_first_move(l, mover), mover);
-                node_expected_points(v, false, rating)
-            })
-        } else {
-            None
-        };
-        // Recovered exclusions: easy to find (only escape, free capture, promoting
-        // pawn, or a shallow search already finds it) and obvious quiet retreats.
-        let gf = &cfg.great_find;
-        let easy_to_find = is_only_escape(before, m)
-            || captures_free_piece(before, m, 100)
-            || threatens_promotion(before, m)
-            || infos[i].shallow_best.as_ref() == Some(&parsed.uci);
-        let obvious_retreat = is_quiet_retreat(before, m)
-            && played_walk.max - played_walk.start < gf.quiet_retreat_min_stake_cp;
-        facts.events.great_find = gf.enabled
-            && !facts.events.brilliant
-            && good_grade
-            && i > 0
-            && other_ep.is_some_and(|other| ep_played - other >= gf.min_gap_to_second_best)
-            && (!gf.require_high_rated || highest_elo as i32 >= gf.high_rated_min)
-            && !takes_free_piece(&played_walk, 100)
-            && !easy_to_find
-            && !obvious_retreat
-            && !recapture
-            && !mover_completely_winning_before
-            && endgame_gain_ok(&played_walk, cfg.brilliant.endgame_min_gain_cp);
-
-        // What the best line would have achieved (used only for Mistake/Blunder).
-        facts.missed = MissedChances {
-            free_piece: takes_free_piece(&best_walk, cfg.miss.free_piece_min_value_cp),
-            tactic: best_gain >= cfg.miss.tactic_min_gain_cp,
-            win: oc(best_value) >= ExpectedOutcome::Winning
-                && oc(played_value) <= ExpectedOutcome::Equal,
-            comeback: oc(mover_value_before) <= ExpectedOutcome::Worse
-                && oc(best_value) >= ExpectedOutcome::Equal
-                && oc(played_value) <= ExpectedOutcome::Worse,
-            brilliant: best_move
-                .is_some_and(|bm| static_sacrifice(before, bm, bc, pawns).is_some())
-                && ep_best >= cfg.miss.brilliant_min_best_ep,
-            opportunity: opponent_previous_ep_lost
-                .is_some_and(|l| l >= cfg.miss.opportunity_min_opponent_ep_lost),
-        };
-
-        let outcome = classification::classify(&facts, cfg);
+        let oc = |v: Value| expected_outcome(v, rating, cfg);
         opponent_previous_ep_lost = Some(outcome.ep_lost);
 
         let accuracy = caps.score(&Caps2Move {

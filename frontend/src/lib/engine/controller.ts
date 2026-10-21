@@ -12,11 +12,15 @@ export const ENGINE_URL = "/engine/stockfish-19-lite-single.js";
 
 /** Moves shown per engine line, as the server caps them. */
 const LINE_PLIES = 12;
+/** Moves kept of each line for judging a move (the material walk reads at most 12). */
+const PV_PLIES = 40;
 const CACHE_SIZE = 500;
 
 /** An engine line whose moves can be played onto the board. */
 export interface LiveLine extends Line {
   moves: PlayedMove[];
+  /** The engine's line in UCI, longer than `moves` (sent when a move is judged). */
+  pv: string[];
 }
 
 export interface Analysis {
@@ -259,6 +263,7 @@ export class EngineController {
       eval: whiteEval(info.score, toMove),
       depth: info.depth,
       moves: lineMoves(job.fen, info.pv, LINE_PLIES, this.chess960),
+      pv: info.pv.slice(0, PV_PLIES),
     }));
     return { fen: job.fen, depth: this.complete[0]!.depth, lines, nps: this.complete[0]!.nps, done };
   }

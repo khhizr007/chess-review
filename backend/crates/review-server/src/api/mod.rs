@@ -9,7 +9,7 @@ use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use review_core::{ReviewConfig, Side};
+use review_core::{Eval, ReviewConfig, Side};
 use serde::{Deserialize, Serialize};
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Color, Position};
@@ -19,8 +19,9 @@ use uuid::Uuid;
 
 use crate::analysis::ReviewRequest;
 use crate::analysis::model::{Line, MoveRef, PlyReview, ReviewResult, Strength};
+use crate::analysis::sideline::{JudgeError, SidelineJudgement, SidelineMove, judge_sideline};
 use crate::board;
-use crate::engine::{AnalysisRequest, EngineError, Evaluator, SearchLimit};
+use crate::engine::{AnalysisRequest, EngineError, EngineLine, Evaluator, SearchLimit};
 use crate::jobs::{JobStore, ReviewStatus};
 use crate::openings::OpeningBook;
 use crate::pgn::{ParsedGame, PgnError, parse_pgn};
@@ -49,6 +50,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/reviews/{id}/result", get(review_result))
         .route("/api/reviews/{id}/plies/{ply}", get(review_ply))
+        .route("/api/reviews/{id}/judge", post(judge_sideline_move))
         .route("/api/positions/analyze", post(analyze_position))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
@@ -391,6 +393,84 @@ async fn review_ply(
         .cloned()
         .map(Json)
         .ok_or_else(|| ApiError::not_found("ply"))
+}
+
+// ---------------------------------------------------------------- sideline moves
+
+/// An engine line as the browser engine reports it (docs/explore-mode.md §5.5).
+#[derive(Deserialize, TS)]
+#[ts(export)]
+pub struct JudgeLine {
+    /// Evaluation of the position if the line is played (White's view).
+    pub eval: Eval,
+    pub depth: u32,
+    /// Moves in UCI notation, starting with the candidate move.
+    pub pv: Vec<String>,
+}
+
+#[derive(Deserialize, TS)]
+#[ts(export)]
+pub struct JudgeMoveRequest {
+    /// Game ply the sideline branches from.
+    pub from_ply: u32,
+    /// The sideline's moves (UCI) up to and including the move judged.
+    pub moves: Vec<String>,
+    /// Engine lines of the position before the judged move, best first.
+    pub before: Vec<JudgeLine>,
+    /// Best line of the position after it, unless the move is one of `before`'s lines.
+    #[ts(optional)]
+    pub after: Option<JudgeLine>,
+    /// Expected points lost by the previous sideline move (its judgement's `ep_lost`).
+    #[ts(optional)]
+    pub previous_ep_lost: Option<f64>,
+}
+
+fn engine_line(rank: usize, line: JudgeLine) -> EngineLine {
+    EngineLine {
+        rank: u8::try_from(rank).unwrap_or(u8::MAX),
+        eval: line.eval,
+        depth: line.depth,
+        pv: line.pv,
+    }
+}
+
+/// Classifies a move the reader played in a sideline of a finished review, with the review's
+/// rules and the browser engine's lines. No engine search is made.
+async fn judge_sideline_move(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Result<Json<JudgeMoveRequest>, JsonRejection>,
+) -> Result<Json<SidelineJudgement>, ApiError> {
+    let Json(req) = body?;
+    let review = completed(&state, &id)?;
+    let before = req
+        .before
+        .into_iter()
+        .enumerate()
+        .map(|(i, l)| engine_line(i + 1, l))
+        .collect();
+    let after = req.after.map(|l| engine_line(1, l));
+    let request = SidelineMove {
+        from_ply: req.from_ply,
+        moves: &req.moves,
+        before,
+        after,
+        previous_ep_lost: req.previous_ep_lost,
+    };
+    judge_sideline(&review, &state.openings, &request)
+        .map(Json)
+        .map_err(|e| match e {
+            JudgeError::Replay => ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "replay_failed",
+                e.to_string(),
+            ),
+            JudgeError::BadPly(_) => ApiError::bad_request("invalid_ply", e.to_string()),
+            JudgeError::BadLength => ApiError::bad_request("invalid_moves", e.to_string()),
+            JudgeError::IllegalMove(_) => ApiError::bad_request("illegal_move", e.to_string()),
+            JudgeError::BadLines => ApiError::bad_request("invalid_lines", e.to_string()),
+            JudgeError::MissingAfter => ApiError::bad_request("missing_after", e.to_string()),
+        })
 }
 
 // ---------------------------------------------------------------- positions

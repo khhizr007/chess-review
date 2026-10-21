@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef } from "react";
+import type { Classification } from "../api/generated/Classification";
 import type { PlyReview } from "../api/generated/PlyReview";
 import { sidelineLabels, type Sideline } from "../lib/explore";
 import { CLASSIFICATIONS } from "../lib/format";
@@ -13,6 +14,8 @@ export interface ListSideline {
   branchFen: string;
   /** Selects sideline move k (1-based), as the sideline's cursor. */
   onSelect: (cursor: number) => void;
+  /** Classification of each sideline move judged so far (docs/explore-mode.md §5.5). */
+  classes?: (Classification | null)[];
 }
 
 interface Props {
@@ -86,6 +89,8 @@ function SidelineRow({ sideline }: { sideline: ListSideline }) {
           {line.moves.map((m, i) => {
             const active = line.cursor === i + 1;
             const label = labels[i]!;
+            const cls = sideline.classes?.[i] ?? null;
+            const meta = cls ? CLASSIFICATIONS[cls] : null;
             return (
               <Fragment key={i}>
                 {label.number && <span className="sideline__number">{label.number}</span>}
@@ -95,7 +100,14 @@ function SidelineRow({ sideline }: { sideline: ListSideline }) {
                   aria-current={active ? "step" : undefined}
                   data-sideline={i + 1}
                   onClick={() => onSelect(i + 1)}
+                  title={meta?.label}
+                  style={meta ? { color: meta.color } : undefined}
                 >
+                  {cls && (
+                    <span className="move__icon">
+                      <ClassificationIcon value={cls} size={16} />
+                    </span>
+                  )}
                   <San san={m.san} side={label.mover} />
                 </button>
               </Fragment>

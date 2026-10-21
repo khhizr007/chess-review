@@ -96,3 +96,27 @@ describe("MoveList sideline", () => {
     expect(screen.getByText("S1").closest("button")?.getAttribute("aria-current")).toBe("step");
   });
 });
+
+describe("MoveList sideline classifications", () => {
+  it("marks each judged sideline move with its icon", () => {
+    const NONE = { check: false, checkmate: false, stalemate: false, capture: false, castle: false, promotion: false, en_passant: false };
+    const mv = (san: string) => ({ san, uci: san, fen: "", from: "a1", to: "a2", flags: NONE });
+    render(
+      <MoveList
+        plies={[ply(1, "white", 1), ply(2, "black", 1)]}
+        current={1}
+        filter="all"
+        onSelect={() => {}}
+        sideline={{
+          line: { fromPly: 1, moves: [mv("c5"), mv("d4")], cursor: 1 },
+          branchFen: "x b KQkq - 0 1",
+          onSelect: () => {},
+          classes: ["mistake", null],
+        }}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Mistake" })).toBeTruthy();
+    expect(document.querySelector(`[data-sideline="1"]`)?.getAttribute("title")).toBe("Mistake");
+    expect(document.querySelector(`[data-sideline="2"]`)?.getAttribute("title")).toBeNull();
+  });
+});

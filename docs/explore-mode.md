@@ -9,7 +9,8 @@ October 2026. This document analyses and plans a feature. Sources:
 - Phase 0 (the spike) is done. Its measurements are in §10, and the decisions it settled are folded into §5–§9.
 - Phase 1, the sideline board, is built (§5.2).
 - Phase 2, the live browser engine, is built (§5.3–5.6).
-- Phase 3 (classifying explored moves) is next.
+- Phase 3, classifying explored moves, is built (§5.5).
+- Phase 4 holds the optional items (§7).
 
 ## 1. Summary
 
@@ -254,12 +255,31 @@ the wiring in `ReviewScreen.tsx`.
 
 ### 5.5 Move feedback: classify an explored move (Phase 3)
 
-New endpoint `POST /api/positions/judge`:
-- **Request:** `{ fen_before, move_uci, before: Line[], after: Line[], rating? }`.
-- **What it does.** It builds `MoveFacts` with the same builder the review uses (book from `openings.rs`,
-  material, SEE, events) and runs `review_core::classify`.
-- **What it returns.** `classification`, `rule` and `ep_lost`, enough for the icon and a one-line
-  verdict through the existing `explain.rs`/`lib/coach.ts` wording.
+**Built in Phase 3.**
+- **The endpoint.** `POST /api/reviews/{id}/judge` (`docs/api.md`, `analysis/sideline.rs`).
+- **The request.**
+  - `from_ply` and the sideline's UCI `moves` up to the judged move.
+  - The browser engine's `before` lines and `after` best line, with full PVs (up to 40 plies; the
+    display lines are cut at 12).
+  - `previous_ep_lost`.
+- **What it does.** It replays the review's game and the sideline, then builds `MoveFacts` with the
+  same builder the review uses (`analysis/facts.rs`, extracted from `build_review`) and runs
+  `review_core::classify`.
+- **What it returns.** The classification, rule, `ep_lost`, the best move and whether to show it,
+  and the explanation sentences (`SidelineJudgement`).
+- **In the frontend (`hooks/useSidelineJudge.ts`).**
+  - **Where it shows.** The judged move gets its icon and colours on the board, an icon in the
+    sideline row, and a verdict in the coach bubble, for example "Bg5 is a blunder. dxe5 was best."
+  - **Provisional verdicts.** These are marked "refining…".
+  - **Failures.** A failed request (for example, a review the server no longer holds) leaves the
+    move unmarked.
+- **What the live engine searches (`useLiveEngine`).** It now also searches the position the shown
+  move was played from, in this order:
+  1. the shown position and the one before it, both to depth 14;
+  2. the shown position to the cap;
+  3. the position before it to the cap.
+
+  The before-position is often already in the cache, because the reader was just there.
 
 Rules for consistency:
 - **Both evals must come from the same engine.** `before` comes from the browser engine searching the branch
@@ -268,7 +288,8 @@ Rules for consistency:
   the user thinks, so this costs nothing extra.
 - **The same depth.** `played_is_best_move` and `best` come from `before` line 1, judged at the same depth as `after`.
 - **When it is sent.**
-  - **A provisional icon.** It is judged once both searches reach depth 14, which takes a median of 0.43 s here (§10.1). Until then the icon shows a spinner.
+  - **A provisional icon.** It is judged once both searches reach depth 14, which takes a median of
+    0.43 s each here (§10.1). Until then the bubble says "Judging the move…".
   - **The final icon.** It is judged again when both reach the depth cap. Each judge call costs milliseconds, so judging twice is free.
 - **Server cost: no engine search (confirmed in Phase 0, §10.5).** With the default config,
   classification needs only these engine inputs:
@@ -285,9 +306,15 @@ Rules for consistency:
   - the previous move's expected points lost: the game's for the first sideline move, else the previous `judge` result.
 
   A review evicted from memory (`MAX_STORED_REVIEWS`) returns 404, and the frontend hides the icon.
-- **Refactor first.** The per-move facts are built inline in the `build_review` loop
-  (`analysis/mod.rs:528-717`). Phase 3 extracts that into one function that both the review and
-  `judge` call, so the two cannot drift. The existing review tests guard the refactor.
+- **Refactor first (done).** The per-move facts were built inline in the `build_review` loop.
+  `facts::judge_move` now holds them, and the review and `judge` both call it, so the two cannot drift.
+  - **The refactor changes no output.** Full reviews of 10 calibration games (Stockfish 18,
+    depth 10, 2.67 MB of JSON) are byte-identical before and after it.
+  - **Test.** `tests/sideline.rs` asks every move of 9 fixture games as a one-move sideline, with
+    the engine's own lines. It checks that each gets the review's classification, rule, `ep_lost`,
+    best move and explanation.
+  - **Lines must be full.** Lines cut to the 10 display plies changed one explanation sentence
+    (material lost) in that test.
 - **Trust.** The server trusts evals the client sends. That is acceptable for this app: it has no
   accounts, rankings or stored results that a fake eval could affect.
 
@@ -355,7 +382,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 | **0. Spike (done 2026-10-21)** | Load a candidate Stockfish WASM build in a worker inside our app (throwaway branch). Measure time to depth 12/16/18 and memory on this PC, and on a throttled profile. Check react-chessboard v5's promotion support. List which `MoveFacts` inputs need a server search. | Done; see §10. Build `stockfish@19.0.1` lite-single; cap 18, adaptive to 16; `judge` needs no search; we build the promotion picker. No phone was measured. | S |
 | **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
 | **2. Live engine (done 2026-10-21)** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Done. Vitest: `uci.test.ts` and `controller.test.ts`, a scripted fake worker covering the handshake, complete depths, superseding, cache, stop, throttle, new game and load failure. In the browser: engine ready in 151 ms and depth 14 in 0.8 s; lines, pill, bar and arrow update live; "Go deeper" goes 18 → 20; clicking a line move plays it; a revisited position answers from the cache; a hidden page pauses the search. No phone was measured. | M |
-| **3. Move feedback** | `POST /api/positions/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Rust test with `FakeEngine`: the same position judged through `judge` and through a review gives the same class when given the same evals. A frontend test for the spinner→icon flow. | M |
+| **3. Move feedback (done 2026-10-21)** | `POST /api/reviews/{id}/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Done. The facts-builder refactor was confirmed byte-identical on 10 games. `tests/sideline.rs` covers every fixture move judged as the review judged it, a later sideline move and bad requests. `tests/api.rs` tests the route. `useSidelineJudge.test.ts` covers provisional then final, the previous move's loss, and a move that ends the game. In the browser: 1.d4 and 1...e5 were Book, and 2.Bg5 was "a blunder. dxe5 was best". Each judge request took 7–11 ms with no engine search. | M |
 | **4. Later, each optional** | Coach sentences for explored moves; server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
 
 Phases 1 and 2 are the feature as most users will see it. Phase 3 is what makes it feel like
@@ -389,7 +416,7 @@ Chess.com's explore mode.
 1. ~~Approve the §5.1 principle change.~~ Approved 2026-10-21.
 2. ~~Approve the hybrid design.~~ Approved 2026-10-21.
 3. ~~Default depth cap.~~ Settled in Phase 0: 18, dropping to 16 on slow devices (§5.6).
-4. Open: whether Phase 3 (classification of explored moves) is in the first release or follows it.
+4. ~~Whether Phase 3 is in the first release.~~ Phase 3 is built (2026-10-21).
 
 ## 10. Phase 0 results (2026-10-21)
 
