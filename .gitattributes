@@ -1,2 +1,5 @@
 # Shell scripts run in WSL and Linux: keep LF endings in every checkout.
 *.sh text eol=lf
+
+# The browser engine is a verbatim upstream build (stockfish@19.0.1, THIRD_PARTY.md): keep it byte-identical.
+frontend/public/engine/* -text

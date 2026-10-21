@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Arrow } from "react-chessboard";
 import type { ArrowKind } from "../api/generated/ArrowKind";
+import type { Eval } from "../api/generated/Eval";
 import type { MoveRef } from "../api/generated/MoveRef";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
-import { canMoveFrom, ending, needsPromotion, playMove, type Ending, type PromotionPiece } from "../lib/chess";
+import { useLiveEngine } from "../hooks/useLiveEngine";
+import { canMoveFrom, ending, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
-import { play, stepSideline, type Sideline } from "../lib/explore";
+import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
 import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format";
 import { materialFromFen } from "../lib/material";
-import { hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
+import { expectedPointsFor, hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
 import { FILTERS, fenAt, nextPlyAt, plyAt, stepFiltered, type MoveFilter } from "../lib/review";
 import { moveSound, navigationSounds, playSounds, retrySound, sanFlags, sidelineSounds } from "../lib/sound";
 import { BoardView, type BoardBadge, type BoardMoves, type BoardPromotion } from "./BoardView";
@@ -19,6 +21,7 @@ import {
   CoachActions,
   CoachBubble,
   EvalPill,
+  LiveLines,
   MoveDetails,
   MoveVerdict,
   ShowLineMoves,
@@ -153,6 +156,13 @@ export function ReviewScreen({ review, onNewGame }: Props) {
   const next = nextPlyAt(review, ply);
   // The sideline move shown, when the board is inside the sideline rather than at its branch.
   const shownMove = sideline && sideline.cursor > 0 ? sideline.moves[sideline.cursor - 1] : undefined;
+  const shownEnd = shownMove ? ending(shownMove.fen) : null;
+  // A finished game needs no engine; a claimable fifty-move draw is still played on.
+  const shownOver = !!shownEnd && shownEnd !== "fifty_moves";
+  // The browser engine searches sideline positions only (docs/explore-mode.md §5.4).
+  const live = useLiveEngine(shownMove && !shownOver ? shownMove.fen : null, review, review.game.chess960);
+  const liveLines = live.analysis?.lines ?? [];
+  const liveBest = liveLines[0]?.moves[0];
 
   const showLine = preview?.source === "coach" ? current?.coach?.show_lines[preview.line] : undefined;
   const previewLine: MoveRef[] | undefined = useMemo(() => {
@@ -359,22 +369,31 @@ export function ReviewScreen({ review, onNewGame }: Props) {
     : (shownMove?.fen ?? previewMove?.fen ?? (showLine && previewing ? showLine.start_fen : fenAt(review, ply)));
   const toMove: Side = displayFen.split(" ")[1] === "b" ? "black" : "white";
 
-  /** Plays a move from the shown position: the game's own move follows the game, any other one explores. */
-  const exploreMove = (from: string, to: string, piece?: PromotionPiece): boolean => {
-    const move = playMove(displayFen, from, to, piece, review.game.chess960);
-    if (!move) return false;
+  /**
+   * Plays moves from the shown position, one after another: the game's own move follows the game,
+   * any other one explores. The last move played sounds.
+   */
+  const playMoves = (moves: PlayedMove[]) => {
+    const last = moves.at(-1);
+    if (!last) return;
     setPlaying(false);
     setMode("review");
-    const after = play({ ply, sideline }, review.plies, move);
+    const after = moves.reduce<BoardState>((s, m) => play(s, review.plies, m), { ply, sideline });
     if (!after.sideline) {
       go(after.ply);
-      return true;
+      return;
     }
     setPinned(null);
     setHovered(null);
     setSideline(after.sideline);
-    if (soundOn) playSounds([moveSound(move.flags)]);
-    return true;
+    if (soundOn) playSounds([moveSound(last.flags)]);
+  };
+
+  /** Plays a dragged move from the shown position; false leaves the piece where it was. */
+  const exploreMove = (from: string, to: string, piece?: PromotionPiece): boolean => {
+    const move = playMove(displayFen, from, to, piece, review.game.chess960);
+    if (move) playMoves([move]);
+    return !!move;
   };
 
   const onExploreDrop = (from: string, to: string): boolean => {
@@ -412,6 +431,8 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       styles[shownMove.to] = tint(PREVIEW_TINT, 65);
       const king = shownMove.flags.check ? kingSquareToMove(shownMove.fen) : null;
       if (king) styles[king] = { ...styles[king], ...CHECK_GLOW };
+      // The engine arrow shows the live engine's top move.
+      if (showSuggestion && liveBest) arrows.push({ startSquare: liveBest.from, endSquare: liveBest.to, color: SUGGEST_ARROW });
       return { arrows, squareStyles: styles, badge };
     }
 
@@ -466,7 +487,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       }
     }
     return { arrows, squareStyles: styles, badge };
-  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
+  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
 
   // Retry takes the mover's pieces; otherwise any legal move explores, except while a line plays.
   const boardMoves: BoardMoves | null = activeRetry
@@ -486,6 +507,17 @@ export function ReviewScreen({ review, onNewGame }: Props) {
         },
       }
     : null;
+
+  /** The bar in a sideline: the game's result when it is over, else the live engine's top line. */
+  const sidelineBar: { eval: Eval; ep: number } | null = !shownMove
+    ? null
+    : shownOver
+      ? shownEnd === "checkmate"
+        ? { eval: { kind: "mate", winner: toMove === "white" ? "black" : "white", moves: 0 }, ep: toMove === "white" ? 0 : 1 }
+        : { eval: { kind: "cp", cp: 0 }, ep: 0.5 }
+      : liveLines[0]
+        ? { eval: liveLines[0].eval, ep: expectedPointsFor(liveLines[0].eval, "white", review.rating_used) }
+        : null;
 
   const material = materialFromFen(displayFen);
   const bottom: Side = flipped ? "black" : "white";
@@ -603,8 +635,6 @@ export function ReviewScreen({ review, onNewGame }: Props) {
       const first = sideline.moves[0]!;
       const replaced = review.plies[sideline.fromPly];
       const branchMover: Side = fenAt(review, sideline.fromPly).split(" ")[1] === "b" ? "black" : "white";
-      const end = ending(shownMove.fen);
-      const over = !!end && end !== "fifty_moves";
       return (
         <>
           <CoachBubble>
@@ -619,14 +649,18 @@ export function ReviewScreen({ review, onNewGame }: Props) {
                   "Exploring after the game"
                 )}
               </h2>
+              {sidelineBar && <EvalPill value={sidelineBar.eval} />}
             </div>
             <div className="coach__body">
-              {end && <p className="coach__end">{end === "checkmate" ? `Checkmate. ${toMove === "white" ? "Black" : "White"} wins.` : ENDINGS[end]}</p>}
+              {shownEnd && (
+                <p className="coach__end">
+                  {shownEnd === "checkmate" ? `Checkmate. ${toMove === "white" ? "Black" : "White"} wins.` : ENDINGS[shownEnd]}
+                </p>
+              )}
               <p>
-                {over ? "" : "Drag a piece to keep exploring. "}
+                {shownOver ? "" : "Drag a piece to keep exploring. "}
                 Step through your moves with ← →, or press Esc to go back to the game.
               </p>
-              <p className="coach__note">The engine does not evaluate sideline positions yet.</p>
             </div>
           </CoachBubble>
           <CoachActions actions={[{ label: "Back to game", icon: Icons.back, onClick: () => go(sideline.fromPly), primary: true, hint: "Back to the game (Esc)" }]} />
@@ -791,7 +825,7 @@ export function ReviewScreen({ review, onNewGame }: Props) {
         {strip(top)}
         <div className="board-row">
           {shownMove ? (
-            <EvalBar whiteExpectedPoints={null} evaluation={null} flipped={flipped} />
+            <EvalBar whiteExpectedPoints={sidelineBar?.ep ?? null} evaluation={sidelineBar?.eval ?? null} flipped={flipped} />
           ) : (
             point && <EvalBar whiteExpectedPoints={point.white_expected_points} evaluation={point.eval} flipped={flipped} />
           )}
@@ -859,6 +893,15 @@ export function ReviewScreen({ review, onNewGame }: Props) {
               {explain && current && msg && !activeRetry && !shownMove && (
                 <div className="review-pane__details">
                   <MoveDetails ply={current} facts={msg.facts} preview={preview} onPreview={setPreview} />
+                </div>
+              )}
+              {shownMove && !shownOver && (
+                <div className="review-pane__details">
+                  <LiveLines
+                    fen={shownMove.fen}
+                    engine={live}
+                    onPlay={(line, move) => playMoves(liveLines[line]?.moves.slice(0, move + 1) ?? [])}
+                  />
                 </div>
               )}
               <MoveList

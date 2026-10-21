@@ -7,7 +7,9 @@ October 2026. This document analyses and plans a feature. Sources:
 **Status:**
 - The hybrid design and the §5.1 principle change were approved on 2026-10-21.
 - Phase 0 (the spike) is done. Its measurements are in §10, and the decisions it settled are folded into §5–§9.
-- Phase 1 (the sideline board, no engine) is built (§5.2).
+- Phase 1, the sideline board, is built (§5.2).
+- Phase 2, the live browser engine, is built (§5.3–5.6).
+- Phase 3 (classifying explored moves) is next.
 
 ## 1. Summary
 
@@ -173,11 +175,12 @@ the wiring in `ReviewScreen.tsx`.
 - **What the panel shows.**
   - **The coach panel** says what is being explored, for example "Exploring d4 instead of e4", and names
     checkmate, stalemate, dead material and the fifty-move rule.
-  - **The eval bar** shows "–" in sideline positions until Phase 2.
+  - **The eval bar** is fed by the live engine (§5.4).
   - **Last move.** The sideline's last move is highlighted, and a check is marked as on game moves.
 - **Sounds.** Move, capture, check and castle sounds follow `docs/sound.md` ("Sidelines"), using
   chessops' move flags.
-- **Engine lines.** These become playable. Clicking a line chip in explore mode appends those moves to the sideline.
+- **Engine lines are playable (Phase 2).** Clicking a move in a live line plays the line up to that
+  move into the sideline, through the same path as dragged moves.
 
 ### 5.3 Browser engine
 
@@ -186,12 +189,20 @@ the wiring in `ReviewScreen.tsx`.
   - **Size.** It is two files: a 28 KB `.js` and a 1.85 MB `.wasm` (1.20 MB gzip, 1.09 MB brotli).
   - **Same net as Chess.com.** It uses the net Chess.com's default "Stockfish 19 Lite" uses: `nn-61e7af4bb97d` by sscg13.
   - **The alternative.** The lichess `stockfish-web` builds were not needed.
-- **Hosting.** Copy the two files into `frontend/public/engine/`. Vite serves them in development, and the backend's
-  `STATIC_DIR` serves them in production.
-  - **A missing file looks like a page.** `ServeDir` has an `index.html` fallback (`lib.rs:29-30`). A
-    missing `/engine/*.wasm` would therefore come back as HTML and fail with a confusing compile error.
-    The controller must check the response type, or the router must return 404 under `/engine/`.
-  - **Compression.** `ServeDir::precompressed_br()` can serve a shipped `.wasm.br` (1.09 MB instead of 1.85 MB).
+**Built in Phase 2:** `lib/engine/uci.ts`, `lib/engine/controller.ts` and `hooks/useLiveEngine.ts`.
+
+- **Hosting.** The two files are committed in `frontend/public/engine/`, marked `-text` in
+  `.gitattributes` so they stay byte-identical.
+  - **Who serves them.** Vite serves them in development, and the production build copies them to
+    `dist/engine/`, which the backend's `STATIC_DIR` serves.
+  - **A missing file looks like a page.** `ServeDir` has an `index.html` fallback (`lib.rs:29-30`), so
+    a missing engine file comes back as HTML and the worker fails to load.
+    - **What the reader sees.** The controller reports the worker's error once ("Engine unavailable"),
+      and the panel says so.
+    - **No retry.** It does not try to load the worker again.
+    - **The backend is unchanged.**
+  - **Compression is not done yet.** `ServeDir::precompressed_br()` could serve a shipped `.wasm.br`
+    (1.09 MB instead of 1.85 MB).
   - **No CDN is needed.**
 - **Single-threaded Lite, and stay there.**
   - **No setup.** It needs no COOP/COEP headers and works in every modern browser.
@@ -200,27 +211,46 @@ the wiring in `ReviewScreen.tsx`.
     and make the slow positions slower (§10.3), so multithreading is dropped from the plan.
 - **`EngineController`** (`frontend/src/lib/engine/`) owns one Worker, which is created lazily on the first
   explore move, so users who never explore download nothing.
-  - **API:** `analyze(fen, { multipv, maxDepth }) → subscription of updates`, plus `stop()`.
-  - **A new position supersedes the current one.** The controller sends `stop`, waits for `bestmove`, then sends `position fen … / go depth N`.
-    A generation counter discards stale `info` lines.
+  - **API.**
+    - `analyze(fen, depth, onUpdate)` reports each completed depth and then the final result.
+    - `stop()` stops searching.
+    - `setGame(chess960)` sends `ucinewgame` and `UCI_Chess960` before the next search, and clears the cache.
+    - `dispose()` ends the worker.
+    - The worker sits behind a small interface, so the tests drive a scripted fake.
+  - **A new position supersedes the current one.**
+    - The controller sends `stop` once, waits for `bestmove`, then sends `position fen … / go depth N`.
+    - Output from a superseded or stopped search is never reported, though its result is cached.
   - **The hash is kept across positions.** The controller sends `ucinewgame` only when a new game opens.
     Neighbouring positions in a sideline share most of the tree, so a warm hash makes each new move
     much faster. This is the opposite of the server's deterministic cold searches, and it is fine for live use.
-- **UCI parsing.** It skips `lowerbound`/`upperbound` scores, as `uci.rs:266` does. It converts mover-relative
-  `cp`/`mate` to White's view. It turns PV UCI moves into `MoveRef {san, uci, fen}` with chessops.
-  It emits the existing `Line` shape, so `LineView`, the bar and arrows reuse their code unchanged.
-- **Throttling.** It emits at most one UI update per completed depth, and no more than about 10 per second.
+- **UCI parsing.** The parser:
+  - skips `lowerbound`/`upperbound` scores, as `uci.rs:266` does;
+  - converts mover-relative `cp`/`mate` to White's view;
+  - plays PV moves with chessops into SAN and FENs, at most 12 plies, as the server caps them.
+
+  It emits the existing `Line` shape, so `LineView`, the bar and arrows reuse their code.
+- **When a depth counts as complete.** It is complete once every line of that depth has arrived. The
+  number of lines expected is MultiPV, capped at the number of legal moves.
+- **Throttling.** Each update is one completed depth, at most one every 100 ms. A revisited position
+  never reports a depth shallower than its cached one.
 
 ### 5.4 Eval bar, lines, arrow
 
 - **On a game ply.** Nothing changes: the bar, lines and arrow come from the review. No engine runs.
-- **In a sideline.**
-  - **Bar.** It is fed from the live line 1 through `cpToExpectedPoints`.
-  - **Lines.** The panel shows N live lines (default 3, as in the review).
-  - **Readout.** "depth d · Stockfish Lite" shows where the numbers come from.
+- **In a sideline (built in Phase 2).**
+  - **Bar and pill.** The bar is fed from live line 1 through `expectedPointsFor` at the review's rating.
+    The coach bubble shows the same eval as a pill.
+  - **Lines.** An "Engine" section under the coach bubble shows the 3 live lines.
+  - **Readout.** The section header shows where the numbers come from:
+    - "depth 16/18 · Stockfish 19 Lite, in your browser" while it searches, with a spinner;
+    - "depth 18" once done.
+  - **Go deeper.** The button appears once the search is done.
   - **Arrow.** The engine-arrow toggle uses live line 1.
-- **Terminal positions.** chessops detects checkmate, stalemate, insufficient material and the 50-move rule. The bar
-  shows the result and the engine does not run.
+- **Terminal positions.** chessops detects checkmate, stalemate and insufficient material, and the engine does not
+  run for them.
+  - **Checkmate.** The bar shows the result: full for the winner.
+  - **Draws.** The bar shows half.
+  - **The fifty-move rule.** It is claimable rather than automatic, so the engine still searches.
 
 ### 5.5 Move feedback: classify an explored move (Phase 3)
 
@@ -276,8 +306,10 @@ threat searches and line facts, which `judge` could later produce from the same 
     3.0 s for depth 18 (§10.1).
   - **Going deeper.** A "go deeper" button continues to 20, then 22. There is never an unlimited search by default:
     one sample position needed 73 s to reach depth 20.
-  - **Lines.** Settings offer 1, 3 or 5 lines; the default is 3. One line reaches depth 18 about twice as fast
-    (§10.2), but `judge` needs at least two.
+  - **Lines.** The engine shows 3 lines. One line reaches depth 18 about twice as fast (§10.2), but
+    `judge` needs at least two. A 1/3/5 setting is not built.
+  - **Built in Phase 2 (`useLiveEngine`).** The speed is judged once per page load, when a search first
+    reaches depth 14.
 - **Rapid stepping.** The controller waits about 120 ms after the last navigation before starting a search.
 - **Results cache.** A per-session `Map<fen, result>` (about 500 entries) makes stepping back and forth free. A
   cached result at or above the cap is shown without searching.
@@ -322,7 +354,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 |---|---|---|---|
 | **0. Spike (done 2026-10-21)** | Load a candidate Stockfish WASM build in a worker inside our app (throwaway branch). Measure time to depth 12/16/18 and memory on this PC, and on a throttled profile. Check react-chessboard v5's promotion support. List which `MoveFacts` inputs need a server search. | Done; see §10. Build `stockfish@19.0.1` lite-single; cap 18, adaptive to 16; `judge` needs no search; we build the promotion picker. No phone was measured. | S |
 | **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
-| **2. Live engine** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Vitest with a fake worker: superseding, stale-info discard, mate/cp conversion, bound skipping. In the browser: an eval appears within 100 ms, nothing runs on mainline plies, nothing runs while the tab is hidden. | M |
+| **2. Live engine (done 2026-10-21)** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Done. Vitest: `uci.test.ts` and `controller.test.ts`, a scripted fake worker covering the handshake, complete depths, superseding, cache, stop, throttle, new game and load failure. In the browser: engine ready in 151 ms and depth 14 in 0.8 s; lines, pill, bar and arrow update live; "Go deeper" goes 18 → 20; clicking a line move plays it; a revisited position answers from the cache; a hidden page pauses the search. No phone was measured. | M |
 | **3. Move feedback** | `POST /api/positions/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Rust test with `FakeEngine`: the same position judged through `judge` and through a review gives the same class when given the same evals. A frontend test for the spinner→icon flow. | M |
 | **4. Later, each optional** | Coach sentences for explored moves; server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
 
@@ -342,7 +374,7 @@ Chess.com's explore mode.
   - **Visible deepening.** Depth 12 arrives in a median of 0.15 s here, and about 0.6 s at 4× slower.
   - **A provisional icon at depth 14** (§5.5).
 
-  No real phone was measured. Measuring one is the first check in Phase 2.
+  No real phone has been measured yet, in Phase 0 or in Phase 2.
 - **The Lite engine's numbers differ from the review's.**
   - **Balanced positions.** Lite and the server's Stockfish 18 agree within 14 cp (median, §10.4).
   - **Won positions.** Lite reports larger scores, for example +545 against +447. That is up to 0.07 in expected points: enough to change a

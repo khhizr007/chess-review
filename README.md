@@ -2,7 +2,8 @@
 
 A chess game-review application. Import a PGN, have every move searched with Stockfish and graded,
 then step through the game with move classifications, best moves, alternative lines, accuracy, an
-evaluation graph and a summary. You can also play your own moves on the board to explore sidelines.
+evaluation graph and a summary. You can also play your own moves on the board to explore sidelines,
+with a live Stockfish evaluation that runs in your browser.
 
 The grading rules reproduce the review logic recovered from a reference application. That logic is
 documented in [`docs/functional-spec.md`](docs/functional-spec.md):

@@ -1760,6 +1760,49 @@ select option {
   font-size: 0.78rem;
 }
 
+/* The browser engine's lines in a sideline. */
+.live-lines ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.live-lines__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.live-lines__meta {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.live-lines__spinner {
+  align-self: center;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--faint);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: live-spin 0.8s linear infinite;
+}
+
+@keyframes live-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.live-lines__deeper {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: inherit;
+}
+
 .line {
   display: grid;
   grid-template-columns: 60px 1fr;

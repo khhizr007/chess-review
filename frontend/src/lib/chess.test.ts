@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canMoveFrom, ending, needsPromotion, playMove } from "./chess";
+import { canMoveFrom, ending, legalMoveCount, lineMoves, needsPromotion, playMove } from "./chess";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const CASTLE = "r3k2r/pppqbppp/2np1n2/4p1B1/2B1P1b1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 6 8";
@@ -65,5 +65,26 @@ describe("ending", () => {
     expect(ending("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1")).toBe("stalemate");
     expect(ending("8/8/4k3/8/8/2K5/8/8 w - - 0 1")).toBe("insufficient_material");
     expect(ending("8/8/4k3/8/8/2K5/8/R7 w - - 100 80")).toBe("fifty_moves");
+  });
+});
+
+describe("legalMoveCount", () => {
+  it("counts moves as the engine does, a promotion as four", () => {
+    expect(legalMoveCount(START)).toBe(20);
+    expect(legalMoveCount("8/4P1k1/8/8/8/8/8/4K3 w - - 0 1")).toBe(4 + 5);
+    expect(legalMoveCount("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3")).toBe(0);
+  });
+});
+
+describe("lineMoves", () => {
+  it("plays an engine line into SAN and FENs, castling included", () => {
+    const line = lineMoves(CASTLE, ["e1g1", "e8c8", "g5f6"], 12);
+    expect(line.map((m) => m.san)).toEqual(["O-O", "O-O-O", "Bxf6"]);
+    expect(line[1]?.fen.split(" ")[0]).toBe("2kr3r/pppqbppp/2np1n2/4p1B1/2B1P1b1/2NP1N2/PPPQ1PPP/R4RK1");
+  });
+
+  it("stops at the limit and at an illegal move", () => {
+    expect(lineMoves(START, ["e2e4", "e7e5", "g1f3"], 2)).toHaveLength(2);
+    expect(lineMoves(START, ["e2e4", "e2e4", "g1f3"], 12)).toHaveLength(1);
   });
 });

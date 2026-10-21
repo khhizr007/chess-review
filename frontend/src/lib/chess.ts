@@ -95,6 +95,33 @@ export function playMove(fen: string, from: string, to: string, promotion?: Prom
   };
 }
 
+/** Number of legal moves in the position (0 for an invalid FEN). */
+export function legalMoveCount(fen: string): number {
+  const pos = position(fen);
+  if (!pos) return 0;
+  let n = 0;
+  for (const [from, dests] of pos.allDests()) {
+    // A pawn reaching the last rank is four moves, as the engine counts them.
+    const promotes = pos.board.getRole(from) === "pawn" && (pos.turn === "white" ? from >= 48 : from < 16);
+    n += dests.size() * (promotes ? 4 : 1);
+  }
+  return n;
+}
+
+/** Plays an engine line (UCI moves) from `fen`, up to `limit` moves; stops at the first illegal move. */
+export function lineMoves(fen: string, uci: string[], limit: number, chess960 = false): PlayedMove[] {
+  const out: PlayedMove[] = [];
+  let at = fen;
+  for (const u of uci.slice(0, limit)) {
+    const promo = u[4] as PromotionPiece | undefined;
+    const move = playMove(at, u.slice(0, 2), u.slice(2, 4), promo, chess960);
+    if (!move) break;
+    out.push(move);
+    at = move.fen;
+  }
+  return out;
+}
+
 /** How the position ends the game: mate, stalemate, dead material, or the fifty-move rule (claimable). */
 export function ending(fen: string): Ending | null {
   const pos = position(fen);
