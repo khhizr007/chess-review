@@ -108,6 +108,20 @@ export function legalMoveCount(fen: string): number {
   return n;
 }
 
+/**
+ * The position with the other side to move and no en passant square (a null move), for the coach's
+ * threat searches; as the server's `board::null_move`: null when the side to move is in check, when
+ * the result is not a legal position, or when the new side to move has no legal move.
+ */
+export function nullMoveFen(fen: string): string | null {
+  const pos = position(fen);
+  if (!pos || pos.isCheck()) return null;
+  const setup = pos.toSetup();
+  const swapped = Chess.fromSetup({ ...setup, turn: setup.turn === "white" ? "black" : "white", epSquare: undefined });
+  if (swapped.isErr || !swapped.value.hasDests()) return null;
+  return makeFen(swapped.value.toSetup());
+}
+
 /** Plays an engine line (UCI moves) from `fen`, up to `limit` moves; stops at the first illegal move. */
 export function lineMoves(fen: string, uci: string[], limit: number, chess960 = false): PlayedMove[] {
   const out: PlayedMove[] = [];

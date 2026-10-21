@@ -19,7 +19,9 @@ use uuid::Uuid;
 
 use crate::analysis::ReviewRequest;
 use crate::analysis::model::{Line, MoveRef, PlyReview, ReviewResult, Strength};
-use crate::analysis::sideline::{JudgeError, SidelineJudgement, SidelineMove, judge_sideline};
+use crate::analysis::sideline::{
+    JudgeError, SidelineJudgement, SidelineMove, SidelineThreats, ThreatLine, judge_sideline,
+};
 use crate::board;
 use crate::engine::{AnalysisRequest, EngineError, EngineLine, Evaluator, SearchLimit};
 use crate::jobs::{JobStore, ReviewStatus};
@@ -423,6 +425,32 @@ pub struct JudgeMoveRequest {
     /// Expected points lost by the previous sideline move (its judgement's `ep_lost`).
     #[ts(optional)]
     pub previous_ep_lost: Option<f64>,
+    /// The browser engine's null-move threat searches, for the coach's note.
+    #[ts(optional)]
+    pub threats: Option<JudgeThreats>,
+}
+
+/// A null-move threat search: the position searched and its best line.
+#[derive(Deserialize, TS)]
+#[ts(export)]
+pub struct JudgeThreat {
+    pub fen: String,
+    pub line: JudgeLine,
+}
+
+/// The coach's threat searches around the judged move (`docs/explore-mode.md` §5.5).
+#[derive(Deserialize, TS)]
+#[ts(export)]
+pub struct JudgeThreats {
+    /// After the move, its mover to move again.
+    #[ts(optional)]
+    pub after: Option<JudgeThreat>,
+    /// Before the move, the opponent to move.
+    #[ts(optional)]
+    pub before: Option<JudgeThreat>,
+    /// After the engine's best move (`before`'s first line), its mover to move again.
+    #[ts(optional)]
+    pub best: Option<JudgeThreat>,
 }
 
 fn engine_line(rank: usize, line: JudgeLine) -> EngineLine {
@@ -450,12 +478,26 @@ async fn judge_sideline_move(
         .map(|(i, l)| engine_line(i + 1, l))
         .collect();
     let after = req.after.map(|l| engine_line(1, l));
+    let threat = |t: Option<JudgeThreat>| {
+        t.map(|t| ThreatLine {
+            fen: t.fen,
+            line: engine_line(1, t.line),
+        })
+    };
+    let threats = req
+        .threats
+        .map_or_else(SidelineThreats::default, |t| SidelineThreats {
+            after: threat(t.after),
+            before: threat(t.before),
+            best: threat(t.best),
+        });
     let request = SidelineMove {
         from_ply: req.from_ply,
         moves: &req.moves,
         before,
         after,
         previous_ep_lost: req.previous_ep_lost,
+        threats,
     };
     judge_sideline(&review, &state.openings, &request)
         .map(Json)

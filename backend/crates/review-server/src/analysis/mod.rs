@@ -31,7 +31,7 @@ use crate::engine::{
 use crate::human::{HumanModel, MoveQuery};
 use crate::openings::OpeningBook;
 use crate::pgn::ParsedGame;
-use detectors::{static_sacrifice, takes_free_piece};
+use detectors::takes_free_piece;
 use model::*;
 
 /// Moves shown per engine line in the UI.
@@ -517,7 +517,6 @@ fn build_review(
     });
     let highest_elo = white_elo.unwrap_or(0).max(black_elo.unwrap_or(0));
     let phases = phases(game);
-    let horizon = cfg.material_horizon_plies;
 
     let mut caps = Caps2State::default();
     let mut outcomes: Vec<MoveOutcome> = Vec::with_capacity(game.moves.len());
@@ -536,60 +535,66 @@ fn build_review(
         let best_line = &lines[0];
         let previous_move = i.checked_sub(1).map(|p| game.moves[p].mv);
         let phase_after = phases[i + 1];
-        let judged = facts::judge_move(
-            &facts::MoveInput {
-                before,
-                after,
-                mv: m,
-                uci: &parsed.uci,
-                previous: previous_move,
-                lines,
-                eval_before: infos[i].eval,
-                before_is_draw: infos[i].is_draw,
-                eval_after: infos[i + 1].eval,
-                after_line: infos[i + 1]
-                    .analysis
-                    .as_ref()
-                    .and_then(PositionAnalysis::best),
-                after_is_draw: infos[i + 1].is_draw,
-                is_book: book[i],
-                phase_after,
-                has_previous_move: i > 0,
-                shallow_best: infos[i].shallow_best.as_deref(),
-                opponent_previous_ep_lost,
-                rating,
-                highest_elo,
+        let input = facts::MoveInput {
+            before,
+            after,
+            mv: m,
+            uci: &parsed.uci,
+            previous: previous_move,
+            lines,
+            eval_before: infos[i].eval,
+            before_is_draw: infos[i].is_draw,
+            eval_after: infos[i + 1].eval,
+            after_line: infos[i + 1]
+                .analysis
+                .as_ref()
+                .and_then(PositionAnalysis::best),
+            after_is_draw: infos[i + 1].is_draw,
+            is_book: book[i],
+            phase_after,
+            has_previous_move: i > 0,
+            shallow_best: infos[i].shallow_best.as_deref(),
+            opponent_previous_ep_lost,
+            rating,
+            highest_elo,
+        };
+        let judged = facts::judge_move(&input, cfg);
+        let coach = facts::coach_note(
+            &input,
+            &judged,
+            &facts::CoachContext {
+                threat: infos[i + 1].threat.as_ref(),
+                prev_threat: infos[i].threat.as_ref(),
+                best_threat: infos[i].best_threat.as_ref(),
+                rating: coach_rating,
+                difficulty: odds.get(i).copied().flatten(),
+                player_side: request.player_side,
+                seed: i as u32,
             },
             cfg,
         );
         let facts::MoveJudgement {
             mover,
-            played_rank,
             played_is_best,
             best_eval,
             best_value,
             played_value,
-            mover_value_before,
             opponent_value_before,
             ep_before,
             ep_played,
             ep_best,
-            best_move,
-            played_pv,
             played_walk,
             material_lost,
             best_gain,
-            sacrifice,
-            pawns,
             good_grade,
             recapture,
             mover_completely_winning_before,
             ref facts,
             outcome,
+            ..
         } = judged;
         let is_book = facts.is_book;
         let is_forced = facts.is_forced;
-        let bc = &cfg.brilliant;
         let oc = |v: Value| expected_outcome(v, rating, cfg);
         opponent_previous_ep_lost = Some(outcome.ep_lost);
 
@@ -639,57 +644,6 @@ fn build_review(
             material_lost_cp: material_lost,
             best_gain_cp: best_gain,
             opening: if is_book { openings.name(after) } else { None },
-        });
-
-        let reply_line = infos[i + 1]
-            .analysis
-            .as_ref()
-            .and_then(PositionAnalysis::best);
-        // The played line from `before`: a mate the mover gives after the reply
-        // search is one move longer from here.
-        let played_line_eval = match played_rank {
-            Some(k) => lines[k].eval,
-            None => match infos[i + 1].eval {
-                Eval::Mate { winner, moves } if winner == mover => Eval::Mate {
-                    winner,
-                    moves: moves + 1,
-                },
-                other => other,
-            },
-        };
-        // The coach's "only good move": every other engine line loses more
-        // than a Good move may.
-        let only_move = lines.get(1).is_some_and(|l| {
-            let v = Value::after_move(eval_after_first_move(l, mover), mover);
-            ep_best - node_expected_points(v, false, rating) > cfg.precision_thresholds[1]
-        });
-        let coach = coach::coach_move(&coach::CoachInput {
-            before,
-            played: m,
-            previous: previous_move,
-            reply: reply_line.map(line_input),
-            best: Some(line_input(best_line)),
-            played_line: Some(coach::LineInput {
-                pv: &played_pv,
-                eval: played_line_eval,
-            }),
-            threat: infos[i + 1].threat.as_ref().map(line_input),
-            prev_threat: infos[i].threat.as_ref().map(line_input),
-            best_threat: infos[i].best_threat.as_ref().map(line_input),
-            only_move,
-            sacrifice: sacrifice.map(|s| s.square),
-            best_sacrifice: best_move
-                .filter(|_| !played_is_best)
-                .and_then(|bm| static_sacrifice(before, bm, bc, pawns))
-                .map(|s| s.square),
-            swing: Some((oc(mover_value_before), oc(played_value))),
-            classification: outcome.classification,
-            phase: phase_after,
-            rating: coach_rating,
-            difficulty: odds.get(i).copied().flatten(),
-            style: coach::Style::for_player(request.player_side, mover),
-            horizon,
-            seed: i as u32,
         });
 
         let (from, to) = board::move_squares(m);

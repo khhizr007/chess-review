@@ -10,7 +10,8 @@ October 2026. This document analyses and plans a feature. Sources:
 - Phase 1, the sideline board, is built (§5.2).
 - Phase 2, the live browser engine, is built (§5.3–5.6).
 - Phase 3, classifying explored moves, is built (§5.5).
-- Phase 4 holds the optional items (§7).
+- Coach text on explored moves, the first Phase 4 item, is built (§5.5, "The coach's note").
+- The other Phase 4 items stay optional (§7).
 
 ## 1. Summary
 
@@ -318,8 +319,34 @@ Rules for consistency:
 - **Trust.** The server trusts evals the client sends. That is acceptable for this app: it has no
   accounts, rankings or stored results that a fake eval could affect.
 
-Coach sentences for explored moves (the Phase 1–4 coach) are a later step (§7, Phase 4). They need
-threat searches and line facts, which `judge` could later produce from the same inputs.
+**The coach's note (built 2026-10-22).** `judge` also returns the coach's note for the move, the
+same `CoachNote` a game move gets.
+- **Shared code.** `facts::coach_note` was moved out of `build_review` and is shared, as `judge_move` is.
+  - Full reviews of 10 calibration games stayed byte-identical (Stockfish 18, depth 10).
+  - `tests/sideline.rs` asks every move of 9 fixture games as a one-move sideline, with the threat
+    searches the review made, and gets the review's own note each time.
+- **The threat searches run in the browser, so the server still searches nothing.** The coach needs
+  three null-move searches around the move (`coach::CoachInput`):
+  - after the move, its mover to move again;
+  - before it, the opponent to move;
+  - after the engine's best move, when that is not the played move.
+
+  `useLiveEngine` runs them at the review's `threat_search_depth` (10) with one line, like the server.
+  It runs them twice: after both positions reach depth 14, and again at the depth limit, because
+  the best move can change. The best-move position is worked out when its step runs, from the
+  latest result, so a changing best move does not restart the plan. Each search takes a few tens of
+  milliseconds.
+- **Which searches the server uses.** `judge` takes each search with the FEN it searched.
+  - It uses a search only when that FEN is the server's own null-move position (`board::null_move`)
+    and the line starts with a legal move. Anything else is ignored, so the note falls back to what it can say without it.
+  - As in the review, there is no "after" threat when the side to move after the move has no legal move.
+- **When it is judged.** `useSidelineJudge` judges once the threat searches are ready. This is
+  usually about 0.1 s after depth 14, so the note normally arrives with the provisional verdict.
+  - In the browser, "d6 is a miss. Qh4# was the move here: it is checkmate." appeared 0.3 s after
+    1.f3 e5 2.g4 d6. The coach's arrows were drawn on the board.
+- **Not done.**
+  - The coach's "Show …" line buttons are not offered on explored moves.
+  - The human-move model (Maia-2) is not asked, so the difficulty wording is left out, as it is when Maia-2 is off.
 
 ### 5.6 Guarding the user's CPU
 
@@ -383,7 +410,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 | **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
 | **2. Live engine (done 2026-10-21)** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Done. Vitest: `uci.test.ts` and `controller.test.ts`, a scripted fake worker covering the handshake, complete depths, superseding, cache, stop, throttle, new game and load failure. In the browser: engine ready in 151 ms and depth 14 in 0.8 s; lines, pill, bar and arrow update live; "Go deeper" goes 18 → 20; clicking a line move plays it; a revisited position answers from the cache; a hidden page pauses the search. No phone was measured. | M |
 | **3. Move feedback (done 2026-10-21)** | `POST /api/reviews/{id}/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Done. The facts-builder refactor was confirmed byte-identical on 10 games. `tests/sideline.rs` covers every fixture move judged as the review judged it, a later sideline move and bad requests. `tests/api.rs` tests the route. `useSidelineJudge.test.ts` covers provisional then final, the previous move's loss, and a move that ends the game. In the browser: 1.d4 and 1...e5 were Book, and 2.Bg5 was "a blunder. dxe5 was best". Each judge request took 7–11 ms with no engine search. | M |
-| **4. Later, each optional** | Coach sentences for explored moves; server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
+| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
 
 Phases 1 and 2 are the feature as most users will see it. Phase 3 is what makes it feel like
 Chess.com's explore mode.

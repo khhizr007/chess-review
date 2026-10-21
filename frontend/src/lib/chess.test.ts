@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canMoveFrom, ending, legalMoveCount, lineMoves, needsPromotion, playMove } from "./chess";
+import { canMoveFrom, ending, legalMoveCount, lineMoves, needsPromotion, nullMoveFen, playMove } from "./chess";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const CASTLE = "r3k2r/pppqbppp/2np1n2/4p1B1/2B1P1b1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 6 8";
@@ -86,5 +86,20 @@ describe("lineMoves", () => {
   it("stops at the limit and at an illegal move", () => {
     expect(lineMoves(START, ["e2e4", "e7e5", "g1f3"], 2)).toHaveLength(2);
     expect(lineMoves(START, ["e2e4", "e2e4", "g1f3"], 12)).toHaveLength(1);
+  });
+});
+
+describe("nullMoveFen", () => {
+  it("passes the move to the other side, without an en passant square", () => {
+    expect(nullMoveFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1")).toBe(
+      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1",
+    );
+  });
+
+  it("refuses a side in check and a side left without moves", () => {
+    // Black to move is in check from the rook.
+    expect(nullMoveFen("4k3/8/8/8/8/8/8/K3R3 b - - 0 1")).toBeNull();
+    // Passing would leave White, with only a boxed-in king and a blocked pawn, without a legal move.
+    expect(nullMoveFen("8/8/8/8/8/1k6/p7/K7 b - - 0 1")).toBeNull();
   });
 });

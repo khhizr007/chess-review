@@ -181,4 +181,17 @@ describe("EngineController", () => {
     controller.analyze(START, 18, onUpdate);
     expect(engine.sent.filter((c) => c === "uci")).toHaveLength(1);
   });
+
+  it("searches for fewer lines when asked, and caches each line count apart", () => {
+    const { engine, controller, updates, onUpdate } = setup();
+    controller.analyze(START, 10, onUpdate, 1);
+    engine.boot();
+    expect(engine.sent.slice(-3)).toEqual(["setoption name MultiPV value 1", `position fen ${START}`, "go depth 10"]);
+    engine.out("info depth 10 multipv 1 score cp 30 nodes 9 nps 9 pv e2e4", "bestmove e2e4");
+    expect(updates.at(-1)).toMatchObject({ multipv: 1, depth: 10, done: true });
+    expect(updates.at(-1)!.lines).toHaveLength(1);
+    // Three lines of the same position are a different search, with the setting put back.
+    controller.analyze(START, 10, onUpdate);
+    expect(engine.sent.slice(-3)).toEqual(["setoption name MultiPV value 3", `position fen ${START}`, "go depth 10"]);
+  });
 });

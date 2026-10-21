@@ -25,6 +25,8 @@ export interface LiveLine extends Line {
 
 export interface Analysis {
   fen: string;
+  /** Lines searched for (the engine prints fewer when there are fewer legal moves). */
+  multipv: number;
   /** Depth of the lines (all lines are from the same completed depth). */
   depth: number;
   lines: LiveLine[];
@@ -66,6 +68,7 @@ export interface EngineOptions {
 interface Job {
   fen: string;
   depth: number;
+  multipv: number;
   onUpdate: (analysis: Analysis) => void;
 }
 
@@ -85,6 +88,8 @@ export class EngineController {
   private running: Job | null = null;
   private stopSent = false;
   private expected = 1;
+  /** The engine's MultiPV setting. */
+  private multipv = 0;
   private infos = new Map<number, UciInfo>();
   /** The lines of the deepest depth completed so far by the running search. */
   private complete: UciInfo[] = [];
@@ -107,14 +112,17 @@ export class EngineController {
     this.cache.clear();
   }
 
-  /** Searches `fen` to `depth`, reporting each completed depth; replaces any earlier request. */
-  analyze(fen: string, depth: number, onUpdate: (analysis: Analysis) => void): void {
+  /**
+   * Searches `fen` to `depth` for `multipv` lines (the default set at construction), reporting
+   * each completed depth; replaces any earlier request.
+   */
+  analyze(fen: string, depth: number, onUpdate: (analysis: Analysis) => void, multipv = this.options.multipv): void {
     if (this.failed) return;
     this.start();
-    const job = { fen, depth, onUpdate };
+    const job = { fen, depth, multipv, onUpdate };
     this.wanted = job;
     this.clearTimer();
-    const cached = this.cache.get(fen);
+    const cached = this.cache.get(cacheKey(job));
     if (cached) onUpdate({ ...cached, done: cached.depth >= depth });
     if (cached && cached.depth >= depth) {
       this.queued = null;
@@ -177,6 +185,7 @@ export class EngineController {
     if (line === "uciok") {
       this.send(`setoption name Hash value ${this.options.hashMb}`);
       this.send(`setoption name MultiPV value ${this.options.multipv}`);
+      this.multipv = this.options.multipv;
       this.send("isready");
     } else if (line === "readyok" && !this.ready) {
       this.ready = true;
@@ -198,11 +207,15 @@ export class EngineController {
     this.stopSent = false;
     this.infos.clear();
     this.complete = [];
-    this.expected = Math.max(1, Math.min(this.options.multipv, legalMoveCount(job.fen)));
+    this.expected = Math.max(1, Math.min(job.multipv, legalMoveCount(job.fen)));
     if (this.newGame) {
       this.newGame = false;
       this.send("ucinewgame");
       this.send(`setoption name UCI_Chess960 value ${this.chess960}`);
+    }
+    if (job.multipv !== this.multipv) {
+      this.multipv = job.multipv;
+      this.send(`setoption name MultiPV value ${job.multipv}`);
     }
     this.send(`position fen ${job.fen}`);
     this.send(`go depth ${job.depth}`);
@@ -235,7 +248,7 @@ export class EngineController {
     this.timer = null;
     const job = this.running;
     if (!job || this.complete.length === 0) return;
-    const cached = this.cache.get(job.fen);
+    const cached = this.cache.get(cacheKey(job));
     // A shallower result than one already known is not news (a revisited position searches again).
     if (cached && cached.depth >= this.complete[0]!.depth && !done) return;
     const analysis = this.snapshot(job, done);
@@ -265,12 +278,18 @@ export class EngineController {
       moves: lineMoves(job.fen, info.pv, LINE_PLIES, this.chess960),
       pv: info.pv.slice(0, PV_PLIES),
     }));
-    return { fen: job.fen, depth: this.complete[0]!.depth, lines, nps: this.complete[0]!.nps, done };
+    return { fen: job.fen, multipv: job.multipv, depth: this.complete[0]!.depth, lines, nps: this.complete[0]!.nps, done };
   }
 
   private remember(analysis: Analysis): void {
-    this.cache.delete(analysis.fen);
-    this.cache.set(analysis.fen, analysis);
+    const key = cacheKey(analysis);
+    this.cache.delete(key);
+    this.cache.set(key, analysis);
     if (this.cache.size > CACHE_SIZE) this.cache.delete(this.cache.keys().next().value!);
   }
+}
+
+/** Cache key: the same position searched for a different number of lines is a different search. */
+function cacheKey(search: { fen: string; multipv: number }): string {
+  return `${search.multipv} ${search.fen}`;
 }

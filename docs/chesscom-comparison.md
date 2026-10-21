@@ -27,7 +27,7 @@ Sources:
 **The visible gaps are around the review, not in it.** The four that matter most:
 1. There is no **Game Rating** or **Advanced Stats** on the report.
 2. ~~There is no **game import by username**.~~ Done: a Chess.com or Lichess username lists your recent games (§4, #1).
-3. There is no **coach text on explored moves**.
+3. ~~There is no **coach text on explored moves**.~~ Done: explored moves get the coach's note (`explore-mode.md` §5.5).
 4. The **analysis board** allows only one sideline at a time.
 
 ## 2. Feature by feature
@@ -50,7 +50,7 @@ Sources:
 | Sounds | Yes | Same rules, our own sounds | Parity |
 | Play your own moves with a live engine | Yes: Stockfish 19 Lite in the browser | Yes: the same build and net in the browser | **Parity** |
 | Labels on explored moves | Yes, computed in the browser | Yes, on the server with the review's rules and no engine search | Parity |
-| Coach text on explored moves | Yes (`explanation-engine.wasm`) | No | **Gap** (explore-mode Phase 4) |
+| Coach text on explored moves | Yes (`explanation-engine.wasm`) | Yes: the review's own coach. The browser makes its threat searches, and the server makes none | **Close.** The coach's "Show …" line buttons are not offered on explored moves yet |
 | Engine choice (full Stockfish, Torch), 1 to 5 lines, depth presets | Yes | Fixed: Lite, 3 lines, depth 18 with "Go deeper" | Minor gap |
 | Several sidelines per position, saving, PGN export with variations | Yes | One sideline at a time, not saved | **Gap** |
 | Opening explorer (games database) | Yes | Opening names only | Gap |
@@ -76,7 +76,7 @@ Sources:
 |---|---|---|---|---|
 | 1 | ~~**Import games by username**~~ **Done (2026-10-22)**: `lib/onlineGames.ts`, `components/OnlineImport.tsx` | The most visible gap. On Chess.com your games are just there | S | Built. The browser calls the public APIs directly (CORS allowed), so the username never reaches our server |
 | 2 | **Game Rating estimate** | The headline number on Chess.com's report | M | Medium. The formula is server-side. Plan: capture "Game Rating" for the 142 calibration games from their review pages (the summary shows it), then fit an estimate from our per-game statistics and report its error. It must be labelled an estimate. All 142 games come from one account rated about 950, so a second rating band is needed before trusting it widely |
-| 3 | **Coach text on explored moves** | Explored moves get a label but no "why" | M | High. The coach needs threat searches: run the browser engine on the null-move position, or add a depth-10 server search (about 0.04 s per move) |
+| 3 | ~~**Coach text on explored moves**~~ **Done (2026-10-22)** | Explored moves got a label but no "why" | M | Built. The browser runs the coach's threat searches, so the server still searches nothing |
 | 4 | **Label and coach calibration at other ratings** (1200–2200), plus the near-threshold hedge | Everything is tuned on players rated about 950; also fixes about 440 praise-or-blame contradictions | M | High. The capture tooling exists |
 | 5 | **Analysis board:** a variation tree (several sidelines), PGN export with variations | Exploring several ideas from one position | M–L | High |
 | 6 | **Advanced Stats** (Opening, Tactics, Strategy) | A second report block on Chess.com | M | Low until we know what the numbers mean. Investigate alongside #2 |

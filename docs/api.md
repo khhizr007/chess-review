@@ -139,6 +139,10 @@ Request:
   are needed for Brilliant and Great Find.
 - `after` is the best line of the position after the move. It can be left out when the move is one
   of `before`'s lines, or when the game is over after it.
+- `threats` holds the browser engine's null-move threat searches for the coach. It is optional, and
+  has `after`, `before` and `best`, each `{ "fen": "…", "line": { … } }`.
+  - A search is used only when its FEN is the server's own null-move position.
+  - Without them, the coach's note leaves out what they would show.
 - `previous_ep_lost` is the previous sideline move's `ep_lost`. For the first sideline move, the
   game's previous move is used.
 
@@ -147,6 +151,7 @@ Response (`SidelineJudgement`):
 - `ep_lost`, `ep_before` and `ep_after`.
 - `played_is_best`, `show_best_move` and `best_move`.
 - `explanation[]`, as for game moves.
+- `coach`, the coach's note (`CoachNote`), as for game moves.
 
 Errors:
 - 404 if the review is not held, and 409 if it has not finished.

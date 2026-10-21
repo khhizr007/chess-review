@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SidelineJudgement } from "../api/generated/SidelineJudgement";
 import type { Analysis } from "../lib/engine/controller";
 import type { Sideline } from "../lib/explore";
-import type { LiveEngine } from "./useLiveEngine";
+import type { LiveEngine, Threats } from "./useLiveEngine";
 import { useSidelineJudge } from "./useSidelineJudge";
 
 const judgeMove = vi.fn();
@@ -13,18 +13,25 @@ afterEach(() => judgeMove.mockReset());
 
 const NONE = { check: false, checkmate: false, stalemate: false, capture: false, castle: false, promotion: false, en_passant: false };
 const mv = (uci: string) => ({ san: uci, uci, fen: `fen-${uci}`, from: "a1", to: "a2", flags: NONE });
-const analysis = (fen: string, depth: number): Analysis => ({
+const analysis = (fen: string, depth: number, multipv = 3, done = false): Analysis => ({
   fen,
+  multipv,
   depth,
   nps: 1,
-  done: false,
+  done,
   lines: [{ rank: 1, eval: { kind: "cp", cp: 20 }, depth, moves: [], pv: ["e2e4", "e7e5"] }],
 });
-const engine = (prior: number, shown: number, finished = false): LiveEngine => ({
+const THREATS: Threats = {
+  after: { fen: "after-null", analysis: analysis("after-null", 10, 1, true) },
+  before: { fen: "before-null", analysis: analysis("before-null", 10, 1, true) },
+};
+const engine = (prior: number, shown: number, finished = false, threatsReady = true): LiveEngine => ({
   status: "ready",
   error: null,
   analysis: analysis("after", shown),
   prior: analysis("before", prior),
+  threats: THREATS,
+  threatsReady,
   target: 18,
   finished,
   priorFinished: finished,
@@ -41,7 +48,9 @@ const judgement = (classification: SidelineJudgement["classification"], ep_lost:
   show_best_move: false,
   best_move: null,
   explanation: [],
+  coach: { sentences: [], show_lines: [], events: [] },
 });
+const LINE = { eval: { kind: "cp", cp: 20 }, pv: ["e2e4", "e7e5"] };
 
 describe("useSidelineJudge", () => {
   const line: Sideline = { fromPly: 4, moves: [mv("c7c5"), mv("g1f3")], cursor: 1 };
@@ -61,9 +70,14 @@ describe("useSidelineJudge", () => {
       {
         from_ply: 4,
         moves: ["c7c5"],
-        before: [{ eval: { kind: "cp", cp: 20 }, depth: 14, pv: ["e2e4", "e7e5"] }],
-        after: { eval: { kind: "cp", cp: 20 }, depth: 16, pv: ["e2e4", "e7e5"] },
+        before: [{ ...LINE, depth: 14 }],
+        after: { ...LINE, depth: 16 },
         previous_ep_lost: undefined,
+        // The coach's threat searches, each with the position it searched.
+        threats: {
+          after: { fen: "after-null", line: { ...LINE, depth: 10 } },
+          before: { fen: "before-null", line: { ...LINE, depth: 10 } },
+        },
       },
       expect.any(AbortSignal),
     );
@@ -73,6 +87,17 @@ describe("useSidelineJudge", () => {
     rerender({ live: engine(18, 18, true) });
     await waitFor(() => expect(result.current[0]).toMatchObject({ final: true, judgement: { classification: "excellent" } }));
     expect(judgeMove).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for the threat searches the coach needs", async () => {
+    judgeMove.mockResolvedValue(judgement("good", 0.03));
+    const { rerender } = renderHook(({ live }) => useSidelineJudge("r1", line, live, false), {
+      initialProps: { live: engine(14, 14, false, false) },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(judgeMove).not.toHaveBeenCalled();
+    rerender({ live: engine(14, 14, false, true) });
+    await waitFor(() => expect(judgeMove).toHaveBeenCalledTimes(1));
   });
 
   it("sends the previous sideline move's loss with the next move", async () => {

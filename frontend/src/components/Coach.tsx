@@ -148,7 +148,7 @@ const sameRef = (a: FragmentRef | null | undefined, b: FragmentRef) => !!a && a.
  * A coach sentence. Fragments that name a move or piece are buttons: hovering, focusing or
  * tapping one draws its arrows and squares on the board.
  */
-function CoachSentence({ sentence, index, marking }: { sentence: Sentence; index: number; marking?: FragmentMarking }) {
+export function CoachSentence({ sentence, index, marking }: { sentence: Sentence; index: number; marking?: FragmentMarking }) {
   return (
     <p>
       {sentence.fragments.map((f, i) => {

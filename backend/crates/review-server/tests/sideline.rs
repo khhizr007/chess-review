@@ -8,10 +8,15 @@ use std::sync::Arc;
 use common::FakeEngine;
 use review_core::{Eval, ReviewConfig};
 use review_server::analysis::model::ReviewResult;
-use review_server::analysis::sideline::{JudgeError, SidelineMove, judge_sideline};
+use review_server::analysis::sideline::{
+    JudgeError, SidelineMove, SidelineThreats, ThreatLine, judge_sideline,
+};
 use review_server::analysis::{ReviewRequest, run_review};
+use review_server::board;
 use review_server::engine::{AnalysisRequest, EngineLine, Evaluator, SearchLimit};
 use review_server::pgn::parse_pgn;
+use shakmaty::fen::Fen;
+use shakmaty::{CastlingMode, Chess, Position};
 use tokio_util::sync::CancellationToken;
 
 async fn review(fixture: &str) -> ReviewResult {
@@ -39,12 +44,16 @@ async fn review(fixture: &str) -> ReviewResult {
 
 /// The engine's full lines for a position, as the review searched it (the fake engine is deterministic).
 async fn lines(r: &ReviewResult, fen: &str) -> Vec<EngineLine> {
+    search(r, fen, 3, 1).await
+}
+
+async fn search(r: &ReviewResult, fen: &str, multipv: u8, depth: u32) -> Vec<EngineLine> {
     FakeEngine::default()
         .analyze(
             &AnalysisRequest {
                 fen: fen.to_owned(),
-                limit: SearchLimit::Depth { depth: 1 },
-                multipv: 3,
+                limit: SearchLimit::Depth { depth },
+                multipv,
                 chess960: r.game.chess960,
                 searchmoves: None,
             },
@@ -55,9 +64,43 @@ async fn lines(r: &ReviewResult, fen: &str) -> Vec<EngineLine> {
         .lines
 }
 
-/// Game move `i` asked as a one-move sideline from ply `i`, with the engine's lines around it.
+fn position(r: &ReviewResult, fen: &str) -> Chess {
+    let mode = if r.game.chess960 {
+        CastlingMode::Chess960
+    } else {
+        CastlingMode::Standard
+    };
+    fen.parse::<Fen>().unwrap().into_position(mode).unwrap()
+}
+
+/// The coach's threat search of `pos` with the other side to move, as the review makes it.
+async fn threat(r: &ReviewResult, pos: Option<Chess>) -> Option<ThreatLine> {
+    let null = board::null_move(&pos?)?;
+    let fen = board::fen(&null);
+    let depth = r.config.coach.threat_search_depth;
+    let line = search(r, &fen, 1, depth).await.into_iter().next()?;
+    Some(ThreatLine { fen, line })
+}
+
+/// Game move `i` asked as a one-move sideline from ply `i`, with the engine's lines around it
+/// and the coach's threat searches.
 async fn as_sideline(r: &ReviewResult, i: usize) -> SidelineMove<'_> {
     let ply = &r.plies[i];
+    let before = lines(r, &ply.fen_before).await;
+    let start = position(r, &ply.fen_before);
+    let best_move = before
+        .first()
+        .and_then(|l| board::parse_uci(&start, &l.pv[0]));
+    let after_best = best_move.filter(|_| before[0].pv[0] != ply.uci).map(|m| {
+        let mut p = start.clone();
+        p.play_unchecked(m);
+        p
+    });
+    let threats = SidelineThreats {
+        after: threat(r, Some(position(r, &ply.fen_after))).await,
+        before: threat(r, Some(start.clone())).await,
+        best: threat(r, after_best).await,
+    };
     let after = match r.plies.get(i + 1) {
         Some(next) => lines(r, &next.fen_before).await.into_iter().next(),
         // The final position: searched by the review unless the game is over there.
@@ -66,9 +109,10 @@ async fn as_sideline(r: &ReviewResult, i: usize) -> SidelineMove<'_> {
     SidelineMove {
         from_ply: i as u32,
         moves: std::slice::from_ref(&ply.uci),
-        before: lines(r, &ply.fen_before).await,
+        before,
         after,
         previous_ep_lost: None,
+        threats,
     }
 }
 
@@ -88,6 +132,7 @@ const FIXTURES: [&str; 9] = [
 async fn a_game_move_asked_as_a_sideline_is_judged_as_the_review_judged_it() {
     let openings = common::openings();
     let mut judged = 0;
+    let mut spoken = 0;
     for fixture in FIXTURES {
         let r = review(fixture).await;
         for (i, ply) in r.plies.iter().enumerate() {
@@ -103,10 +148,13 @@ async fn a_game_move_asked_as_a_sideline_is_judged_as_the_review_judged_it() {
             assert_eq!(j.show_best_move, ply.show_best_move, "{at}");
             assert_eq!(j.best_move, ply.best_move, "{at}");
             assert_eq!(j.explanation, ply.explanation, "{at}");
+            assert_eq!(j.coach, ply.coach, "{at}");
+            spoken += usize::from(!ply.coach.sentences.is_empty());
             judged += 1;
         }
     }
     assert!(judged > 100, "only {judged} moves judged");
+    assert!(spoken > 50, "only {spoken} coach notes compared");
 }
 
 #[tokio::test]
@@ -132,6 +180,7 @@ async fn a_later_sideline_move_uses_the_previous_sideline_moves_loss() {
             before: before(30, &["b8c6", "f1b5"]),
             after: None,
             previous_ep_lost: None,
+            threats: SidelineThreats::default(),
         },
     )
     .unwrap();
@@ -145,6 +194,7 @@ async fn a_later_sideline_move_uses_the_previous_sideline_moves_loss() {
             before: before(30, &["f1b5", "a7a6"]),
             after: None,
             previous_ep_lost: Some(first.ep_lost),
+            threats: SidelineThreats::default(),
         },
     )
     .unwrap();
@@ -204,4 +254,36 @@ async fn bad_sidelines_are_refused() {
         ..as_sideline(&r, 2).await
     };
     assert_eq!(err(req), JudgeError::MissingAfter);
+}
+
+#[tokio::test]
+async fn a_threat_search_of_another_position_is_ignored() {
+    let openings = common::openings();
+    let r = review("opera_game.pgn").await;
+    // 6...Nf6 (a mistake the coach explains), with its threat searches swapped round.
+    let i = 11;
+    let right = as_sideline(&r, i).await;
+    let SidelineThreats {
+        after,
+        before,
+        best,
+    } = as_sideline(&r, i).await.threats;
+    let swapped = SidelineMove {
+        threats: SidelineThreats {
+            after: before,
+            before: after,
+            best,
+        },
+        ..as_sideline(&r, i).await
+    };
+    let none = SidelineMove {
+        threats: SidelineThreats::default(),
+        ..as_sideline(&r, i).await
+    };
+    let with_right = judge_sideline(&r, &openings, &right).unwrap().coach;
+    let with_swapped = judge_sideline(&r, &openings, &swapped).unwrap().coach;
+    let with_none = judge_sideline(&r, &openings, &none).unwrap().coach;
+    assert_eq!(with_right, r.plies[i].coach);
+    // The swapped searches are dropped: the note is the one without them.
+    assert_eq!(with_swapped, with_none);
 }
