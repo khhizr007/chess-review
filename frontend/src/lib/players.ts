@@ -53,6 +53,12 @@ export function rememberChoice(
   save(names, store);
 }
 
+/** Remembers a username as the user's own (one they fetched their games with). */
+export function rememberUsername(name: string, store: Store | null = defaultStore()) {
+  const names = myUsernames(store);
+  if (name.trim() && !names.includes(normalise(name))) save([...names, normalise(name)], store);
+}
+
 /** The side whose PGN name is one of the user's usernames, if exactly one is. */
 export function mySide(game: { white: string | null; black: string | null }, names: string[]): Side | null {
   const is = (n: string | null) => !!n && names.includes(normalise(n));

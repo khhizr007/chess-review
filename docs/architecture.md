@@ -66,3 +66,16 @@ openings cheap.
 
 **State.** Jobs are held in memory. Nothing is persisted, and no user data is logged beyond review ids
 and timings.
+
+## External services
+
+The browser calls two outside services directly, only when the reader asks it to. They are the
+public game APIs that list a player's recent games, in `frontend/src/lib/onlineGames.ts`:
+- **Chess.com**: `api.chess.com/pub/player/{name}/games/archives`, then up to 3 monthly archives.
+- **Lichess**: `lichess.org/api/games/user/{name}` as NDJSON.
+
+Both are anonymous and allow cross-origin requests. The backend is not involved, so the username
+never reaches this app's server. The chosen game's PGN then goes through the normal import.
+
+The last site and username are kept in the browser's `localStorage` (`chess-review:online-account`).
+The username is also remembered as the reader's own, so their side is preselected.
