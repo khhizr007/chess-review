@@ -44,6 +44,7 @@ At the Standard preset (depth 18) a 40-move game takes about a minute on a 4-cor
 much quicker.
 
 **Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
+Moves and brilliant moves have sounds ([`docs/sound.md`](docs/sound.md)); the **Sound** switch turns them off.
 
 ## Single-process deployment
 
