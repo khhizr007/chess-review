@@ -288,10 +288,28 @@ Rules for consistency:
   Lite net would shift scores and invent Inaccuracies. The branch position is analysed anyway while
   the user thinks, so this costs nothing extra.
 - **The same depth.** `played_is_best_move` and `best` come from `before` line 1, judged at the same depth as `after`.
-- **When it is sent.**
-  - **A provisional icon.** It is judged once both searches reach depth 14, which takes a median of
-    0.43 s each here (§10.1). Until then the bubble says "Judging the move…".
-  - **The final icon.** It is judged again when both reach the depth cap. Each judge call costs milliseconds, so judging twice is free.
+- **When it is sent: once, from shallow searches (changed 2026-10-22).**
+  - **The judging depth.** A move played freely is judged as soon as both positions reach
+    `JUDGE_DEPTH` = 8 and the threat searches are done. Depth 8 takes a median of 13 ms a position
+    in the browser (§10.1).
+  - **It is not re-judged deeper.** The shown position alone keeps deepening to the depth limit, for
+    the eval bar and lines.
+  - **The review's own moves keep the full-depth judgement.** The server's rules are unchanged; only
+    the browser's searches are shallower.
+  - **Measured, 5 random moves from a middlegame position.**
+
+    | | Engine searches plus server judgement |
+    |---|---|
+    | Depth 8, threats at depth 8 (now) | 19–58 ms |
+    | Depth 14, threats at depth 10 (before) | 159–727 ms; the depth-18 re-judge then took seconds more |
+
+    The reader sees the verdict about 0.15–0.2 s after the drop, which includes the 120 ms
+    stepping debounce.
+  - **The cost.** 4 of the 5 labels were the same at both depths. One became Blunder instead of
+    Miss, and some coach sentences picked a different line. A free move gets a quick opinion, not
+    the review's full-depth verdict.
+  - **Before this change:** a provisional verdict at depth 14 (median 0.43 s a position), then a
+    final one at the depth cap.
 - **Server cost: no engine search (confirmed in Phase 0, §10.5).** With the default config,
   classification needs only these engine inputs:
   - **Before-position lines, at least two.** The second line feeds Brilliant and Great Find.
@@ -331,19 +349,18 @@ same `CoachNote` a game move gets.
   - before it, the opponent to move;
   - after the engine's best move, when that is not the played move.
 
-  `useLiveEngine` runs them at the review's `threat_search_depth` (10) with one line, like the server.
-  It runs them twice: after both positions reach depth 14, and again at the depth limit, because
-  the best move can change. The best-move position is worked out when its step runs, from the
-  latest result, so a changing best move does not restart the plan. Each search takes a few tens of
-  milliseconds.
+  `useLiveEngine` runs them with one line, like the server, right after both positions reach
+  `JUDGE_DEPTH`. Their depth is the review's `threat_search_depth` (10), capped at `JUDGE_DEPTH` (8).
+  The best-move position is worked out when its step runs, from the latest result. Each search
+  takes a few milliseconds.
 - **Which searches the server uses.** `judge` takes each search with the FEN it searched.
   - It uses a search only when that FEN is the server's own null-move position (`board::null_move`)
     and the line starts with a legal move. Anything else is ignored, so the note falls back to what it can say without it.
   - As in the review, there is no "after" threat when the side to move after the move has no legal move.
-- **When it is judged.** `useSidelineJudge` judges once the threat searches are ready. This is
-  usually about 0.1 s after depth 14, so the note normally arrives with the provisional verdict.
-  - In the browser, "d6 is a miss. Qh4# was the move here: it is checkmate." appeared 0.3 s after
-    1.f3 e5 2.g4 d6. The coach's arrows were drawn on the board.
+- **When it is judged.** `useSidelineJudge` judges once, when both positions reach `JUDGE_DEPTH` and
+  the threat searches are ready, so the note arrives with the verdict.
+  - In the browser, at depth 14, "d6 is a miss. Qh4# was the move here: it is checkmate." appeared
+    0.3 s after 1.f3 e5 2.g4 d6. The coach's arrows were drawn on the board.
 - **Not done.**
   - The coach's "Show …" line buttons are not offered on explored moves.
   - The human-move model (Maia-2) is not asked, so the difficulty wording is left out, as it is when Maia-2 is off.
@@ -426,7 +443,7 @@ Chess.com's explore mode.
   Mitigations:
   - **The adaptive cap** (16 below 150k nodes/s).
   - **Visible deepening.** Depth 12 arrives in a median of 0.15 s here, and about 0.6 s at 4× slower.
-  - **A provisional icon at depth 14** (§5.5).
+  - **Explored moves are judged at depth 8** (§5.5), which costs little even on a slow device.
 
   No real phone has been measured yet, in Phase 0 or in Phase 2.
 - **The Lite engine's numbers differ from the review's.**

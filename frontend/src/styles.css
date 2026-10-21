@@ -1658,11 +1658,6 @@ select option {
   color: var(--bubble-text);
 }
 
-.explore-verdict__note {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--bubble-muted);
-}
 
 .retry-wrong {
   color: #c2412f;

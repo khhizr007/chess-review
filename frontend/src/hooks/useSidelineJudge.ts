@@ -9,8 +9,6 @@ import { JUDGE_DEPTH, type LiveEngine, type Threats } from "./useLiveEngine";
 
 export interface Judged {
   judgement: SidelineJudgement;
-  /** Judged on lines searched to the depth limit, rather than the provisional depth. */
-  final: boolean;
 }
 
 function judgeLine(line: LiveLine): JudgeLine {
@@ -39,9 +37,8 @@ function keyOf(reviewId: string, line: Sideline, k: number): string {
 /**
  * Classifies the shown sideline move with the review's rules on the server, and gets the coach's
  * note for it (docs/explore-mode.md §5.5), from the browser engine's lines of the positions before
- * and after it and its threat searches: once both positions reach `JUDGE_DEPTH` (provisional), and
- * again at the depth limit (final). Returns the judgement of each sideline move known so far
- * (index k - 1 for move k).
+ * and after it and its threat searches, once, as soon as both positions reach the shallow
+ * `JUDGE_DEPTH`. Returns the judgement of each sideline move known so far (index k - 1 for move k).
  */
 export function useSidelineJudge(
   reviewId: string,
@@ -58,8 +55,7 @@ export function useSidelineJudge(
   const after = over ? null : live.analysis;
   const ready = !!before && before.lines.length > 0 && (over || (!!after && after.lines.length > 0)) && live.threatsReady;
   const depth = ready ? Math.min(before!.depth, over ? Infinity : after!.depth) : 0;
-  const final = ready && live.priorFinished && (over || live.finished);
-  const stage = !ready || depth < JUDGE_DEPTH ? null : final ? "final" : "provisional";
+  const due = ready && depth >= JUDGE_DEPTH;
 
   // The latest lines, read when a stage is reached (they change with every engine update).
   const latest = useRef({ before, after, threats: live.threats, line, judged });
@@ -68,10 +64,9 @@ export function useSidelineJudge(
   });
 
   useEffect(() => {
-    if (!key || !stage) return;
+    if (!key || !due) return;
     const { before, after, threats, line, judged } = latest.current;
-    const known = judged[key];
-    if (!before || !line || known?.final || (known && stage === "provisional")) return;
+    if (!before || !line || judged[key]) return;
     const k = line.cursor;
     const controller = new AbortController();
     api
@@ -87,11 +82,11 @@ export function useSidelineJudge(
         },
         controller.signal,
       )
-      .then((judgement) => setJudged((s) => ({ ...s, [key]: { judgement, final: stage === "final" } })))
+      .then((judgement) => setJudged((s) => ({ ...s, [key]: { judgement } })))
       // A review the server no longer holds, or a cancelled request, leaves the move unmarked.
       .catch(() => {});
     return () => controller.abort();
-  }, [key, stage, reviewId]);
+  }, [key, due, reviewId]);
 
   return line ? line.moves.map((_, i) => judged[keyOf(reviewId, line, i + 1)]) : [];
 }

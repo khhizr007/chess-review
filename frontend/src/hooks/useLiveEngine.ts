@@ -7,8 +7,13 @@ export const LIVE_DEPTH = 18;
 export const SLOW_DEPTH = 16;
 /** Further depths offered by "Go deeper"; never an unlimited search. */
 export const DEEPER_DEPTHS = [20, 22];
-/** Depth at which a sideline move gets its provisional classification (§5.5). */
-export const JUDGE_DEPTH = 14;
+/**
+ * Depth of the searches a sideline move is judged on (§5.5): shallow, so the verdict and the coach's
+ * note come at once (about 13 ms a position in the browser, Phase 0). A free move only needs a quick
+ * opinion; the game's own moves keep the review's full-depth judgement. The coach's threat searches
+ * use this depth too when the review's is deeper.
+ */
+export const JUDGE_DEPTH = 8;
 /** Below this speed (about half the browser speed measured in Phase 0) the device counts as slow. */
 const SLOW_NPS = 150_000;
 /** The speed is judged once a search reaches this depth. */
@@ -60,9 +65,8 @@ export interface LiveEngine {
   threatsReady: boolean;
   /** Depth the search stops at. */
   target: number;
-  /** The shown position, and the one before, have been searched to `target`. */
+  /** The shown position has been searched to `target`. */
   finished: boolean;
-  priorFinished: boolean;
   /** Searches deeper; null while the search runs or at the deepest depth. */
   deeper: (() => void) | null;
 }
@@ -103,10 +107,10 @@ type Step = { kind: "position"; fen: string; depth: number; multipv: number } | 
 /**
  * Live analysis in the browser of `fen` (a sideline position) and of `prior` (the position before
  * its move, so the move can be judged on the same engine's lines), plus the coach's threat searches
- * around the move. Null stops the engine. The shown position is searched first: both positions to
- * `JUDGE_DEPTH`, the threat searches, then both to the depth limit and the threat searches again
- * (the best move may have changed). The worker starts on first use, so a reader who never explores
- * downloads nothing. `game` identifies the game: a new one clears the engine's memory.
+ * around the move. Null stops the engine. Both positions are searched to `JUDGE_DEPTH` and the
+ * threat searches made first, so the move is judged at once; then the shown position alone deepens to
+ * the depth limit for the eval bar and lines. The worker starts on first use, so a reader who never
+ * explores downloads nothing. `game` identifies the game: a new one clears the engine's memory.
  */
 export function useLiveEngine(
   fen: string | null,
@@ -128,7 +132,8 @@ export function useLiveEngine(
   const step = extra && extra.fen === fen ? extra.step : 0;
   const target = step > 0 ? DEEPER_DEPTHS[step - 1]! : base;
   const playedUci = coach?.playedUci ?? "";
-  const threatDepth = coach?.depth ?? 0;
+  // The review's threat-search depth, capped at the shallow judging depth.
+  const threatDepth = Math.min(coach?.depth ?? 0, JUDGE_DEPTH);
   const bestThreat = coach?.best ?? false;
 
   const engine = useCallback(() => {
@@ -156,19 +161,15 @@ export function useLiveEngine(
 
   useEffect(() => () => controller.current?.dispose(), []);
 
-  // The searches, in order: both positions to the judging depth, the threat searches, then both
-  // positions to the limit and the threat searches again.
+  // The searches, in order: both positions to the shallow judging depth and the threat searches
+  // (enough to judge the move), then the shown position alone to the limit (the eval bar and lines).
   const plan = useMemo(() => {
-    const early = Math.min(JUDGE_DEPTH, target);
     const pos = (at: string, depth: number): Step => ({ kind: "position", fen: at, depth, multipv: LINES });
     const steps: Step[] = [];
-    if (fen) steps.push(pos(fen, early));
-    if (prior) steps.push(pos(prior, early));
-    const threats = prior && threatDepth > 0;
-    if (threats) steps.push({ kind: "threats" });
+    if (fen) steps.push(pos(fen, JUDGE_DEPTH));
+    if (prior) steps.push(pos(prior, JUDGE_DEPTH));
+    if (prior && threatDepth > 0) steps.push({ kind: "threats" });
     if (fen) steps.push(pos(fen, target));
-    if (prior) steps.push(pos(prior, target));
-    if (threats) steps.push({ kind: "threats" });
     return steps;
   }, [fen, prior, target, threatDepth]);
 
@@ -219,9 +220,8 @@ export function useLiveEngine(
   const analysis = fen ? (results[keyOf(fen, LINES)] ?? null) : null;
   const priorAnalysis = prior ? (results[keyOf(prior, LINES)] ?? null) : null;
   const finished = atDepth(fen, LINES, target);
-  const priorFinished = atDepth(prior, LINES, target);
 
-  const positions = threatPositions(fen, prior, results, coach, chess960);
+  const positions = threatPositions(fen, prior, results, coach && { ...coach, depth: threatDepth }, chess960);
   const threats: Threats = {};
   for (const kind of ["after", "before", "best"] as const) {
     const at = positions[kind];
@@ -231,5 +231,5 @@ export function useLiveEngine(
 
   const deeper =
     fen && finished && step < DEEPER_DEPTHS.length ? () => setExtra({ fen, step: step + 1 }) : null;
-  return { status, error, analysis, prior: priorAnalysis, threats, threatsReady, target, finished, priorFinished, deeper };
+  return { status, error, analysis, prior: priorAnalysis, threats, threatsReady, target, finished, deeper };
 }

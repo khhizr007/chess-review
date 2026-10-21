@@ -713,7 +713,6 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
                       </>
                     )}
                   </span>
-                  {!shownJudged?.final && <span className="explore-verdict__note">refining…</span>}
                 </p>
               ) : (
                 !shownJudged && live.status !== "error" && <p className="coach__note">Judging the move…</p>
