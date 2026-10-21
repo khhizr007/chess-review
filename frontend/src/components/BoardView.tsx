@@ -1,6 +1,6 @@
 import { Chessboard } from "react-chessboard";
 import type { Arrow } from "react-chessboard";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Side } from "../api/generated/Side";
 import type { MoveTarget, PromotionPiece } from "../lib/chess";
@@ -103,16 +103,44 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, moves, pr
   }, [selected, moves]);
 
   const sideOf = (pieceType: string) => (pieceType.startsWith("w") ? "white" : "black");
-  const onSquareClick = (square: string, pieceType: string | null) => {
-    if (!moves || promotion) return;
+  // The press a click ends, when the press already acted (a mouse); touch only sends the click.
+  const press = useRef<{ square: string; deselect: boolean } | null>(null);
+
+  /**
+   * Acts on a square as a press does: a target square of the picked-up piece plays the move, a
+   * movable piece is picked up, anything else puts the piece down. The picked-up piece itself is
+   * put down only by a click (the release), so it can still be dragged.
+   */
+  const act = (square: string, pieceType: string | null): { deselect: boolean } => {
+    if (!moves || promotion) return { deselect: false };
     if (selected && targets.has(square)) {
       setPicked(null);
       moves.onDrop(selected, square);
+      return { deselect: false };
+    }
+    if (square === selected) return { deselect: true };
+    const movable = pieceType && moves.canDrag(square, sideOf(pieceType));
+    setPicked(movable ? { fen, square } : null);
+    return { deselect: false };
+  };
+
+  // A mouse acts on the press, as on Chess.com: the piece is picked up (and shows its moves) the
+  // moment the button goes down, and a click on a target moves at once.
+  const onSquareMouseDown = (square: string, pieceType: string | null, button: number) => {
+    if (button !== 0) return;
+    press.current = { square, ...act(square, pieceType) };
+  };
+  const onSquareClick = (square: string, pieceType: string | null) => {
+    const pressed = press.current;
+    press.current = null;
+    if (pressed?.square === square) {
+      // The release of a press that already acted: it only puts down a piece clicked twice.
+      if (pressed.deselect) setPicked(null);
       return;
     }
-    // A movable piece is picked up (clicking it again puts it down); anything else clears.
-    const movable = pieceType && square !== selected && moves.canDrag(square, sideOf(pieceType));
-    setPicked(movable ? { fen, square } : null);
+    // A tap (touch), or a release elsewhere than the press.
+    const { deselect } = act(square, pieceType);
+    if (deselect) setPicked(null);
   };
 
   return (
@@ -137,6 +165,7 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, moves, pr
               if (kept) setPicked(null);
               return kept;
             },
+            onSquareMouseDown: ({ piece, square }, e) => onSquareMouseDown(square, piece?.pieceType ?? null, e.button),
             onSquareClick: ({ piece, square }) => onSquareClick(square, piece?.pieceType ?? null),
             // Each square: its highlight, the selection under the piece, then the move hint over it.
             squareRenderer: ({ square, children }) => {

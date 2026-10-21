@@ -60,3 +60,42 @@ describe("BoardView moves by click", () => {
     expect(hints(".sq-hint")).toEqual(["a3", "c3"]);
   });
 });
+
+describe("BoardView with a mouse acts on the press", () => {
+  // A mouse click is a press then a click on the same square.
+  const press = (el: HTMLElement) => fireEvent.mouseDown(el, { button: 0 });
+  const click = (el: HTMLElement) => {
+    press(el);
+    fireEvent.click(el);
+  };
+
+  it("picks the piece up while the button is still down", () => {
+    const { square, hints } = board();
+    press(square("e4"));
+    expect(hints(".sq-select")).toEqual(["e4"]);
+    expect(hints(".sq-hint")).toEqual(["d5", "e5"]);
+  });
+
+  it("moves on the press of a target square", () => {
+    const { square, onDrop } = board();
+    click(square("e4"));
+    press(square("e5"));
+    expect(onDrop).toHaveBeenCalledWith("e4", "e5");
+  });
+
+  it("puts a piece clicked twice down on the release, not the press", () => {
+    const { square, hints } = board();
+    click(square("e4"));
+    press(square("e4"));
+    // Still picked up while held, so it can be dragged.
+    expect(hints(".sq-select")).toEqual(["e4"]);
+    fireEvent.click(square("e4"));
+    expect(hints(".sq-select")).toEqual([]);
+  });
+
+  it("ignores the right button", () => {
+    const { square, hints } = board();
+    fireEvent.mouseDown(square("e4"), { button: 2 });
+    expect(hints(".sq-select")).toEqual([]);
+  });
+});

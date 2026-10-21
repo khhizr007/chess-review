@@ -159,6 +159,14 @@ the wiring in `ReviewScreen.tsx`.
   - **Click-to-move and move hints (built 2026-10-22), as on Chess.com.** Clicking a piece picks it
     up, and clicking a highlighted square moves it there. A click on the piece again, an empty
     square or the opponent's piece puts it down.
+    - **The mouse acts on the press, not the release.**
+      - **Pick-up.** The piece is picked up, with its hints, while the button is still down. In the
+        browser that took 27–39 ms after the press. Before this, nothing showed until release, or
+        until a drag started if the hand moved a pixel.
+      - **Moving.** Pressing a target square plays the move at once.
+      - **Putting down.** Clicking the piece again puts it down on the release, so a picked-up
+        piece can still be dragged.
+      - **Touch** keeps the tap path, because browsers send no mouse press for it.
     - **What a picked-up piece shows,** while dragging too. The values were read from Chess.com's
       stylesheets on 2026-10-22:
       - its square fills with a yellow circle growing from the centre (`#ffff33` at 50%, 0.2 s ease-out);
