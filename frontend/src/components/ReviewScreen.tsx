@@ -9,15 +9,16 @@ import type { Side } from "../api/generated/Side";
 import { useLiveEngine } from "../hooks/useLiveEngine";
 import { useSidelineJudge } from "../hooks/useSidelineJudge";
 import { canMoveFrom, ending, legalTargets, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
-import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
+import { LEARNABLE, coachMessage, coachMood, moveArrows, playerName } from "../lib/coach";
 import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
-import { kingSquareToMove, uciSquares } from "../lib/fen";
+import { kingSquare, kingSquareToMove, uciSquares } from "../lib/fen";
 import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format";
+import { reviewHash } from "../lib/hash";
 import { materialFromFen } from "../lib/material";
 import { expectedPointsFor, hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
 import { FILTERS, fenAt, nextPlyAt, plyAt, stepFiltered, type MoveFilter } from "../lib/review";
 import { moveSound, navigationSounds, playSounds, retrySound, sanFlags, sidelineSounds } from "../lib/sound";
-import { BoardView, type BoardBadge, type BoardMoves, type BoardPromotion } from "./BoardView";
+import { BoardView, type BoardBadge, type BoardEndMark, type BoardMoves, type BoardPromotion } from "./BoardView";
 import { ClassificationIcon } from "./ClassificationIcon";
 import {
   CoachActions,
@@ -46,6 +47,8 @@ interface Props {
   review: ReviewResult;
   /** The review's id on the server (sideline moves are judged against it). */
   reviewId: string;
+  /** The move to open the review at (from the URL after a reload); null opens the report. */
+  initialPly?: number | null;
   onNewGame: () => void;
 }
 
@@ -72,9 +75,8 @@ const PREVIEW_TINT = "rgba(255, 196, 64, 0.5)";
 const HINT_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(255, 196, 64, 0.95)", background: "rgba(255, 196, 64, 0.25)" };
 const MARK_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(250, 65, 45, 0.8)", background: "rgba(250, 65, 45, 0.2)" };
 const NO_SENTENCES: Sentence[] = [];
-const CHECK_GLOW: CSSProperties = {
-  backgroundImage: "radial-gradient(circle, rgba(235,40,40,.9) 0%, rgba(235,40,40,.4) 45%, transparent 72%)",
-};
+/** A king in check: Chess.com's solid square (read from its board, 2026-10-22). */
+const CHECK_SQUARE: CSSProperties = { background: "rgba(248, 85, 63, 0.8)" };
 const ENDINGS: Record<Ending, string> = {
   checkmate: "Checkmate.",
   stalemate: "Stalemate: a draw.",
@@ -120,14 +122,29 @@ function saveFlag(key: string, value: boolean) {
   }
 }
 
+/** The kings of a final position: the winner's crown, as on Chess.com. */
+function crownMark(fen: string, winner: Side): BoardEndMark[] {
+  const square = kingSquare(fen, winner);
+  return square ? [{ square, mark: "winner" }] : [];
+}
+
+/** The kings of a checkmate: the mated king (the side to move) and the winner's crown. */
+function mateMarks(fen: string): BoardEndMark[] {
+  const mated: Side = fen.split(" ")[1] === "b" ? "black" : "white";
+  const square = kingSquare(fen, mated);
+  return [...(square ? [{ square, mark: "checkmate" as const }] : []), ...crownMark(fen, mated === "white" ? "black" : "white")];
+}
+
 function tint(color: string, pct: number): CSSProperties {
   return { background: `color-mix(in srgb, ${color} ${pct}%, transparent)` };
 }
 
-export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
+export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }: Props) {
   const total = review.plies.length;
-  const [mode, setMode] = useState<Mode>("report");
-  const [ply, setPly] = useState(0);
+  // The side that won, when the game was decided (a crown on its king at the end).
+  const winner: Side | null = review.game.result === "1-0" ? "white" : review.game.result === "0-1" ? "black" : null;
+  const [mode, setMode] = useState<Mode>(initialPly === null ? "report" : "review");
+  const [ply, setPly] = useState(() => Math.max(0, Math.min(total, initialPly ?? 0)));
   const [flipped, setFlipped] = useState(false);
   const [filter, setFilter] = useState<MoveFilter>("all");
   const [preview, setPreview] = useState<LinePreview | null>(null);
@@ -322,6 +339,8 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
+      // A focused menu keeps ↑ ↓ for its options.
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && e.target instanceof HTMLSelectElement) return;
       if (preview && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
         setLinePlaying(false);
         stepPreview(e.key === "ArrowRight" ? 1 : -1);
@@ -331,9 +350,10 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       } else if (e.key === "ArrowRight") {
         setMode("review");
         stepBoard(1);
-      } else if (e.key === "Home" || e.key === "End") {
+      } else if (e.key === "Home" || e.key === "End" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+        // ↑ and ↓ go to the start and the end, as on Chess.com; Home and End too.
         setMode("review");
-        go(e.key === "Home" ? 0 : total);
+        go(e.key === "Home" || e.key === "ArrowUp" ? 0 : total);
       } else if (e.key === "f") setFlipped((f) => !f);
       else if (e.key === "Escape") {
         // A promotion choice is taken back first, then the sideline is left for its branch position.
@@ -351,6 +371,11 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [go, stepBoard, stepPreview, preview, promotion, sideline, total]);
+
+  // The move shown is kept in the URL, so a reload returns to it.
+  useEffect(() => {
+    window.history.replaceState(null, "", reviewHash(reviewId, mode === "review" ? ply : null));
+  }, [reviewId, mode, ply]);
 
   // Board sounds when the game moves (rules in docs/sound.md).
   const lastPly = useRef(ply);
@@ -443,10 +468,16 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     return exploreMove(from, to);
   };
 
-  const { arrows, squareStyles, badge } = useMemo(() => {
+  const { arrows, squareStyles, badge, endMarks } = useMemo(() => {
     const arrows: Arrow[] = [];
     const styles: Record<string, CSSProperties> = {};
     let badge: BoardBadge | null = null;
+    let endMarks: BoardEndMark[] = [];
+    const out = () => ({ arrows, squareStyles: styles, badge, endMarks });
+    const check = (fen: string) => {
+      const king = kingSquareToMove(fen);
+      if (king) styles[king] = { ...styles[king], ...CHECK_SQUARE };
+    };
 
     if (activeRetry) {
       const sq = solvedMove ? uciSquares(solvedMove.uci) : null;
@@ -462,7 +493,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
           if (rung.kind === "area") for (const s of rung.squares) styles[s] = HINT_SQUARE;
         }
       }
-      return { arrows, squareStyles: styles, badge };
+      return out();
     }
 
     if (shownMove) {
@@ -471,20 +502,21 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       styles[shownMove.from] = tint(color, shownClass ? 42 : 45);
       styles[shownMove.to] = tint(color, shownClass ? 58 : 65);
       if (shownClass) badge = { square: shownMove.to, classification: shownClass };
-      const king = shownMove.flags.check ? kingSquareToMove(shownMove.fen) : null;
-      if (king) styles[king] = { ...styles[king], ...CHECK_GLOW };
+      if (shownMove.flags.check) check(shownMove.fen);
+      if (shownEnd === "checkmate") endMarks = mateMarks(shownMove.fen);
       // The engine arrow shows the live engine's top move.
       if (showSuggestion && liveBest) arrows.push({ startSquare: liveBest.from, endSquare: liveBest.to, color: SUGGEST_ARROW });
-      // What the coach's main sentence is about, as for game moves.
-      for (const a of shownSentences[0]?.fragments.find((f) => f.arrows.length > 0)?.arrows ?? []) {
+      // What the coach's main sentence is about, by the game moves' rules.
+      const judged = shownJudged?.judgement;
+      for (const a of judged ? moveArrows({ ...judged, uci: shownMove.uci }, false) : []) {
         if (!arrows.some((b) => b.startSquare === a.from && b.endSquare === a.to)) {
           arrows.push({ startSquare: a.from, endSquare: a.to, color: COACH_ARROW[a.kind] });
         }
       }
-      return { arrows, squareStyles: styles, badge };
+      return out();
     }
 
-    if (showLine && !previewMove) return { arrows, squareStyles: styles, badge };
+    if (showLine && !previewMove) return out();
 
     if (previewMove) {
       const sq = uciSquares(previewMove.uci);
@@ -495,7 +527,8 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
         styles[sq.to] = tint(color, 65);
         if (isBest) badge = { square: sq.to, classification: "best" };
       }
-      return { arrows, squareStyles: styles, badge };
+      if (/[+#]$/.test(previewMove.san)) check(previewMove.fen);
+      return out();
     }
 
     if (current) {
@@ -503,6 +536,12 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       if (current.from) styles[current.from] = tint(color, 42);
       styles[current.to] = tint(color, 58);
       if (current.classification) badge = { square: current.to, classification: current.classification };
+      if (current.flags.check) check(current.fen_after);
+      // The final position marks the kings: the mated one, and the winner's.
+      if (current.ply === total) {
+        if (current.flags.checkmate) endMarks = mateMarks(current.fen_after);
+        else if (winner) endMarks = crownMark(current.fen_after, winner);
+      }
       if (markedFragment) {
         // A fragment the reader is pointing at replaces the default arrows with its own.
         for (const a of markedFragment.arrows) {
@@ -511,21 +550,11 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
           }
         }
         for (const s of markedFragment.squares) styles[s] = { ...styles[s], ...MARK_SQUARE };
-        return { arrows, squareStyles: styles, badge };
+        return out();
       }
-      if (current.show_best_move && current.best_move && !current.played_is_best) {
-        const sq = uciSquares(current.best_move.uci);
-        if (sq) arrows.push({ startSquare: sq.from, endSquare: sq.to, color: BEST_ARROW });
-      }
-      // What the coach's main sentence is about: the reply or idea and its targets.
-      for (const a of coachArrows(current)) {
-        if (!arrows.some((b) => b.startSquare === a.from && b.endSquare === a.to)) {
-          arrows.push({ startSquare: a.from, endSquare: a.to, color: COACH_ARROW[a.kind] });
-        }
-      }
-      if (current.flags.check) {
-        const king = kingSquareToMove(current.fen_after);
-        if (king) styles[king] = { ...styles[king], ...CHECK_GLOW };
+      // The best move when it was missed, and what the coach's main sentence is about.
+      for (const a of moveArrows(current)) {
+        arrows.push({ startSquare: a.from, endSquare: a.to, color: COACH_ARROW[a.kind] });
       }
     }
     if (showSuggestion && next?.lines[0]?.moves[0]) {
@@ -534,8 +563,8 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
         arrows.push({ startSquare: sq.from, endSquare: sq.to, color: SUGGEST_ARROW });
       }
     }
-    return { arrows, squareStyles: styles, badge };
-  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, shownClass, shownSentences, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
+    return out();
+  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, shownClass, shownJudged, shownEnd, liveBest, showLine, previewMove, preview, current, total, winner, markedFragment, next, showSuggestion]);
 
   // Retry takes the mover's pieces; otherwise any legal move explores, except while a line plays.
   // The move hints show every legal move of the position, in a retry too (they give nothing away).
@@ -568,6 +597,17 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       : liveLines[0]
         ? { eval: liveLines[0].eval, ep: expectedPointsFor(liveLines[0].eval, "white", review.rating_used) }
         : null;
+  // An engine line shown on the board (Best among them) moves the bar to the line's evaluation, as on
+  // Chess.com. The coach's lines carry no evaluation, so the bar stays on the game for them.
+  const previewEval =
+    preview && preview.source !== "coach" && previewMove
+      ? (preview.source === "alternatives" ? current?.lines : next?.lines)?.[preview.line]?.eval
+      : undefined;
+  const bar: { eval: Eval; ep: number } | null = shownMove
+    ? sidelineBar
+    : previewEval
+      ? { eval: previewEval, ep: expectedPointsFor(previewEval, "white", review.rating_used) }
+      : null;
 
   const material = materialFromFen(displayFen);
   const bottom: Side = flipped ? "black" : "white";
@@ -894,8 +934,8 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       <section className="board-col" aria-label="Board">
         {strip(top)}
         <div className="board-row">
-          {shownMove ? (
-            <EvalBar whiteExpectedPoints={sidelineBar?.ep ?? null} evaluation={sidelineBar?.eval ?? null} flipped={flipped} />
+          {shownMove || bar ? (
+            <EvalBar whiteExpectedPoints={bar?.ep ?? null} evaluation={bar?.eval ?? null} flipped={flipped} />
           ) : (
             point && <EvalBar whiteExpectedPoints={point.white_expected_points} evaluation={point.eval} flipped={flipped} />
           )}
@@ -905,6 +945,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
             arrows={arrows}
             squareStyles={squareStyles}
             badge={badge}
+            endMarks={endMarks}
             moves={boardMoves}
             promotion={boardPromotion}
           />
@@ -925,18 +966,31 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
             <LogoMark size={26} />
             Game Review
           </h1>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setFlipped((f) => !f)}
-            aria-pressed={flipped}
-            aria-label="Flip board"
-            title="Flip board (F)"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="M7 4v15M3.5 15.5L7 19l3.5-3.5M17 20V5M13.5 8.5L17 5l3.5 3.5" />
-            </svg>
-          </button>
+          <div className="panel__header-end">
+            {/* Sound is a header icon, as on Chess.com, so the tools row fits the panel. */}
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setSoundOn((v) => (saveFlag("review.sound", !v), !v))}
+              aria-pressed={!soundOn}
+              aria-label="Mute sounds"
+              title={soundOn ? "Mute move and review sounds" : "Turn move and review sounds on"}
+            >
+              {soundOn ? Icons.sound : Icons.muted}
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setFlipped((f) => !f)}
+              aria-pressed={flipped}
+              aria-label="Flip board"
+              title="Flip board (F)"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="M7 4v15M3.5 15.5L7 19l3.5-3.5M17 20V5M13.5 8.5L17 5l3.5 3.5" />
+              </svg>
+            </button>
+          </div>
         </header>
 
         {mode === "report" ? (
@@ -979,6 +1033,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
                 current={ply}
                 filter={filter}
                 onSelect={go}
+                result={review.game.result && review.game.result !== "*" ? review.game.result : null}
                 sideline={
                   sideline && {
                     line: sideline,
@@ -1001,7 +1056,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
             </div>
 
             <nav className="nav" aria-label="Move navigation">
-              <button type="button" className="nav__btn" onClick={() => go(0)} aria-label="First move" title="First move (Home)">
+              <button type="button" className="nav__btn" onClick={() => go(0)} aria-label="First move" title="First move (↑)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2.5v14H6zM19 5.5v13L9.5 12z" /></svg>
               </button>
               <button type="button" className="nav__btn" onClick={() => stepBoard(-1)} aria-label="Previous move" title="Previous (←)">
@@ -1023,15 +1078,16 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
               <button type="button" className="nav__btn" onClick={() => stepBoard(1)} aria-label="Next move" title="Next (→)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4.5L16 12l-7.5 7.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </button>
-              <button type="button" className="nav__btn" onClick={() => go(total)} aria-label="Last move" title="Last move (End)">
+              <button type="button" className="nav__btn" onClick={() => go(total)} aria-label="Last move" title="Last move (↓)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5v13l9.5-6.5zM15.5 5H18v14h-2.5z" /></svg>
               </button>
             </nav>
 
             <div className="panel__tools">
               <label className="tool">
-                <span className="tool__label">Step through</span>
-                <select aria-label="Step through" value={filter} onChange={(e) => setFilter(e.target.value as MoveFilter)}>
+                {/* Named for screen readers only, so the row fits the 360 px panel. */}
+                <span className="visually-hidden">Step through</span>
+                <select aria-label="Step through" title="Which moves ← → step through" value={filter} onChange={(e) => setFilter(e.target.value as MoveFilter)}>
                   {FILTERS.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.label}
@@ -1050,18 +1106,6 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
                 />
                 <span className="switch" aria-hidden="true" />
                 Engine arrow
-              </label>
-              <label className="tool tool--toggle" title="Play move and review sounds">
-                <input
-                  type="checkbox"
-                  checked={soundOn}
-                  onChange={(e) => {
-                    setSoundOn(e.target.checked);
-                    saveFlag("review.sound", e.target.checked);
-                  }}
-                />
-                <span className="switch" aria-hidden="true" />
-                Sound
               </label>
               <span className="tool__ply" aria-label={`Move ${ply} of ${total}`}>
                 {ply}/{total}

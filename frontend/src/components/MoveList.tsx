@@ -3,7 +3,7 @@ import type { Classification } from "../api/generated/Classification";
 import type { PlyReview } from "../api/generated/PlyReview";
 import { sidelineLabels, type Sideline } from "../lib/explore";
 import { CLASSIFICATIONS } from "../lib/format";
-import { matchesFilter, showsListIcon, type MoveFilter } from "../lib/review";
+import { lastBookPly, matchesFilter, showsListIcon, type MoveFilter } from "../lib/review";
 import { ClassificationIcon } from "./ClassificationIcon";
 import { San } from "./PieceIcon";
 
@@ -24,6 +24,8 @@ interface Props {
   filter: MoveFilter;
   onSelect: (ply: number) => void;
   sideline?: ListSideline | null;
+  /** The game's result ("1-0"), listed after the last move as on Chess.com; null when unfinished. */
+  result?: string | null;
 }
 
 interface Row {
@@ -47,18 +49,23 @@ function rows(plies: PlyReview[]): Row[] {
 
 function MoveCell({
   ply,
+  side,
+  lastBook,
   current,
   filter,
   onSelect,
 }: {
   ply?: PlyReview;
+  side: "white" | "black";
+  lastBook: number | null;
   current: number;
   filter: MoveFilter;
   onSelect: (n: number) => void;
 }) {
-  if (!ply) return <td className="move-cell move-cell--empty">…</td>;
+  // A game started by Black shows "…" for White's move; Black's cell after the last move stays empty.
+  if (!ply) return <td className="move-cell move-cell--empty">{side === "white" ? "…" : null}</td>;
   const active = ply.ply === current;
-  const icon = showsListIcon(ply);
+  const icon = showsListIcon(ply, lastBook);
   const meta = ply.classification ? CLASSIFICATIONS[ply.classification] : null;
   const dim = filter !== "all" && !matchesFilter(ply, filter);
   return (
@@ -119,7 +126,7 @@ function SidelineRow({ sideline }: { sideline: ListSideline }) {
   );
 }
 
-export function MoveList({ plies, current, filter, onSelect, sideline }: Props) {
+export function MoveList({ plies, current, filter, onSelect, sideline, result }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const cursor = sideline?.line.cursor ?? 0;
 
@@ -142,6 +149,7 @@ export function MoveList({ plies, current, filter, onSelect, sideline }: Props) 
 
   // The sideline is listed under the row of the game move it replaces (the last row at the end).
   const all = rows(plies);
+  const lastBook = lastBookPly(plies);
   const replaced = sideline ? Math.min(sideline.line.fromPly + 1, plies.length) : -1;
   const at = sideline ? all.findIndex((r) => r.white?.ply === replaced || r.black?.ply === replaced) : -1;
 
@@ -156,12 +164,17 @@ export function MoveList({ plies, current, filter, onSelect, sideline }: Props) 
                 <th scope="row" className="move-table__number">
                   {row.number}.
                 </th>
-                <MoveCell ply={row.white} current={cursor > 0 ? -1 : current} filter={filter} onSelect={onSelect} />
-                <MoveCell ply={row.black} current={cursor > 0 ? -1 : current} filter={filter} onSelect={onSelect} />
+                <MoveCell ply={row.white} side="white" lastBook={lastBook} current={cursor > 0 ? -1 : current} filter={filter} onSelect={onSelect} />
+                <MoveCell ply={row.black} side="black" lastBook={lastBook} current={cursor > 0 ? -1 : current} filter={filter} onSelect={onSelect} />
               </tr>
               {sideline && i === at && <SidelineRow sideline={sideline} />}
             </Fragment>
           ))}
+          {result && (
+            <tr className="move-table__result">
+              <td colSpan={3}>{result}</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

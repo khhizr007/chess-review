@@ -1306,7 +1306,7 @@ select option {
 
 .panel__header {
   display: grid;
-  grid-template-columns: 40px 1fr 40px;
+  grid-template-columns: 80px 1fr 80px;
   align-items: center;
   height: 56px;
   padding: 0 8px;
@@ -1353,6 +1353,11 @@ select option {
 
 .icon-btn-spacer {
   width: 40px;
+}
+
+.panel__header-end {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .panel__scroll {
@@ -2093,7 +2098,10 @@ select option {
   min-height: 0;
 }
 
+/* The scroll areas are positioned so the screen-reader text inside them (.visually-hidden, which is
+   absolute) is placed in the area rather than against the page, which it would stretch. */
 .review-pane__coach {
+  position: relative;
   flex: none;
   max-height: 55%;
   overflow-y: auto;
@@ -2102,6 +2110,7 @@ select option {
 
 /* Explain drawer: shares the space under the coach with the move list. */
 .review-pane__details {
+  position: relative;
   flex: 0 1 auto;
   min-height: 0;
   max-height: 42%;
@@ -2122,6 +2131,7 @@ select option {
 /* ------------------------------------------------------------------- move list */
 
 .move-list {
+  position: relative;
   flex: 1;
   min-height: 84px;
   overflow-y: auto;
@@ -2182,6 +2192,15 @@ select option {
 
 .move-cell {
   padding: 2px 3px;
+}
+
+/* The result after the last move ("1-0"), as on Chess.com. */
+.move-table__result > td {
+  height: 32px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 
 .move-cell--empty {
@@ -2375,6 +2394,7 @@ select option {
 }
 
 .tool {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -2390,10 +2410,6 @@ select option {
   font-size: 0.82rem;
   padding: 3px 24px 3px 8px;
   background-position: right 6px center;
-}
-
-.tool__label {
-  font-weight: 600;
 }
 
 .tool--toggle input {

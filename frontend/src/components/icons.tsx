@@ -61,6 +61,18 @@ export const Icons = {
       <path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" />
     </svg>
   ),
+  sound: (
+    <svg {...I} width={20} height={20}>
+      <path fill="currentColor" d="M3.5 9h3.8L12 4.8v14.4L7.3 15H3.5z" />
+      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </svg>
+  ),
+  muted: (
+    <svg {...I} width={20} height={20}>
+      <path fill="currentColor" d="M3.5 9h3.8L12 4.8v14.4L7.3 15H3.5z" />
+      <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" d="M15.5 9.5l5 5M20.5 9.5l-5 5" />
+    </svg>
+  ),
   close: (
     <svg {...I}>
       <path fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />

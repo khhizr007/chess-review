@@ -4,13 +4,19 @@ import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Side } from "../api/generated/Side";
 import type { MoveTarget, PromotionPiece } from "../lib/chess";
-import { ClassificationIcon } from "./ClassificationIcon";
+import { ClassificationIcon, EndMarkIcon, type EndMark } from "./ClassificationIcon";
 import { Piece } from "./pieces";
 import { boardPieces } from "../lib/boardPieces";
 
 export interface BoardBadge {
   square: string;
   classification: Classification;
+}
+
+/** A king's badge at the end of the game. */
+export interface BoardEndMark {
+  square: string;
+  mark: EndMark;
 }
 
 /** Moving pieces on the board (a retry, or exploring a sideline). */
@@ -37,6 +43,8 @@ interface Props {
   arrows: Arrow[];
   squareStyles: Record<string, CSSProperties>;
   badge?: BoardBadge | null;
+  /** The kings' badges when the position shown ends the game. */
+  endMarks?: BoardEndMark[];
   moves?: BoardMoves | null;
   promotion?: BoardPromotion | null;
 }
@@ -92,7 +100,7 @@ function PromotionPicker({ promotion, flipped }: { promotion: BoardPromotion; fl
  * clicking the piece and then a square. A picked-up piece shows where it can go, as on Chess.com: a
  * growing highlight on its square, dots on free squares and rings on pieces it can take.
  */
-export function BoardView({ fen, flipped, arrows, squareStyles, badge, moves, promotion }: Props) {
+export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks, moves, promotion }: Props) {
   // The selection belongs to one position: a new position (a move, a step) clears it.
   const [picked, setPicked] = useState<{ fen: string; square: string } | null>(null);
   const selected = moves && !promotion && picked?.fen === fen ? picked.square : null;
@@ -203,6 +211,11 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, moves, pr
           <ClassificationIcon value={badge.classification} size={64} />
         </div>
       )}
+      {endMarks?.map((m) => (
+        <div className="board-badge" style={corner(m.square, flipped)} key={`${m.square}-${m.mark}-${fen}`}>
+          <EndMarkIcon value={m.mark} size={64} />
+        </div>
+      ))}
       {promotion && <PromotionPicker promotion={promotion} flipped={flipped} />}
     </div>
   );

@@ -1,9 +1,12 @@
 import type { ArrowKind } from "../api/generated/ArrowKind";
 import type { Classification } from "../api/generated/Classification";
+import type { CoachNote } from "../api/generated/CoachNote";
+import type { MoveRef } from "../api/generated/MoveRef";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Sentence } from "../api/generated/Sentence";
 import type { Side } from "../api/generated/Side";
+import { uciSquares } from "./fen";
 import { CLASSIFICATIONS, MISS_KINDS, formatAccuracy, moveNumberLabel } from "./format";
 
 /** Coach speech for one move: everything shown in the bubble. */
@@ -137,13 +140,35 @@ export interface CoachArrow {
   kind: ArrowKind;
 }
 
+/** What a move's board arrows come from: a game move, or a judged sideline move with its UCI. */
+export interface ArrowSource {
+  uci: string;
+  classification: Classification | null;
+  played_is_best: boolean;
+  show_best_move: boolean;
+  best_move: MoveRef | null;
+  coach: CoachNote | null;
+}
+
+/** Classes that show no arrow: the move played was the one to play. */
+const NO_ARROWS: ReadonlySet<Classification> = new Set(["book", "best", "brilliant", "great_find", "forced"]);
+
 /**
- * Arrows of the coach's main sentence: those of its first fragment that has any,
- * so the board shows what the sentence is about.
+ * The arrows a move shows by default, as on Chess.com (docs/polish-gaps.md #7): none on book and
+ * best moves; otherwise the best move's arrow (with `withBest`) and one arrow of the coach's main
+ * sentence, never one along the move just played.
  */
-export function coachArrows(ply: PlyReview): CoachArrow[] {
-  const first = ply.coach?.sentences[0]?.fragments.find((f) => f.arrows.length > 0);
-  return first ? first.arrows.map((a) => ({ from: a.from, to: a.to, kind: a.kind })) : [];
+export function moveArrows(move: ArrowSource, withBest = true): CoachArrow[] {
+  if (move.played_is_best || (move.classification && NO_ARROWS.has(move.classification))) return [];
+  const out: CoachArrow[] = [];
+  const best = withBest && move.show_best_move && move.best_move ? uciSquares(move.best_move.uci) : null;
+  if (best) out.push({ ...best, kind: "best" });
+  const played = uciSquares(move.uci);
+  const coach = move.coach?.sentences[0]?.fragments
+    .flatMap((f) => f.arrows)
+    .find((a) => !(played && a.from === played.from && a.to === played.to) && !out.some((b) => b.from === a.from && b.to === a.to));
+  if (coach) out.push({ from: coach.from, to: coach.to, kind: coach.kind });
+  return out;
 }
 
 /** The coach avatar's expression. */

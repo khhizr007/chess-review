@@ -1,10 +1,10 @@
 // Display-only FEN helpers (no chess rules).
 
-/** King square of the side to move (for check highlighting); display only. */
-export function kingSquareToMove(fen: string): string | null {
-  const [placement, turn] = fen.split(" ");
-  if (!placement || !turn) return null;
-  const king = turn === "w" ? "K" : "k";
+/** Square of `side`'s king; display only. */
+export function kingSquare(fen: string, side: "white" | "black"): string | null {
+  const [placement] = fen.split(" ");
+  if (!placement) return null;
+  const king = side === "white" ? "K" : "k";
   const ranks = placement.split("/");
   for (let r = 0; r < ranks.length; r++) {
     let file = 0;
@@ -18,6 +18,13 @@ export function kingSquareToMove(fen: string): string | null {
     }
   }
   return null;
+}
+
+/** King square of the side to move (for check highlighting); display only. */
+export function kingSquareToMove(fen: string): string | null {
+  const turn = fen.split(" ")[1];
+  if (!turn) return null;
+  return kingSquare(fen, turn === "w" ? "white" : "black");
 }
 
 /** Splits a UCI move ("e2e4", "e7e8q") into its squares. */

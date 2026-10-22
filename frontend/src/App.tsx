@@ -6,12 +6,7 @@ import { Logo } from "./components/Logo";
 import { PieceDefs } from "./components/pieces";
 import { ReviewScreen } from "./components/ReviewScreen";
 import { useReviewJob } from "./hooks/useReviewJob";
-
-/** Review id kept in the URL hash so a refresh reopens the same review. */
-function hashId(): string | null {
-  const m = /^#review=([0-9a-f-]{36})$/i.exec(window.location.hash);
-  return m?.[1] ?? null;
-}
+import { parseReviewHash, reviewHash } from "./lib/hash";
 
 function ProgressBar({ done, total }: { done: number; total: number }) {
   const pct = Math.round((Math.min(done, total) / total) * 100);
@@ -25,16 +20,25 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
   );
 }
 
+/** The move a reloaded page showed in this review, from the URL hash. */
+function hashMove(id: string): number | null {
+  const hash = parseReviewHash(window.location.hash);
+  return hash?.id === id ? hash.move : null;
+}
+
 export function App() {
   const { view, start, follow, cancel, reset } = useReviewJob();
 
   useEffect(() => {
-    const id = hashId();
+    const id = parseReviewHash(window.location.hash)?.id;
     if (id) void follow(id);
   }, [follow]);
 
   useEffect(() => {
-    if (view.kind === "done") window.history.replaceState(null, "", `#review=${view.id}`);
+    // A refresh reopens the same review. The review screen adds the move it shows.
+    if (view.kind === "done" && parseReviewHash(window.location.hash)?.id !== view.id) {
+      window.history.replaceState(null, "", reviewHash(view.id, null));
+    }
   }, [view]);
 
   const startOver = () => {
@@ -84,7 +88,7 @@ export function App() {
           </section>
         )}
 
-        {view.kind === "done" && <ReviewScreen review={view.result} reviewId={view.id} onNewGame={startOver} />}
+        {view.kind === "done" && <ReviewScreen review={view.result} reviewId={view.id} initialPly={hashMove(view.id)} onNewGame={startOver} />}
 
         {(view.kind === "error" || view.kind === "cancelled") && (
           <section className="card progress-card">

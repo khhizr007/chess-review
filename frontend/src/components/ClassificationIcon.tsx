@@ -93,3 +93,28 @@ export function ClassificationIconDefs() {
     </svg>
   );
 }
+
+/** How a king is marked at the end of the game: mated, or the winner's. */
+export type EndMark = "checkmate" | "winner";
+
+const END_MARKS: Record<EndMark, { label: string; color: string }> = {
+  checkmate: { label: "Checkmate", color: "var(--c-blunder)" },
+  winner: { label: "Winner", color: "var(--c-best)" },
+};
+
+/** Round end-of-game badge for a king, drawn as the classification icons are: # for mate, a crown for the winner. */
+export function EndMarkIcon({ value, size = 18 }: { value: EndMark; size?: number }) {
+  const meta = END_MARKS[value];
+  return (
+    <svg className="cls-icon" width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={meta.label}>
+      <title>{meta.label}</title>
+      <circle cx="12" cy="12" r="12" fill={meta.color} />
+      <circle cx="12" cy="12" r="12" fill="url(#cls-shade)" />
+      {value === "checkmate" ? (
+        text("#", 14)
+      ) : (
+        <path fill="#fff" d="M5.6 8.4l3.5 2.9L12 6.2l2.9 5.1 3.5-2.9-1.2 7.8H6.8zM6.8 17.2h10.4v1.8H6.8z" />
+      )}
+    </svg>
+  );
+}
