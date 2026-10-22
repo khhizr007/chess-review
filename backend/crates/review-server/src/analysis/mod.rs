@@ -693,6 +693,7 @@ fn build_review(
             explanation,
             coach,
             pgn_comment: parsed.comment.clone(),
+            clock_ms: parsed.clock_ms,
         };
         outcomes.push(MoveOutcome {
             scored: ScoredMove {

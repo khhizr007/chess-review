@@ -117,8 +117,10 @@ pub struct PlyReview {
     /// The coach's explanation: the motif behind the move and the line that
     /// shows it. Empty for moves the coach does not explain.
     pub coach: CoachNote,
-    /// Comment from the imported PGN.
+    /// Comment from the imported PGN, without its `[%…]` commands.
     pub pgn_comment: Option<String>,
+    /// The mover's clock after this move (milliseconds), from the PGN's `[%clk]`.
+    pub clock_ms: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
