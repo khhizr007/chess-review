@@ -1,24 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import type { GameSummary } from "./api/generated/GameSummary";
 import { ImportPanel } from "./components/ImportPanel";
 import { ClassificationIconDefs } from "./components/ClassificationIcon";
-import { CoachBubble } from "./components/Coach";
 import { Logo } from "./components/Logo";
 import { PieceDefs } from "./components/pieces";
+import { ReviewLoading } from "./components/ReviewLoading";
 import { ReviewScreen } from "./components/ReviewScreen";
 import { useReviewJob } from "./hooks/useReviewJob";
 import { parseReviewHash, reviewHash } from "./lib/hash";
-
-function ProgressBar({ done, total }: { done: number; total: number }) {
-  const pct = Math.round((Math.min(done, total) / total) * 100);
-  return (
-    <div className="progress" role="progressbar" aria-label="Review progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
-      <div className="progress__track">
-        <div className="progress__fill" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="progress__pct">{pct}%</span>
-    </div>
-  );
-}
 
 /** The move a reloaded page showed in this review, from the URL hash. */
 function hashMove(id: string): number | null {
@@ -28,6 +17,9 @@ function hashMove(id: string): number | null {
 
 export function App() {
   const { view, start, follow, cancel, reset } = useReviewJob();
+  // The game as parsed at import, so the board and players show while the review runs.
+  const [game, setGame] = useState<GameSummary | null>(null);
+  const reviewLayout = view.kind === "running" || view.kind === "loading" || view.kind === "done";
 
   useEffect(() => {
     const id = parseReviewHash(window.location.hash)?.id;
@@ -43,6 +35,7 @@ export function App() {
 
   const startOver = () => {
     window.history.replaceState(null, "", window.location.pathname);
+    setGame(null);
     reset();
   };
 
@@ -50,42 +43,35 @@ export function App() {
     <div className="app">
       <PieceDefs />
       <ClassificationIconDefs />
-      {view.kind !== "done" && (
+      {!reviewLayout && (
         <header className="topbar">
           <Logo />
         </header>
       )}
-      <main className={view.kind === "done" ? "main main--review" : "main"}>
+      <main className={reviewLayout ? "main main--review" : "main"}>
         {(view.kind === "idle" || view.kind === "submitting") && (
-          <ImportPanel onStart={(req) => void start(req)} busy={view.kind === "submitting"} />
+          <ImportPanel
+            onStart={(req, picked) => {
+              setGame(picked);
+              void start(req);
+            }}
+            busy={view.kind === "submitting"}
+          />
         )}
 
         {(view.kind === "running" || view.kind === "loading") && (
-          <section className="card progress-card" aria-live="polite">
-            <CoachBubble>
-              <div className="coach__head">
-                <h1 className="coach__title">Analyzing your game…</h1>
-              </div>
-              <div className="coach__body">
-                <p>
-                  {view.kind === "loading"
-                    ? "Almost there. Putting the review together."
-                    : view.status.state === "queued"
-                      ? "Waiting for a free engine."
-                      : `Checked ${view.status.progress.done} of ${view.status.progress.total} positions.`}
-                </p>
-              </div>
-            </CoachBubble>
-            <ProgressBar
-              done={view.kind === "running" ? view.status.progress.done : 1}
-              total={view.kind === "running" ? Math.max(1, view.status.progress.total) : 1}
-            />
-            {view.kind === "running" && (
-              <button type="button" className="button" onClick={() => void cancel()}>
-                Cancel
-              </button>
-            )}
-          </section>
+          <ReviewLoading
+            game={game}
+            progress={view.kind === "loading" ? { done: 1, total: 1 } : view.status.state === "queued" ? null : view.status.progress}
+            status={
+              view.kind === "loading"
+                ? "Almost there. Putting the review together."
+                : view.status.state === "queued"
+                  ? "Waiting for a free engine."
+                  : `Checked ${view.status.progress.done} of ${view.status.progress.total} positions.`
+            }
+            onCancel={view.kind === "running" ? () => void cancel() : undefined}
+          />
         )}
 
         {view.kind === "done" && <ReviewScreen review={view.result} reviewId={view.id} initialPly={hashMove(view.id)} onNewGame={startOver} />}

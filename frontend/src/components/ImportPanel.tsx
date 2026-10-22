@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type { CreateReviewRequest } from "../api/generated/CreateReviewRequest";
+import type { GameSummary } from "../api/generated/GameSummary";
 import type { Health } from "../api/generated/Health";
 import type { ParseEntry } from "../api/generated/ParseEntry";
 import type { Side } from "../api/generated/Side";
@@ -10,7 +11,8 @@ import { SAMPLE_PGN } from "../samples";
 import { OnlineImport } from "./OnlineImport";
 
 interface Props {
-  onStart: (req: CreateReviewRequest) => void;
+  /** Starts the review; the parsed game lets the review layout show the board while it runs. */
+  onStart: (req: CreateReviewRequest, game: GameSummary | null) => void;
   busy: boolean;
 }
 
@@ -268,7 +270,7 @@ export function ImportPanel({ onStart, busy }: Props) {
             disabled={!canStart}
             onClick={() => {
               if (selectedGame) rememberChoice(selectedGame, side);
-              onStart({ pgn, game_index: selected, strength, multipv, ...(side ? { player_side: side } : {}) });
+              onStart({ pgn, game_index: selected, strength, multipv, ...(side ? { player_side: side } : {}) }, selectedGame);
             }}
           >
             {busy ? "Starting…" : "Start review"}

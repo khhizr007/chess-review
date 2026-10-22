@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateReviewRequest } from "../api/generated/CreateReviewRequest";
+import type { GameSummary } from "../api/generated/GameSummary";
 import { myUsernames } from "../lib/players";
 import { ImportPanel } from "./ImportPanel";
 
@@ -35,7 +36,7 @@ function serve(white: string, black: string) {
   );
 }
 
-async function load(onStart: (req: CreateReviewRequest) => void) {
+async function load(onStart: (req: CreateReviewRequest, game: GameSummary | null) => void) {
   render(<ImportPanel onStart={onStart} busy={false} />);
   fireEvent.change(screen.getByLabelText("PGN"), { target: { value: "1. e4 e5" } });
   await screen.findByRole("radiogroup", { name: "Games in the PGN" }, { timeout: 2000 });
@@ -60,7 +61,8 @@ describe("ImportPanel: this is me", () => {
     expect((sideOption(/Neither/) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(sideOption(/Bob/));
     fireEvent.click(screen.getByRole("button", { name: "Start review" }));
-    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ player_side: "black" }));
+    // The parsed game goes along, so the review layout can show its board while the engine works.
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ player_side: "black" }), expect.objectContaining({ white: "Alice", black: "Bob" }));
     expect(myUsernames()).toEqual(["bob"]);
   });
 
