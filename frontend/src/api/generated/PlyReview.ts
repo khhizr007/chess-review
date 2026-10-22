@@ -53,6 +53,10 @@ explanation: Array<string>,
  */
 coach: CoachNote, 
 /**
- * Comment from the imported PGN.
+ * Comment from the imported PGN, without its `[%…]` commands.
  */
-pgn_comment: string | null, };
+pgn_comment: string | null, 
+/**
+ * The mover's clock after this move (milliseconds), from the PGN's `[%clk]`.
+ */
+clock_ms: number | null, };

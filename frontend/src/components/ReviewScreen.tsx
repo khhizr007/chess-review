@@ -9,6 +9,7 @@ import type { Side } from "../api/generated/Side";
 import { useLiveEngine } from "../hooks/useLiveEngine";
 import { useSidelineJudge } from "../hooks/useSidelineJudge";
 import { canMoveFrom, ending, legalTargets, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
+import { clocksAt } from "../lib/clock";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
 import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
@@ -573,6 +574,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   const bottom: Side = flipped ? "black" : "white";
   const top: Side = flipped ? "white" : "black";
   const point = review.graph[ply];
+  const clocks = clocksAt(review, ply);
   const strip = (side: Side) => (
     <PlayerStrip
       side={side}
@@ -580,6 +582,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       elo={side === "white" ? review.white.elo : review.black.elo}
       material={material[side]}
       toMove={toMove === side}
+      clock={clocks?.[side] ?? null}
     />
   );
 

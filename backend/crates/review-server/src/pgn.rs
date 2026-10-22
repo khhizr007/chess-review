@@ -34,7 +34,10 @@ pub struct ParsedMove {
     /// Canonical SAN with check/mate suffix.
     pub san: String,
     pub uci: String,
+    /// Comment text, with `[%…]` commands removed.
     pub comment: Option<String>,
+    /// Clock time left after this move (milliseconds), from `[%clk h:mm:ss(.f)]`.
+    pub clock_ms: Option<u32>,
     pub nags: Vec<u8>,
 }
 
@@ -136,10 +139,49 @@ fn decode_tag(value: RawTag<'_>) -> String {
     value.decode_utf8_lossy().into_owned()
 }
 
-fn comment_text(comment: RawComment<'_>) -> String {
-    String::from_utf8_lossy(comment.as_bytes())
-        .trim()
-        .to_owned()
+/// A comment's text with every embedded `[%…]` command (`%clk`, `%eval`, `%emt`, `%csl`, …)
+/// removed, and the clock from `[%clk …]` if it has one.
+fn comment_text(comment: RawComment<'_>) -> (String, Option<u32>) {
+    split_commands(&String::from_utf8_lossy(comment.as_bytes()))
+}
+
+fn split_commands(raw: &str) -> (String, Option<u32>) {
+    let mut text = String::new();
+    let mut clock_ms = None;
+    let mut rest = raw;
+    while let Some(start) = rest.find("[%") {
+        let Some(len) = rest[start..].find(']') else {
+            break;
+        };
+        text.push_str(&rest[..start]);
+        text.push(' ');
+        let command = &rest[start + 2..start + len];
+        if let Some(value) = command.strip_prefix("clk") {
+            clock_ms = parse_clock(value.trim()).or(clock_ms);
+        }
+        rest = &rest[start + len + 1..];
+    }
+    text.push_str(rest);
+    (
+        text.split_whitespace().collect::<Vec<_>>().join(" "),
+        clock_ms,
+    )
+}
+
+/// `h:mm:ss` or `m:ss`, either with a fraction of a second, in milliseconds.
+fn parse_clock(value: &str) -> Option<u32> {
+    let mut parts = value.rsplit(':');
+    let seconds: f64 = parts.next()?.parse().ok()?;
+    if !seconds.is_finite() || seconds < 0.0 {
+        return None;
+    }
+    let minutes: u64 = parts.next()?.parse().ok()?;
+    let hours: u64 = parts.next().map_or(Some(0), |h| h.parse().ok())?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let ms = (hours * 3600 + minutes * 60) * 1000 + (seconds * 1000.0).round() as u64;
+    u32::try_from(ms).ok()
 }
 
 impl Visitor for GameVisitor {
@@ -243,6 +285,7 @@ impl Visitor for GameVisitor {
                     san,
                     uci,
                     comment: None,
+                    clock_ms: None,
                     nags: Vec::new(),
                 });
             }
@@ -277,7 +320,10 @@ impl Visitor for GameVisitor {
         mt: &mut Self::Movetext,
         comment: RawComment<'_>,
     ) -> ControlFlow<Self::Output> {
-        let text = comment_text(comment);
+        let (text, clock_ms) = comment_text(comment);
+        if let (Some(clock), Some(last)) = (clock_ms, mt.game.moves.last_mut()) {
+            last.clock_ms = Some(clock);
+        }
         if text.is_empty() {
             return ControlFlow::Continue(());
         }
@@ -388,5 +434,57 @@ mod tests {
             .unwrap()
             .remove(0);
         assert!(matches!(bad, Err(PgnError::InvalidStartPosition { .. })));
+    }
+
+    #[test]
+    fn reads_clocks_and_drops_commands_from_comments() {
+        let pgn = r#"[TimeControl "600"]
+
+1. e4 {[%clk 0:09:57.5]} 1... e5 {[%clk 0:09:58]} 2. Nf3 {A good move [%clk 0:09:50.7] [%emt 0:00:07]}
+2... Nc6 {[%eval 0.17] [%clk 1:02:03]} 3. Bb5 {[%csl Gb5][%cal Gb5c6] pin} 3... a6 {[%clk 0:00:04.25]} 1-0"#;
+        let g = parse_pgn(pgn).unwrap().remove(0).unwrap();
+        let clocks: Vec<_> = g.moves.iter().map(|m| m.clock_ms).collect();
+        assert_eq!(
+            clocks,
+            vec![
+                Some(597_500),
+                Some(598_000),
+                Some(590_700),
+                Some(3_723_000),
+                None,
+                Some(4_250)
+            ]
+        );
+        let comments: Vec<_> = g.moves.iter().map(|m| m.comment.as_deref()).collect();
+        assert_eq!(
+            comments,
+            vec![None, None, Some("A good move"), None, Some("pin"), None]
+        );
+    }
+
+    #[test]
+    fn lichess_eval_comments_leave_no_text() {
+        let pgn = "{ [%evp 0,17] } 1. d4 { [%eval 0.17] [%clk 0:03:00] } 1... d5 { [%eval #-3] } *";
+        let g = parse_pgn(pgn).unwrap().remove(0).unwrap();
+        assert_eq!(g.prelude_comment, None);
+        assert_eq!(g.moves[0].comment, None);
+        assert_eq!(g.moves[0].clock_ms, Some(180_000));
+        assert_eq!(g.moves[1].comment, None);
+        assert_eq!(g.moves[1].clock_ms, None);
+    }
+
+    #[test]
+    fn parses_clock_formats() {
+        assert_eq!(parse_clock("0:09:57.5"), Some(597_500));
+        assert_eq!(parse_clock("0:09:48"), Some(588_000));
+        assert_eq!(parse_clock("9:48"), Some(588_000));
+        assert_eq!(parse_clock("2:00:00"), Some(7_200_000));
+        assert_eq!(parse_clock("48"), None);
+        assert_eq!(parse_clock("soon"), None);
+        assert_eq!(parse_clock("1:2:3:4"), None);
+        assert_eq!(
+            split_commands("[%clk 0:01:00] keep [this]  text [%unclosed"),
+            ("keep [this] text [%unclosed".to_owned(), Some(60_000))
+        );
     }
 }

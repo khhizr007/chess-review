@@ -1197,6 +1197,38 @@ select option {
   content: "To move";
 }
 
+/* Clock from the PGN: dark box, light with a clock icon for the side to move. */
+.clock {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  min-width: 96px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.clock.is-running {
+  background: var(--text);
+  color: var(--gray-800);
+}
+
+.clock__icon {
+  flex: none;
+  margin-right: auto;
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.35;
@@ -2884,6 +2916,13 @@ select option {
 
   .player-strip__turn::before {
     margin-right: 0;
+  }
+
+  .clock {
+    min-width: 78px;
+    height: 32px;
+    padding: 0 8px;
+    font-size: 1.05rem;
   }
 
   .cta {
