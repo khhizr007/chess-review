@@ -48,6 +48,9 @@ The reader's own moves (exploring a sideline, `docs/explore-mode.md`) follow the
 - **Stepping forward, or clicking a sideline move,** plays the move arrived at.
 - **Brilliant** never sounds in a sideline, because sideline moves are not classified.
 - **Playing the game's own move** follows the game and sounds like stepping forward.
+- **Back from a line's first move** lands on its branch, a game position, and plays the move taken back.
+  **→ from there** follows the game, with the game's sound.
+- **Opening the variation picker** makes no sound. Following a choice plays the move arrived at.
 
 This is this app's own choice. The reference client's analysis board was not examined for sound.
 

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
+import type { ExploreNode } from "../lib/explore";
 import { MoveList } from "./MoveList";
 
 afterEach(cleanup);
@@ -55,14 +56,17 @@ describe("MoveList", () => {
   });
 });
 
+
 describe("MoveList sideline", () => {
   const NONE = { check: false, checkmate: false, stalemate: false, capture: false, castle: false, promotion: false, en_passant: false };
   const mv = (san: string) => ({ san, uci: san, fen: "", from: "a1", to: "a2", flags: NONE });
+  const node = (san: string, ...next: ExploreNode[]): ExploreNode => ({ move: mv(san), next });
   // 1. e4 e5 2. Nf3 Nc6, with 1... c5 2. Nf3 explored instead of 1... e5.
   const plies = [ply(1, "white", 1), ply(2, "black", 1), ply(3, "white", 2), ply(4, "black", 2)];
   const branchFen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+  const lines = [node("c5", node("Nf3"))];
 
-  it("lists the sideline under the row of the move it replaces, with move numbers", () => {
+  it("lists the line under the row of the move it replaces, with move numbers", () => {
     const onPick = vi.fn();
     render(
       <MoveList
@@ -70,30 +74,50 @@ describe("MoveList sideline", () => {
         current={1}
         filter="all"
         onSelect={() => {}}
-        sideline={{ line: { fromPly: 1, moves: [mv("c5"), mv("Nf3")], cursor: 2 }, branchFen, onSelect: onPick }}
+        sideline={{ fromPly: 1, lines, branchFen, shown: [0, 0], onSelect: onPick }}
       />,
     );
     const rows = screen.getAllByRole("row");
     expect(rows).toHaveLength(3);
     expect(rows[1]?.textContent).toBe("1...c52.Nf3");
-    expect(document.querySelector(`[data-sideline="2"]`)?.getAttribute("aria-current")).toBe("step");
+    expect(document.querySelector(`[data-sideline="0.0"]`)?.getAttribute("aria-current")).toBe("step");
     // While the board is in the sideline, no game move is current.
     expect(screen.getByText("S1").closest("button")?.getAttribute("aria-current")).toBeNull();
     fireEvent.click(screen.getByText("c5"));
-    expect(onPick).toHaveBeenCalledWith(1);
+    expect(onPick).toHaveBeenCalledWith([0]);
   });
 
-  it("at the branch position, keeps the game move current", () => {
+  it("on the game move the lines replace, keeps that move current", () => {
+    render(<MoveList plies={plies} current={2} filter="all" onSelect={() => {}} sideline={{ fromPly: 1, lines, branchFen, shown: null, onSelect: () => {} }} />);
+    expect(screen.getByText("S2").closest("button")?.getAttribute("aria-current")).toBe("step");
+    expect(document.querySelector(`[aria-current="step"][data-sideline]`)).toBeNull();
+  });
+
+  it("lists each line on its own row and variations in brackets, as Chess.com does", () => {
+    // 1... c5 2. Nf3 (2. c3) 2... d6, and a second line 1... e6.
+    const tree = [node("c5", node("Nf3", node("d6")), node("c3")), node("e6")];
+    render(<MoveList plies={plies} current={1} filter="all" onSelect={() => {}} sideline={{ fromPly: 1, lines: tree, branchFen, shown: [0, 1], onSelect: () => {} }} />);
+    const rows = screen.getAllByRole("row");
+    expect(rows.map((r) => r.textContent)).toContain("1...c52.Nf3(2.c3)2...d6");
+    expect(rows.map((r) => r.textContent)).toContain("1...e6");
+    expect(document.querySelector(`[data-sideline="0.1"]`)?.getAttribute("aria-current")).toBe("step");
+  });
+
+  it("shows the variation picker under the shown move", () => {
+    const tree = [node("c5", node("Nf3"), node("c3"))];
+    const choice = { options: [mv("Nf3"), mv("c3")], index: 0, onHover: vi.fn(), onPick: vi.fn(), onClose: vi.fn() };
     render(
-      <MoveList
-        plies={plies}
-        current={1}
-        filter="all"
-        onSelect={() => {}}
-        sideline={{ line: { fromPly: 1, moves: [mv("c5")], cursor: 0 }, branchFen, onSelect: () => {} }}
-      />,
+      <MoveList plies={plies} current={1} filter="all" onSelect={() => {}} sideline={{ fromPly: 1, lines: tree, branchFen, shown: [0], onSelect: () => {} }} choice={choice} />,
     );
-    expect(screen.getByText("S1").closest("button")?.getAttribute("aria-current")).toBe("step");
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["→Nf3", "c3"]);
+    expect(options[0]?.getAttribute("aria-selected")).toBe("true");
+    fireEvent.mouseEnter(options[1]!);
+    expect(choice.onHover).toHaveBeenCalledWith(1);
+    fireEvent.click(options[1]!);
+    expect(choice.onPick).toHaveBeenCalledWith(1);
+    fireEvent.mouseDown(document.body);
+    expect(choice.onClose).toHaveBeenCalled();
   });
 });
 
@@ -108,15 +132,17 @@ describe("MoveList sideline classifications", () => {
         filter="all"
         onSelect={() => {}}
         sideline={{
-          line: { fromPly: 1, moves: [mv("c5"), mv("d4")], cursor: 1 },
+          fromPly: 1,
+          lines: [{ move: mv("c5"), next: [{ move: mv("d4"), next: [] }] }],
           branchFen: "x b KQkq - 0 1",
+          shown: [0],
           onSelect: () => {},
-          classes: ["mistake", null],
+          classOf: (moves) => (moves.length === 1 ? "mistake" : null),
         }}
       />,
     );
     expect(screen.getByRole("img", { name: "Mistake" })).toBeTruthy();
-    expect(document.querySelector(`[data-sideline="1"]`)?.getAttribute("title")).toBe("Mistake");
-    expect(document.querySelector(`[data-sideline="2"]`)?.getAttribute("title")).toBeNull();
+    expect(document.querySelector(`[data-sideline="0"]`)?.getAttribute("title")).toBe("Mistake");
+    expect(document.querySelector(`[data-sideline="0.0"]`)?.getAttribute("title")).toBeNull();
   });
 });
