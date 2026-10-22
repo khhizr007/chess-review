@@ -35,12 +35,12 @@ function rawMove(from: string, to: string, promotion?: PromotionPiece): NormalMo
   return promotion ? { from: f, to: t, promotion: charToRole(promotion) } : { from: f, to: t };
 }
 
-/** Whether the piece on `square` belongs to the side to move and has a legal move. */
-export function canMoveFrom(fen: string, square: string): boolean {
-  const pos = position(fen);
-  const sq = parseSquare(square);
-  if (!pos || sq === undefined || pos.isEnd()) return false;
-  return pos.board[pos.turn].has(sq) && pos.dests(sq).nonEmpty();
+/**
+ * Whether `from`→`to` is a legal move, a promotion counting whatever the piece. A castling king may
+ * go to its target square or onto its rook, as `playMove` takes it.
+ */
+export function canPlay(fen: string, from: string, to: string, chess960 = false): boolean {
+  return needsPromotion(fen, from, to) || playMove(fen, from, to, undefined, chess960) !== null;
 }
 
 /** A square the selected piece can move to, and whether the move takes a piece there. */

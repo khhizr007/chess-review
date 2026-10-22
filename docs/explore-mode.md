@@ -147,7 +147,9 @@ the wiring in `ReviewScreen.tsx`.
 
 - **When dragging is allowed.** It is on whenever no Retry and no line preview is open. Retry keeps
   its own drag semantics (it is a quiz).
-  - **Only the side to move.** Only its pieces with a legal move can be picked up.
+  - **Any piece, only legal moves.** Every piece can be picked up, clicked or dragged, of either side,
+    with or without a move. Only the side to move's legal moves are played (§5.2 "Picking up any
+    piece").
   - **From the report.** Dragging on the report screen switches to the review.
 - **Castling.** The king can be dropped on its target square or on its rook. UCI follows the backend:
   king squares in standard chess, king-takes-rook in Chess960.
@@ -157,8 +159,8 @@ the wiring in `ReviewScreen.tsx`.
     - **How it works.** A pawn dropped on the last rank snaps back, and four pieces appear over the promotion file.
     - **Taking it back.** A click elsewhere or Esc takes the move back.
   - **Click-to-move and move hints (built 2026-10-22), as on Chess.com.** Clicking a piece picks it
-    up, and clicking a highlighted square moves it there. A click on the piece again, an empty
-    square or the opponent's piece puts it down.
+    up, and clicking a highlighted square moves it there. A click on the piece again or on an empty
+    square puts it down; a click on another piece picks that one up instead.
     - **The mouse acts on the press, not the release.**
       - **Pick-up.** The piece is picked up, with its hints, while the button is still down. In the
         browser that took 27–39 ms after the press. Before this, nothing showed until release, or
@@ -179,7 +181,53 @@ the wiring in `ReviewScreen.tsx`.
     - **Where it lives.** `BoardView` draws the layers with react-chessboard's `squareRenderer`;
       `lib/chess.ts` `legalTargets` gives the targets. Retry shows the same hints: all legal moves,
       so nothing is given away.
-    - **Not copied.** The captured piece's fade-out and the drag hover outline (ours is an inset white edge).
+    - **Not copied.** The captured piece's fade-out.
+  - **Picking up any piece (built 2026-10-22), as on Chess.com.** Observed on 2026-10-22 on
+    Chess.com's analysis board and in Game Review (a review of the user's own game, after
+    "Start Review"), by logging the board's DOM changes and pointer events around real clicks and
+    drags. Both boards behave the same.
+    - **Any piece responds.** A press on any piece picks it up, whatever side is to move and
+      whether or not it has a move. Its square gets the growing yellow circle. Hints appear only
+      for the side to move's legal moves, so a piece of the side not to move (or a blocked piece)
+      shows none.
+    - **No moves out of turn.** A click on a square the piece cannot reach, or a drop there, is
+      refused. The square flashes red: Chess.com's `vfx-illegal-move-tap`, an `rgb(230,57,70)`
+      overlay fading from 0.55 over 0.7 s, plus a black circle growing from 0.6 to 1.5× while it
+      fades from 0.07. This applies to any move by the side not to move, too: in Game Review, with
+      Black to move, clicking the g1 knight and then f3 only flashed f3. Out-of-turn moves never
+      switch the side to move.
+    - **Clicks, with a piece picked up.**
+      - A target square plays the move, on the press.
+      - Another piece, of either side, is picked up instead, unless it is a capture target.
+      - An empty square puts the piece down and flashes red.
+      - The piece itself puts it down on the release, so it can still be dragged.
+      - With nothing picked up, an empty square does nothing.
+    - **Drags.**
+      - A drag picks the piece up, with its hints, like a press.
+      - A refused drop flashes red and the piece goes back, still picked up with its hints.
+      - A drop off the board goes back without a flash, still picked up.
+      - A drop back on its own square counts as a click: a piece picked up by this press stays
+        picked up, and one picked up before is put down.
+      - A king dropped on its own rook castles, as Chess.com does in standard chess too, though
+        the hint is on the king's landing square.
+    - **Right button.** The press puts the picked-up piece down. Its click marks the square in
+      `rgb(235,97,80)` at 0.8, and a second right click on the square unmarks it. A left press or
+      a new position (a move or a step) clears the marks. Right-drags still draw arrows.
+    - **Outline and cursor.**
+      - From the press until the release, the held piece's square has Chess.com's hover outline.
+        This is a white `rgba(255,255,255,.65)` edge 5% of the square wide (theirs is an SVG rect
+        with stroke 10 in a 100 box; ours is `0.625cqw`). During a drag, the outline follows the
+        square under the piece.
+      - Every piece shows the `grab` cursor, and a dragged one shows `grabbing`.
+    - **Retry.** The same rules apply. An illegal move is refused on the board, so it no longer
+      counts as a wrong answer.
+    - **Where it lives.**
+      - `BoardView` handles the press, click, drop and right-click rules.
+      - `BoardMoves.legal` gives the legality check, `lib/chess.ts` `canPlay`, which counts a
+        promotion and a king dropped on its rook.
+    - **Not copied.** On a press, Chess.com lifts the piece in place and scales it with a short
+      spring, then tilts it with the drag's speed. Ours still lifts after a 1 px move, with
+      react-chessboard's clone at `scale(1.12)` and a shadow.
 - **The sideline model.** `Sideline = { fromPly, moves, cursor }`. It is one sideline at a time, as
   Chess.com does; a variation tree is out of scope for v1.
   - **The cursor.** It counts the sideline moves shown. 0 is the branch position, which is also the
