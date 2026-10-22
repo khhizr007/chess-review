@@ -12,7 +12,8 @@ October 2026. This document analyses and plans a feature. Sources:
 - Phase 3, classifying explored moves, is built (§5.5).
 - Coach text on explored moves, the first Phase 4 item, is built (§5.5, "The coach's note").
 - The explore panel was matched to Chess.com's Game Review on 2026-10-22: the bubble is a game
-  move's, there is one Resume button, and the engine lines are behind a header toggle (§2, §5.2, §5.4).
+  move's, its buttons are Chess.com's (★ Best as a variation, 💡 the coach's line, ▶ Resume), and the
+  engine lines are behind a header toggle (§2, §5.2, §5.4).
 - The other Phase 4 items stay optional (§7).
 
 ## 1. Summary
@@ -274,8 +275,19 @@ the wiring in `ReviewScreen.tsx`.
     - **Endings.** It names checkmate, stalemate, dead material and the fifty-move rule.
     - **Engine errors.** A browser engine that cannot start is reported in the bubble.
     - **What it leaves out.** There is no "Exploring … instead of …" title and no hint about dragging or the arrow keys.
-  - **One "▶ Resume" button** (secondary, full width) goes back to the game. Its tooltip names Esc.
-    Chess.com's ★ Best and 💡 explanation buttons are not built yet (§7).
+  - **Buttons under the bubble,** as on Chess.com (§2):
+    - **Nothing to show** (before the move is judged, or with no better move and no coach line):
+      one labelled "▶ Resume" (secondary, full width). It goes back to the game, and its tooltip names Esc.
+    - **Otherwise** they are icon-only and equally wide: ★, then 💡, then a green ▶ (Resume).
+    - **★ Best** appears when the judgement shows a better move. It steps back to the position the
+      shown move was played from and plays the best move there (`playBest`, the same `play` as a
+      dragged move). So it lands beside the explored move as a variation, for example
+      "8. Bxf7+ (8. Be3)", and shows it, judged as best. From the branch position, a best move that
+      is the game's own move follows the game, as any played move does.
+    - **💡 Explain** appears when the judgement's coach note has a show-line. It replays the first
+      one with the game moves' line player (narration, ‹ Replay › and Hide). It does not add the
+      line to the move list, as Chess.com does. Esc or Hide returns to the explored move; Esc again
+      leaves the sideline.
   - **No engine lines by default.** The header's lines icon, in the slot of Chess.com's "Go to
     Analysis", shows them (§5.4).
   - **The eval bar** is fed by the live engine (§5.4).
@@ -532,7 +544,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 | **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
 | **2. Live engine (done 2026-10-21)** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Done. Vitest: `uci.test.ts` and `controller.test.ts`, a scripted fake worker covering the handshake, complete depths, superseding, cache, stop, throttle, new game and load failure. In the browser: engine ready in 151 ms and depth 14 in 0.8 s; lines, pill, bar and arrow update live; "Go deeper" goes 18 → 20; clicking a line move plays it; a revisited position answers from the cache; a hidden page pauses the search. No phone was measured. | M |
 | **3. Move feedback (done 2026-10-21)** | `POST /api/reviews/{id}/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Done. The facts-builder refactor was confirmed byte-identical on 10 games. `tests/sideline.rs` covers every fixture move judged as the review judged it, a later sideline move and bad requests. `tests/api.rs` tests the route. `useSidelineJudge.test.ts` covers provisional then final, the previous move's loss, and a move that ends the game. In the browser: 1.d4 and 1...e5 were Book, and 2.Bg5 was "a blunder. dxe5 was best". Each judge request took 7–11 ms with no engine search. | M |
-| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); Chess.com's ★ Best (plays the best move as a variation) and 💡 explanation-line buttons under the explore bubble (§2); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
+| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); ~~Chess.com's ★ Best and 💡 explanation-line buttons under the explore bubble~~ (built 2026-10-22, §5.2); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
 
 Phases 1 and 2 are the feature as most users will see it. Phase 3 is what makes it feel like
 Chess.com's explore mode.

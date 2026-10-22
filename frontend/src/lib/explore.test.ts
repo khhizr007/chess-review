@@ -133,3 +133,17 @@ describe("move labels", () => {
     expect(moveLabel(branch, 2, false)).toEqual({ number: "3.", mover: "white" });
   });
 });
+
+describe("★ Best (back, then play the best move)", () => {
+  it("adds the best move beside the explored one, as Chess.com's 2... e5 (2... d5)", () => {
+    const shown = playAll(start, ["e2e4", "e7e5"]);
+    const best = play(back(shown)!, plies, mv("d7d5"));
+    expect(ucis(best)).toEqual(["e2e4", "d7d5"]);
+    expect(nextMoves({ ...best, path: [0] })?.map((n) => n.move.uci)).toEqual(["e7e5", "d7d5"]);
+  });
+
+  it("follows the game when the best move from the branch is the game's own", () => {
+    const shown = play(start, plies, mv("e2e4"));
+    expect(play(back(shown)!, plies, mv("g1f3"))).toMatchObject({ ply: 3, path: [] });
+  });
+});

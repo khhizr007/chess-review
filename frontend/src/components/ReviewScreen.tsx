@@ -8,7 +8,7 @@ import type { Sentence } from "../api/generated/Sentence";
 import type { Side } from "../api/generated/Side";
 import { useLiveEngine } from "../hooks/useLiveEngine";
 import { useSidelineJudge } from "../hooks/useSidelineJudge";
-import { canMoveFrom, ending, legalTargets, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
+import { canMoveFrom, ending, legalTargets, lineMoves, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
 import { back, inSideline, listedBranch, nextMoves, play, sidelineOf, type BoardState, type Explored } from "../lib/explore";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
@@ -220,7 +220,9 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   const shownSentences = shownJudged?.judgement.coach.sentences ?? NO_SENTENCES;
   const liveBest = liveLines[0]?.moves[0];
 
-  const showLine = preview?.source === "coach" ? current?.coach?.show_lines[preview.line] : undefined;
+  // The coach's lines for the move shown: the explored move's, from its judgement, or the game move's.
+  const coachLines = shownMove ? shownJudged?.judgement.coach.show_lines : current?.coach?.show_lines;
+  const showLine = preview?.source === "coach" ? coachLines?.[preview.line] : undefined;
   const previewLine: MoveRef[] | undefined = useMemo(() => {
     if (!preview) return undefined;
     if (preview.source === "coach") return showLine?.moves;
@@ -273,6 +275,8 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     (fromPly: number, to: number[]) => {
       setChoice(null);
       setPromotion(null);
+      setPreview(null);
+      setLinePlaying(false);
       const here = fromPly === ply;
       if (here && to.join() === path.join()) return;
       const stepBack = here && to.length === path.length - 1 && to.every((i, k) => i === path[k]);
@@ -392,9 +396,10 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
         go(e.key === "Home" ? 0 : total);
       } else if (e.key === "f") setFlipped((f) => !f);
       else if (e.key === "Escape") {
-        // A promotion choice is taken back first, then the sideline is left for its branch position.
+        // A promotion choice is taken back first, then a line being replayed is hidden, then the
+        // sideline is left for its branch position.
         if (promotion) setPromotion(null);
-        else if (sideline) go(sideline.fromPly);
+        else if (sideline && !preview) go(sideline.fromPly);
         else {
           setPreview(null);
           setLinePlaying(false);
@@ -460,19 +465,21 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
 
   const displayFen = activeRetry
     ? (solvedMove?.fen ?? current?.fen_before ?? fenAt(review, ply))
-    : (shownMove?.fen ?? previewMove?.fen ?? (showLine && previewing ? showLine.start_fen : fenAt(review, ply)));
+    : showLine && previewing
+      ? (previewMove?.fen ?? showLine.start_fen)
+      : (shownMove?.fen ?? previewMove?.fen ?? fenAt(review, ply));
   const toMove: Side = displayFen.split(" ")[1] === "b" ? "black" : "white";
 
   /**
-   * Plays moves from the shown position, one after another: the game's own move follows the game,
-   * any other one explores. The last move played sounds.
+   * Plays moves from the shown position (or `from`), one after another: the game's own move follows
+   * the game, any other one explores. The last move played sounds.
    */
-  const playMoves = (moves: PlayedMove[]) => {
+  const playMoves = (moves: PlayedMove[], from: BoardState = board) => {
     const last = moves.at(-1);
     if (!last) return;
     setPlaying(false);
     setMode("review");
-    const after = moves.reduce<BoardState>((s, m) => play(s, review.plies, m), board);
+    const after = moves.reduce<BoardState>((s, m) => play(s, review.plies, m), from);
     setExplored(after.explored);
     // The game's own move follows the game, with the game's sound.
     if (after.ply !== ply) go(after.ply);
@@ -480,8 +487,19 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     setPinned(null);
     setHovered(null);
     setChoice(null);
+    closePreview();
     setPath(after.path);
     if (soundOn) playSounds([moveSound(last.flags)]);
+  };
+
+  /**
+   * Chess.com's ★ on an explored move: the best move from the position the shown move was played
+   * from, added beside it as a variation ("2... e5 (2... d5)"), and shown.
+   */
+  const playBest = (best: MoveRef) => {
+    const before = back(board);
+    const move = before && shownFrom ? lineMoves(shownFrom, [best.uci], 1, review.game.chess960)[0] : undefined;
+    if (before && move) playMoves([move], before);
   };
 
   /** Plays a dragged move from the shown position; false leaves the piece where it was. */
@@ -521,7 +539,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       return { arrows, squareStyles: styles, badge };
     }
 
-    if (shownMove) {
+    if (shownMove && !showLine) {
       // Coloured by its classification once judged, as game moves are.
       const color = shownClass ? CLASSIFICATIONS[shownClass].color : PREVIEW_TINT;
       styles[shownMove.from] = tint(color, shownClass ? 42 : 45);
@@ -736,11 +754,68 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       );
     }
 
+    // Replaying one of the coach's lines, with its narration: a game move's, or an explored move's.
+    if (preview?.source === "coach" && showLine && previewing) {
+      const atStart = preview.move < 0;
+      const last = preview.move + 1 >= showLine.moves.length;
+      const title = showLine.label.replace(/^Show /, "");
+      const actions: CoachAction[] = [
+        { label: "Prev", icon: Icons.prev, onClick: () => (setLinePlaying(false), stepPreview(-1)), hint: "Previous move (←)" },
+        linePlaying
+          ? { label: "Pause", icon: Icons.pause, onClick: () => setLinePlaying(false) }
+          : {
+              label: last ? "Replay" : "Play",
+              icon: last ? Icons.retry : Icons.play,
+              onClick: () => {
+                if (last) setPreview({ ...preview, move: -1 });
+                setLinePlaying(true);
+              },
+            },
+        { label: "Next", icon: Icons.forward, onClick: () => (setLinePlaying(false), stepPreview(1)), hint: "Next move (→)" },
+        { label: "Hide", icon: Icons.close, onClick: closePreview, primary: true, hint: shownMove ? "Back to your move (Esc)" : "Back to the game (Esc)" },
+      ];
+      return (
+        <>
+          <CoachBubble>
+            <div className="coach__head">
+              <span className="coach__glyph">{Icons.eye}</span>
+              <h2 className="coach__title">{title.charAt(0).toUpperCase() + title.slice(1)}</h2>
+              <span className="show-line__count">
+                {preview.move + 1}/{showLine.moves.length}
+              </span>
+            </div>
+            <div className="coach__body">
+              <p className="show-line__narration" aria-live="polite">
+                {atStart ? "Here is the position. Watch the line, or step through it with ← →." : showLine.narration[preview.move]}
+              </p>
+              <ShowLineMoves
+                line={showLine}
+                move={preview.move}
+                onSelect={(m) => {
+                  setLinePlaying(false);
+                  setPreview({ ...preview, move: m });
+                }}
+              />
+            </div>
+          </CoachBubble>
+          <CoachActions actions={actions} />
+        </>
+      );
+    }
+
     // Exploring a sideline the reader played on the board. Chess.com's bubble is the same as for a
-    // game move (icon, verdict, eval, the coach's note) under a lone "Resume" button
+    // game move (icon, verdict, eval, the coach's note). Under it, "Resume" alone when there is
+    // nothing to show, else icon buttons: ★ for a better move, 💡 for the coach's line, then ▶
     // (docs/explore-mode.md §5.2, "What the panel shows").
     if (sideline && shownMove) {
       const best = shownJudged?.judgement.show_best_move ? shownJudged.judgement.best_move : null;
+      const resume: CoachAction = { label: "Resume", icon: Icons.play, onClick: () => go(sideline.fromPly), hint: "Back to the game (Esc)" };
+      const extra: CoachAction[] = [];
+      if (best && !shownJudged?.judgement.played_is_best) {
+        extra.push({ label: "Best", icon: Icons.star, iconOnly: true, onClick: () => playBest(best), hint: `Play the best move, ${best.san}` });
+      }
+      const explanation = coachLines?.[0];
+      if (explanation) extra.push({ label: "Explain", icon: Icons.bulb, iconOnly: true, onClick: () => openShowLine(0), hint: explanation.label });
       return (
         <>
           <CoachBubble mood={coachMood(shownClass)}>
@@ -773,56 +848,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
               )}
             </div>
           </CoachBubble>
-          <CoachActions actions={[{ label: "Resume", icon: Icons.play, onClick: () => go(sideline.fromPly), hint: "Back to the game (Esc)" }]} />
-        </>
-      );
-    }
-
-    // Replaying one of the coach's lines, with its narration.
-    if (preview?.source === "coach" && showLine && previewing && current) {
-      const atStart = preview.move < 0;
-      const last = preview.move + 1 >= showLine.moves.length;
-      const title = showLine.label.replace(/^Show /, "");
-      const actions: CoachAction[] = [
-        { label: "Prev", icon: Icons.prev, onClick: () => (setLinePlaying(false), stepPreview(-1)), hint: "Previous move (←)" },
-        linePlaying
-          ? { label: "Pause", icon: Icons.pause, onClick: () => setLinePlaying(false) }
-          : {
-              label: last ? "Replay" : "Play",
-              icon: last ? Icons.retry : Icons.play,
-              onClick: () => {
-                if (last) setPreview({ ...preview, move: -1 });
-                setLinePlaying(true);
-              },
-            },
-        { label: "Next", icon: Icons.forward, onClick: () => (setLinePlaying(false), stepPreview(1)), hint: "Next move (→)" },
-        { label: "Hide", icon: Icons.close, onClick: closePreview, primary: true, hint: "Back to the game (Esc)" },
-      ];
-      return (
-        <>
-          <CoachBubble>
-            <div className="coach__head">
-              <span className="coach__glyph">{Icons.eye}</span>
-              <h2 className="coach__title">{title.charAt(0).toUpperCase() + title.slice(1)}</h2>
-              <span className="show-line__count">
-                {preview.move + 1}/{showLine.moves.length}
-              </span>
-            </div>
-            <div className="coach__body">
-              <p className="show-line__narration" aria-live="polite">
-                {atStart ? "Here is the position. Watch the line, or step through it with ← →." : showLine.narration[preview.move]}
-              </p>
-              <ShowLineMoves
-                line={showLine}
-                move={preview.move}
-                onSelect={(m) => {
-                  setLinePlaying(false);
-                  setPreview({ ...preview, move: m });
-                }}
-              />
-            </div>
-          </CoachBubble>
-          <CoachActions actions={actions} />
+          <CoachActions actions={extra.length ? [...extra, { ...resume, primary: true, iconOnly: true }] : [resume]} />
         </>
       );
     }
