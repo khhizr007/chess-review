@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canMoveFrom, ending, legalMoveCount, legalTargets, lineMoves, needsPromotion, nullMoveFen, playMove } from "./chess";
+import { canPlay, ending, legalMoveCount, legalTargets, lineMoves, needsPromotion, nullMoveFen, playMove } from "./chess";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const CASTLE = "r3k2r/pppqbppp/2np1n2/4p1B1/2B1P1b1/2NP1N2/PPPQ1PPP/R3K2R w KQkq - 6 8";
@@ -49,12 +49,19 @@ describe("playMove", () => {
   });
 });
 
-describe("canMoveFrom", () => {
-  it("allows only the side to move's pieces with a legal move", () => {
-    expect(canMoveFrom(START, "g1")).toBe(true);
-    expect(canMoveFrom(START, "a1")).toBe(false);
-    expect(canMoveFrom(START, "g8")).toBe(false);
-    expect(canMoveFrom(START, "e4")).toBe(false);
+describe("canPlay", () => {
+  it("allows only the side to move's legal moves", () => {
+    expect(canPlay(START, "g1", "f3")).toBe(true);
+    expect(canPlay(START, "e2", "e5")).toBe(false);
+    expect(canPlay(START, "e7", "e5")).toBe(false);
+    expect(canPlay(START, "e4", "e5")).toBe(false);
+  });
+
+  it("takes a promotion without its piece, and a castling king on its rook", () => {
+    expect(canPlay("8/4P1k1/8/8/8/8/8/4K3 w - - 0 1", "e7", "e8")).toBe(true);
+    const castle = "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1";
+    expect(canPlay(castle, "e1", "g1")).toBe(true);
+    expect(canPlay(castle, "e1", "h1")).toBe(true);
   });
 });
 

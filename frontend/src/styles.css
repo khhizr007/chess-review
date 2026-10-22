@@ -929,7 +929,8 @@ select option {
 }
 
 /* Squares (BoardView's squareRenderer). Layers, in paint order: the square's own highlight (its
-   background), the selection, the piece, the move hint. Nothing here starts a stacking context, so
+   background), a right-click mark, the selection, the held outline, the piece, the move hint, a
+   refused move's flash. Nothing here starts a stacking context, so
    a moving piece (z-index 10 while it animates) still passes over the other squares. The values
    follow Chess.com's board (observed 2026-10-22). */
 .sq {
@@ -1006,6 +1007,74 @@ select option {
   }
 }
 
+/* A square marked with a right click. */
+.sq-mark {
+  position: absolute;
+  inset: 0;
+  background: rgb(235, 97, 80);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+/* Under a held piece: the white outline a drag carries along (its box-shadow is set inline). */
+.sq-held {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A refused move (an illegal drop, a click on a square the piece cannot reach, any move by the side
+   not to move): its square flashes red while a faint dark circle spreads from the centre. */
+.sq-refused {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sq-refused__flash {
+  position: absolute;
+  inset: 0;
+  background: rgb(230, 57, 70);
+  opacity: 0;
+  animation: sq-refused-fade 0.7s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.sq-refused__circle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #000;
+  opacity: 0;
+  animation:
+    sq-refused-circle-fade 0.3s ease-in-out,
+    sq-refused-circle-grow 0.4s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+@keyframes sq-refused-fade {
+  from {
+    opacity: 0.55;
+  }
+}
+
+@keyframes sq-refused-circle-fade {
+  from {
+    opacity: 0.07;
+  }
+}
+
+@keyframes sq-refused-circle-grow {
+  from {
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.5);
+  }
+}
+
 /* Moves glide with ease-in-out, as on Chess.com (react-chessboard sets only the duration inline). */
 .board [data-piece] {
   transition-timing-function: ease-in-out !important;
@@ -1013,7 +1082,8 @@ select option {
 
 @media (prefers-reduced-motion: reduce) {
   .sq-select > span,
-  .sq-hint {
+  .sq-hint,
+  .sq-refused__circle {
     animation: none;
   }
 }
