@@ -1,12 +1,17 @@
 // When the review plays which sound. The rules follow the reference web client's Game Review
-// (docs/sound.md); the sounds themselves are this project's own (synth.ts).
+// (docs/sound.md). The audio is a local sound pack where one is installed, else this project's own
+// synth (samples.ts, synth.ts).
 import type { Classification } from "../api/generated/Classification";
 import type { MoveFlags } from "../api/generated/MoveFlags";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { Side } from "../api/generated/Side";
-import { playSynth, type SoundName } from "./synth";
+import { loadSamples, playSample } from "./samples";
+import type { SoundName } from "./synth";
 
 export type { SoundName } from "./synth";
+
+// Decode the pack before the first move is stepped through.
+void loadSamples();
 
 /** The board sound of a move. Only one plays; the first that applies wins (a mate is a check). */
 export function moveSound(flags: MoveFlags): SoundName {
@@ -81,5 +86,5 @@ export function retrySound(classification: Classification): SoundName {
 
 /** Plays sounds together, as the reference client layers the brilliant sound over the move. */
 export function playSounds(names: SoundName[]): void {
-  for (const name of names) playSynth(name);
+  for (const name of names) playSample(name);
 }

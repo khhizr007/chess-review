@@ -1,10 +1,41 @@
 # Sound
 
 The review plays board and feedback sounds. **When** each sound plays follows the reference client,
-recovered with REA on 2026-10-21. The sounds are this project's own. They are synthesised in the
-browser (`frontend/src/lib/synth.ts`), and the repository holds no audio files (see `THIRD_PARTY.md`).
+recovered with REA on 2026-10-21. The audio comes from a local **sound pack** of recordings when one
+is installed (below). Otherwise it is this project's own sounds, synthesised in the browser
+(`frontend/src/lib/synth.ts`). The repository holds no audio files (see `THIRD_PARTY.md`).
 The rules are in `frontend/src/lib/sound.ts` and are tested in `sound.test.ts`. The **Sound** switch
 under the board turns sound off; the setting is kept in `localStorage` (`review.sound`).
+
+## Sound pack
+
+A sound pack is the folder `frontend/public/sounds/`. It has one mp3 per sound, named after the sound:
+`move`, `capture`, `castle`, `check`, `promote`, `brilliant`, `correct`, `incorrect`, `result_good`,
+`result_ok` and `result_bad`. The folder is gitignored. `frontend/src/lib/samples.ts` fetches and
+decodes every file once, when the app loads, and keeps each as a Web Audio `AudioBuffer`, so stepping
+quickly with the arrow keys has no lag. A sound with no file, or one that fails to decode, is
+synthesised instead. The vite dev server serves the folder as `/sounds/`, and `npm run build` copies
+it into `dist/`.
+
+To hear the reference client's own sounds, install the captured files from WSL. Run this from the
+repository root:
+
+```bash
+wsl bash tools/sounds/install-sound-pack.sh
+```
+
+The source defaults to `~/work/chesscom/sounds/web`; pass another folder as the argument. The script
+maps the reference client's files onto the names above:
+
+| Sound | Reference file |
+|---|---|
+| move, capture, castle, check, promote | `default/move-self`, `capture`, `castle`, `move-check`, `promote` (the board's "default" sound theme) |
+| brilliant, correct, incorrect | `assets-ds/brilliant-*`, `correct-*`, `incorrect-*` |
+| result_good, result_ok, result_bad | `assets-ds/training-result-{good,ok,bad}-*` |
+
+Never commit these files. No openly licensed set sounds close enough to ship as a default. Lichess's
+standard set is listed as non-free in lila's `COPYING.md`. Its AGPL sets (futuristic, nes, piano,
+sfx) are not wooden piece sounds.
 
 ## Sources
 
