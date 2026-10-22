@@ -62,7 +62,7 @@ describe("useSidelineJudge", () => {
     expect(judgeMove).not.toHaveBeenCalled();
 
     rerender({ live: engine(JUDGE_DEPTH, JUDGE_DEPTH + 2) });
-    await waitFor(() => expect(result.current[0]?.judgement.classification).toBe("good"));
+    await waitFor(() => expect(result.current(4, [mv("c7c5")])?.judgement.classification).toBe("good"));
     expect(judgeMove).toHaveBeenCalledWith(
       "r1",
       {
@@ -102,9 +102,9 @@ describe("useSidelineJudge", () => {
     const { result, rerender } = renderHook(({ l }) => useSidelineJudge("r1", l, engine(18, 18), false), {
       initialProps: { l: line },
     });
-    await waitFor(() => expect(result.current[0]?.judgement.ep_lost).toBe(0.15));
+    await waitFor(() => expect(result.current(4, [mv("c7c5")])?.judgement.ep_lost).toBe(0.15));
     rerender({ l: { ...line, cursor: 2 } });
-    await waitFor(() => expect(result.current[1]?.judgement.classification).toBe("best"));
+    await waitFor(() => expect(result.current(4, [mv("c7c5"), mv("g1f3")])?.judgement.classification).toBe("best"));
     expect(judgeMove.mock.calls[1]![1]).toMatchObject({ moves: ["c7c5", "g1f3"], previous_ep_lost: 0.15 });
   });
 

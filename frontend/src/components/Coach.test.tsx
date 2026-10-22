@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { CoachMessage } from "../lib/coach";
-import { MoveVerdict, ShowLineMoves, type FragmentMarking } from "./Coach";
+import { CoachActions, MoveVerdict, ShowLineMoves, type FragmentMarking } from "./Coach";
 
 afterEach(cleanup);
 
@@ -99,5 +99,25 @@ describe("ShowLineMoves", () => {
     expect(buttons[1]?.getAttribute("aria-current")).toBe("step");
     fireEvent.click(buttons[2]!);
     expect(onSelect).toHaveBeenCalledWith(2);
+  });
+});
+
+describe("CoachActions", () => {
+  it("shows only the icon of an icon-only action and names it for screen readers", () => {
+    const onClick = vi.fn();
+    render(
+      <CoachActions
+        actions={[
+          { label: "Best", icon: <svg />, iconOnly: true, onClick, hint: "Play the best move, d5" },
+          { label: "Resume", icon: <svg />, onClick: () => {} },
+        ]}
+      />,
+    );
+    const best = screen.getByRole("button", { name: "Best" });
+    expect(best.textContent).toBe("");
+    expect(best.title).toBe("Play the best move, d5");
+    expect(screen.getByRole("button", { name: "Resume" }).textContent).toBe("Resume");
+    fireEvent.click(best);
+    expect(onClick).toHaveBeenCalled();
   });
 });

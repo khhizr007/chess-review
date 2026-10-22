@@ -52,13 +52,15 @@ export interface CoachAction {
   primary?: boolean;
   pressed?: boolean;
   hint?: string;
+  /** Only the icon is shown, as on Chess.com's explore buttons; the label names it for screen readers. */
+  iconOnly?: boolean;
 }
 
 export function CoachActions({ actions }: { actions: CoachAction[] }) {
   return (
     <div
       className={`coach-actions ${actions.length >= 4 ? "is-dense" : ""}`}
-      style={{ gridTemplateColumns: actions.map((a) => (a.primary && actions.length < 4 ? "1.35fr" : "1fr")).join(" ") }}
+      style={{ gridTemplateColumns: actions.map((a) => (a.primary && !a.iconOnly && actions.length < 4 ? "1.35fr" : "1fr")).join(" ") }}
     >
       {actions.map((a) => (
         <button
@@ -67,10 +69,11 @@ export function CoachActions({ actions }: { actions: CoachAction[] }) {
           className={`coach-btn ${a.primary ? "coach-btn--primary" : ""} ${a.pressed ? "is-pressed" : ""}`}
           onClick={a.onClick}
           aria-pressed={a.pressed}
-          title={a.hint}
+          aria-label={a.iconOnly ? a.label : undefined}
+          title={a.hint ?? (a.iconOnly ? a.label : undefined)}
         >
           {a.icon}
-          {a.label}
+          {!a.iconOnly && a.label}
         </button>
       ))}
     </div>

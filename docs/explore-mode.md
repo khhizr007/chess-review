@@ -11,6 +11,9 @@ October 2026. This document analyses and plans a feature. Sources:
 - Phase 2, the live browser engine, is built (§5.3–5.6).
 - Phase 3, classifying explored moves, is built (§5.5).
 - Coach text on explored moves, the first Phase 4 item, is built (§5.5, "The coach's note").
+- The explore panel was matched to Chess.com's Game Review on 2026-10-22: the bubble is a game
+  move's, its buttons are Chess.com's (★ Best as a variation, 💡 the coach's line, ▶ Resume), and the
+  engine lines are behind a header toggle (§2, §5.2, §5.4).
 - The other Phase 4 items stay optional (§7).
 
 ## 1. Summary
@@ -86,7 +89,34 @@ Feature flags such as `analysis_self_board_classifications` and `analysis_speech
 
 **What this means for us.** Chess.com accepts that the eval of a position explored in the browser
 (Lite net, the user's CPU) can differ from the server's Game Review eval of the same position. It
-labels the engine and depth so the user can see where a number comes from.
+labels the engine and depth on the analysis page so the user can see where a number comes from.
+
+**Game Review's panel while exploring (observed 2026-10-22).** This was played on one of the user's
+own games (`/analysis/game/live/185708236598/review`, desktop layout at 1400×900). The analysis page
+above lists engine lines, but Game Review does not show them while exploring.
+- **The coach bubble** has the same layout as for a game move. The 80 px coach avatar sits next to
+  a speech bubble about 238 px wide.
+  - **Header row.** The classification icon (24 px), the class name in 15 px semibold ("Book",
+    "Inaccuracy", "Best") and the eval chip on the right ("+0.31", bold, light grey `#e7e6e5`).
+  - **Body.** The coach's sentence, for example "e4 takes full control of the center, and allows
+    the queen and light-squared bishop to develop." or "Your best move was to threaten to capture a pawn."
+  - **What it leaves out.** There is no "Exploring X instead of Y" title, no hint about dragging
+    pieces or the arrow keys, and no depth or engine name.
+- **Buttons under the bubble** (`flow-buttons-component`, 40 px tall, 5 px radius):
+  - **No better move** (a book move): a single full-width secondary button, "▶ Resume".
+  - **A better move exists**: three icon-only buttons.
+    - ★ (`circle-fill-star`, secondary) plays the best move as a variation, for example "2... e5 (2... d5)".
+      The bubble then shows "Best".
+    - 💡 (`device-bulb-fill`, secondary) plays the coach's explanation line, shown as "Explaining"
+      with ‹ › ✓ buttons.
+    - ▶ (`media-control-play`, primary green) is Resume.
+  - **Resume** returns to the game position the line branches from. The line leaves the move list
+    there but is kept, as §5.2 ("Explored lines are kept") found.
+- **No engine lines and no depth readout** appear anywhere in the review panel. The only way to
+  reach them is the header's "Go to Analysis" icon (`aria-label="Go to Analysis"`, right end of the
+  header next to "Toggle Coach Audio"), which switches to the Analysis tab.
+- **The board** shows the explored move's classification badge and a blue arrow for the engine's
+  best reply.
 
 ## 3. What we have today
 
@@ -180,26 +210,86 @@ the wiring in `ReviewScreen.tsx`.
       `lib/chess.ts` `legalTargets` gives the targets. Retry shows the same hints: all legal moves,
       so nothing is given away.
     - **Not copied.** The captured piece's fade-out and the drag hover outline (ours is an inset white edge).
-- **The sideline model.** `Sideline = { fromPly, moves, cursor }`. It is one sideline at a time, as
-  Chess.com does; a variation tree is out of scope for v1.
-  - **The cursor.** It counts the sideline moves shown. 0 is the branch position, which is also the
-    game position at `fromPly`.
-  - **Branch point.** A move on game ply *p* that is not the game's own starts a sideline at *p*. It
-    replaces any open sideline.
-  - **Extending.** A move inside the sideline drops everything after the cursor and appends itself.
-    Replaying the sideline's own next move keeps the rest of the line.
-  - **Matching the game.** If the move equals the game's next move, the board just advances the game.
-- **Move list.** The sideline is listed under the row of the game move it replaces, numbered from the
-  branch position, for example "1... c5 2. Nf3". While the board is inside the sideline, no game move is marked current.
-- **Navigation.**
-  - **← / → and the nav buttons** walk the open sideline, down to its branch position.
-  - **Back from the branch position** leaves the sideline and steps back in the game.
-  - **Forward past the sideline's end** does nothing.
-  - **Leaving.** Esc, the "Back to game" button, or any game navigation (clicking a game move, the graph, Home/End, autoplay)
-    leaves the sideline and closes it.
-- **What the panel shows.**
-  - **The coach panel** says what is being explored, for example "Exploring d4 instead of e4", and names
-    checkmate, stalemate, dead material and the fifty-move rule.
+- **The variation tree (rebuilt 2026-10-22 to match Chess.com, see "Navigation as on Chess.com" below).**
+  - **What is kept.** Every move the reader explores is kept for the session. `Explored` maps a game
+    ply *p* to the moves played instead of game move *p + 1*. Each move has its own `next` moves, and
+    `next[0]` continues its line.
+  - **Where the board is.** `BoardState = { ply, path, explored }`. An empty `path` is a game
+    position. Otherwise `path` holds the child indices down `explored[ply]` to the explored move shown.
+  - **The `Sideline` view.** `sidelineOf` derives `Sideline = { fromPly, moves, cursor }`: the line
+    through the shown move, continued along each move's `next[0]`. The engine, judge and coach panel
+    read this view.
+- **Playing a move** (`play`).
+  - **The game's own next move** on a game position follows the game.
+  - **A move already explored from the position** is entered again, with everything played after it.
+  - **Any other move is added.** From a game position it starts a new line. At the end of a line it
+    extends the line. Inside a line it becomes a variation. Nothing explored is ever dropped.
+- **Move list.** It shows only the lines that replace one game move, under that move's row. They are
+  listed while the board shows that game move or is inside one of the lines; on every other position
+  they are hidden (`listedBranch`).
+  - **One row per line,** in PGN order. A variation sits in brackets after the move it replaces, for
+    example "2. e4 d5 (2... e5) 3. exd5".
+  - **No current game move** is marked while the board is inside a line.
+  - **Clicking a listed move** shows it, including from the game move the lines replace.
+- **Navigation as on Chess.com (2026-10-22).** These are Game Review's rules. We read them in a live
+  review (game 185708236598, exploring 2. e4 d5 3. exd5 instead of 2. Nf3) and in its move-list
+  bundle (`shared.eager.*.chunk.js`).
+  - **→ on a game position always follows the game,** even where lines were explored from it.
+    - Live: from 3. exd5, ← ← ← landed on 1... c6, and → → went to 2. Nf3, then 2... d5, with the
+      review's own coach and arrows.
+    - Bundle: the keyboard plugin binds → to `openVariationsPopover() || moveForward()`. Its guard
+      `Pw` returns false when the move list's variation visibility is `active` and the selected move
+      is on the main line (`ids.line === 0`). The review's visibility is `active`.
+  - **← from a line's first move lands on its branch.** That is the game position, where the line is
+    hidden from the list and the review's coach returns.
+  - **→ in a line follows it** and does nothing at its end.
+  - **The variation picker.** → opens a picker under the shown move when variations were played after
+    it. `Pw` is true only when the line's next move has sibling lines.
+    - **The options.** The line's own move comes first and is preselected, then each variation, as
+      in `entries = [{move: next}, ...next.lines]` with `selectedIndex = 0`. So → → continues the line.
+    - **Keys.** ↑ and ↓ choose without wrapping, and → or Enter follows. Any other key closes the
+      picker and acts as usual: ← closes it and steps back. (Chess.com's handler stops only those four
+      keys.)
+    - **Mouse.** Hovering a row chooses it and a click follows it. A click elsewhere, or scrolling the
+      list, closes the picker.
+    - **Esc closes only the picker.** This is our choice: Chess.com's handler passes Esc on.
+    - **The look** is copied from Chess.com's stylesheet: fixed under the move, at least 120 px wide,
+      a 3 px `#8b8987` top border, a `#262421` background, a `0 2px 5px` shadow, 13/20 px text, and
+      the chosen row tinted 5% white with a → before it (`lib/explore.ts` `nextMoves`, `MoveList`
+      `VariationPicker`).
+  - **The ▶ button follows the line's own move** without the picker. Live, it went from 2. e4 to
+    2... d5 with 2... e5 played there. Only the → key opens the picker.
+  - **Explored lines are kept and can be re-entered.** Lines stayed in the tree (`getRawLines`) after
+    the reader left them, through Resume, clicks on game moves, and later
+    explorations. Playing 2. e4 again re-entered the line with 2... d5 3. exd5. A second move from the
+    same position (2. f4) and a line from another ply (2... g6) were added beside it.
+  - **Leaving.** Esc, "Resume" (which returns to the branch, as on Chess.com) and every
+    game navigation (game moves, the graph, Home/End, autoplay) show a game position. The lines
+    stay.
+- **What the panel shows** (matched to Chess.com on 2026-10-22, §2):
+  - **The coach bubble** looks as it does for a game move:
+    - **Header.** The shown move's icon and verdict ("Qxf6 is a blunder") and the eval pill. Until
+      the move is judged, the header shows only the move and the pill, and the body says "Judging the move…".
+    - **Body.** The coach's sentences. Without sentences, it says "Qb3 was best." when the judgement
+      shows the best move.
+    - **Endings.** It names checkmate, stalemate, dead material and the fifty-move rule.
+    - **Engine errors.** A browser engine that cannot start is reported in the bubble.
+    - **What it leaves out.** There is no "Exploring … instead of …" title and no hint about dragging or the arrow keys.
+  - **Buttons under the bubble,** as on Chess.com (§2):
+    - **Nothing to show** (before the move is judged, or with no better move and no coach line):
+      one labelled "▶ Resume" (secondary, full width). It goes back to the game, and its tooltip names Esc.
+    - **Otherwise** they are icon-only and equally wide: ★, then 💡, then a green ▶ (Resume).
+    - **★ Best** appears when the judgement shows a better move. It steps back to the position the
+      shown move was played from and plays the best move there (`playBest`, the same `play` as a
+      dragged move). So it lands beside the explored move as a variation, for example
+      "8. Bxf7+ (8. Be3)", and shows it, judged as best. From the branch position, a best move that
+      is the game's own move follows the game, as any played move does.
+    - **💡 Explain** appears when the judgement's coach note has a show-line. It replays the first
+      one with the game moves' line player (narration, ‹ Replay › and Hide). It does not add the
+      line to the move list, as Chess.com does. Esc or Hide returns to the explored move; Esc again
+      leaves the sideline.
+  - **No engine lines by default.** The header's lines icon, in the slot of Chess.com's "Go to
+    Analysis", shows them (§5.4).
   - **The eval bar** is fed by the live engine (§5.4).
   - **Last move.** The sideline's last move is highlighted, and a check is marked as on game moves.
 - **Sounds.** Move, capture, check and castle sounds follow `docs/sound.md` ("Sidelines"), using
@@ -265,7 +355,11 @@ the wiring in `ReviewScreen.tsx`.
 - **In a sideline (built in Phase 2).**
   - **Bar and pill.** The bar is fed from live line 1 through `expectedPointsFor` at the review's rating.
     The coach bubble shows the same eval as a pill.
-  - **Lines.** An "Engine" section under the coach bubble shows the 3 live lines.
+  - **Lines.** They are hidden by default, because Chess.com's Game Review shows none (§2).
+    - **The toggle.** It is a lines icon in the panel header, shown only while a sideline move is on
+      the board. Its state is saved as `review.engineLines`.
+    - **What it shows.** An "Engine" section under the coach bubble with the 3 live lines.
+    - **The search runs either way.** The bar, the pill and the judgement need it.
   - **Readout.** The section header shows where the numbers come from:
     - "depth 16/18 · Stockfish 19 Lite, in your browser" while it searches, with a spinner;
     - "depth 18" once done.
@@ -450,7 +544,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 | **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
 | **2. Live engine (done 2026-10-21)** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Done. Vitest: `uci.test.ts` and `controller.test.ts`, a scripted fake worker covering the handshake, complete depths, superseding, cache, stop, throttle, new game and load failure. In the browser: engine ready in 151 ms and depth 14 in 0.8 s; lines, pill, bar and arrow update live; "Go deeper" goes 18 → 20; clicking a line move plays it; a revisited position answers from the cache; a hidden page pauses the search. No phone was measured. | M |
 | **3. Move feedback (done 2026-10-21)** | `POST /api/reviews/{id}/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Done. The facts-builder refactor was confirmed byte-identical on 10 games. `tests/sideline.rs` covers every fixture move judged as the review judged it, a later sideline move and bad requests. `tests/api.rs` tests the route. `useSidelineJudge.test.ts` covers provisional then final, the previous move's loss, and a move that ends the game. In the browser: 1.d4 and 1...e5 were Book, and 2.Bg5 was "a blunder. dxe5 was best". Each judge request took 7–11 ms with no engine search. | M |
-| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
+| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); ~~Chess.com's ★ Best and 💡 explanation-line buttons under the explore bubble~~ (built 2026-10-22, §5.2); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
 
 Phases 1 and 2 are the feature as most users will see it. Phase 3 is what makes it feel like
 Chess.com's explore mode.
@@ -476,7 +570,7 @@ Chess.com's explore mode.
   - **Best moves.** They differ in 5 of 27 positions.
   - **What the user sees.** The bar may jump by a few hundredths of expected points when the user enters a sideline.
 - **Bundle and first-load size.** The engine is never in the main bundle. It is fetched only on the first explore move.
-- **Scope creep.** Variation trees, saving sidelines to PGN and a full analysis board are separate features. They are deliberately left out.
+- **Scope creep.** Saving sidelines to PGN and a full analysis board are separate features. They are deliberately left out. The variation tree went in only as far as Chess.com's review shows it (§5.2).
 
 ## 9. Decisions needed
 
