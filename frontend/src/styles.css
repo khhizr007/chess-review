@@ -1306,7 +1306,7 @@ select option {
 
 .panel__header {
   display: grid;
-  grid-template-columns: 40px 1fr 40px;
+  grid-template-columns: 80px 1fr 80px;
   align-items: center;
   height: 56px;
   padding: 0 8px;
@@ -1353,6 +1353,11 @@ select option {
 
 .icon-btn-spacer {
   width: 40px;
+}
+
+.panel__header-end {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .panel__scroll {
@@ -1736,16 +1741,6 @@ select option {
 .coach__note {
   font-size: 0.85rem;
   color: var(--bubble-muted);
-}
-
-/* The judged sideline move: its icon and verdict, as for game moves. */
-.explore-verdict {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-weight: 600;
-  color: var(--bubble-text);
 }
 
 

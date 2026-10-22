@@ -66,6 +66,12 @@ export const Icons = {
       <path fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
     </svg>
   ),
+  lines: (
+    <svg {...I}>
+      <path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" d="M9 6.5h11M9 12h11M9 17.5h7" />
+      <path fill="currentColor" d="M3.5 5h3v3h-3zm0 5.5h3v3h-3zm0 5.5h3v3h-3z" />
+    </svg>
+  ),
   report: (
     <svg {...I}>
       <path fill="currentColor" d="M5 20V10h3v10zm5.5 0V4h3v16zM16 20v-7h3v7z" />

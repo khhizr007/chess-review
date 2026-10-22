@@ -134,6 +134,9 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   const [retry, setRetry] = useState<Retry | null>(null);
   const [showSuggestion, setShowSuggestion] = useState(() => loadFlag("review.engineArrow", false));
   const [explain, setExplain] = useState(() => loadFlag("review.explain", false));
+  // The live engine's lines while exploring. Chess.com keeps them out of Game Review (they are on
+  // its Analysis tab), so they are off until the reader asks for them.
+  const [engineLines, setEngineLines] = useState(() => loadFlag("review.engineLines", false));
   const [soundOn, setSoundOn] = useState(() => loadFlag("review.sound", true));
   const [playing, setPlaying] = useState(false);
   const [linePlaying, setLinePlaying] = useState(false);
@@ -680,60 +683,44 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       );
     }
 
-    // Exploring a sideline the reader played on the board.
+    // Exploring a sideline the reader played on the board. Chess.com's bubble is the same as for a
+    // game move (icon, verdict, eval, the coach's note) under a lone "Resume" button
+    // (docs/explore-mode.md §5.2, "What the panel shows").
     if (sideline && shownMove) {
-      const first = sideline.moves[0]!;
-      const replaced = review.plies[sideline.fromPly];
-      const branchMover: Side = fenAt(review, sideline.fromPly).split(" ")[1] === "b" ? "black" : "white";
+      const best = shownJudged?.judgement.show_best_move ? shownJudged.judgement.best_move : null;
       return (
         <>
-          <CoachBubble>
+          <CoachBubble mood={coachMood(shownClass)}>
             <div className="coach__head">
-              <span className="coach__glyph">{Icons.eye}</span>
+              {shownClass && <ClassificationIcon value={shownClass} size={26} />}
               <h2 className="coach__title">
-                {replaced ? (
-                  <>
-                    Exploring <San san={first.san} side={branchMover} /> instead of <San san={replaced.san} side={replaced.mover} />
-                  </>
-                ) : (
-                  "Exploring after the game"
-                )}
+                <San san={shownMove.san} side={shownMover} />
+                {shownClass && ` is ${CLASSIFICATIONS[shownClass].phrase}`}
               </h2>
               {sidelineBar && <EvalPill value={sidelineBar.eval} />}
             </div>
             <div className="coach__body">
-              {shownClass ? (
-                <p className="explore-verdict">
-                  <ClassificationIcon value={shownClass} size={20} />
-                  <span>
-                    <San san={shownMove.san} side={shownMover} /> is {CLASSIFICATIONS[shownClass].phrase}.
-                    {/* The coach's sentences name the better move themselves, as for game moves. */}
-                    {shownSentences.length === 0 && shownJudged?.judgement.show_best_move && shownJudged.judgement.best_move && (
-                      <>
-                        {" "}
-                        <San san={shownJudged.judgement.best_move.san} side={shownMover} /> was best.
-                      </>
-                    )}
-                  </span>
-                </p>
-              ) : (
-                !shownJudged && live.status !== "error" && <p className="coach__note">Judging the move…</p>
+              {!shownJudged && !shownOver && live.status !== "error" && <p className="coach__note">Judging the move…</p>}
+              {live.status === "error" && (
+                <p className="coach__note">The engine could not start in this browser{live.error ? ` (${live.error})` : ""}.</p>
               )}
               {shownSentences.map((s, i) => (
                 <CoachSentence key={i} index={i} sentence={s} />
               ))}
+              {/* The coach's sentences name the better move themselves, as for game moves. */}
+              {shownSentences.length === 0 && best && (
+                <p>
+                  <San san={best.san} side={shownMover} /> was best.
+                </p>
+              )}
               {shownEnd && (
                 <p className="coach__end">
                   {shownEnd === "checkmate" ? `Checkmate. ${toMove === "white" ? "Black" : "White"} wins.` : ENDINGS[shownEnd]}
                 </p>
               )}
-              <p>
-                {shownOver ? "" : "Drag a piece to keep exploring. "}
-                Step through your moves with ← →, or press Esc to go back to the game.
-              </p>
             </div>
           </CoachBubble>
-          <CoachActions actions={[{ label: "Back to game", icon: Icons.back, onClick: () => go(sideline.fromPly), primary: true, hint: "Back to the game (Esc)" }]} />
+          <CoachActions actions={[{ label: "Resume", icon: Icons.play, onClick: () => go(sideline.fromPly), hint: "Back to the game (Esc)" }]} />
         </>
       );
     }
@@ -925,18 +912,33 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
             <LogoMark size={26} />
             Game Review
           </h1>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setFlipped((f) => !f)}
-            aria-pressed={flipped}
-            aria-label="Flip board"
-            title="Flip board (F)"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="M7 4v15M3.5 15.5L7 19l3.5-3.5M17 20V5M13.5 8.5L17 5l3.5 3.5" />
-            </svg>
-          </button>
+          <div className="panel__header-end">
+            {/* Where Chess.com has "Go to Analysis": the live lines of an explored move. */}
+            {mode === "review" && shownMove && !shownOver && (
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setEngineLines((v) => (saveFlag("review.engineLines", !v), !v))}
+                aria-pressed={engineLines}
+                aria-label="Engine lines"
+                title={engineLines ? "Hide the engine lines" : "Show the engine lines"}
+              >
+                {Icons.lines}
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setFlipped((f) => !f)}
+              aria-pressed={flipped}
+              aria-label="Flip board"
+              title="Flip board (F)"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="M7 4v15M3.5 15.5L7 19l3.5-3.5M17 20V5M13.5 8.5L17 5l3.5 3.5" />
+              </svg>
+            </button>
+          </div>
         </header>
 
         {mode === "report" ? (
@@ -965,7 +967,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
                   <MoveDetails ply={current} facts={msg.facts} preview={preview} onPreview={setPreview} />
                 </div>
               )}
-              {shownMove && !shownOver && (
+              {engineLines && shownMove && !shownOver && (
                 <div className="review-pane__details">
                   <LiveLines
                     fen={shownMove.fen}

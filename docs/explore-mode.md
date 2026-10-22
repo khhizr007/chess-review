@@ -11,6 +11,8 @@ October 2026. This document analyses and plans a feature. Sources:
 - Phase 2, the live browser engine, is built (§5.3–5.6).
 - Phase 3, classifying explored moves, is built (§5.5).
 - Coach text on explored moves, the first Phase 4 item, is built (§5.5, "The coach's note").
+- The explore panel was matched to Chess.com's Game Review on 2026-10-22: the bubble is a game
+  move's, there is one Resume button, and the engine lines are behind a header toggle (§2, §5.2, §5.4).
 - The other Phase 4 items stay optional (§7).
 
 ## 1. Summary
@@ -86,7 +88,33 @@ Feature flags such as `analysis_self_board_classifications` and `analysis_speech
 
 **What this means for us.** Chess.com accepts that the eval of a position explored in the browser
 (Lite net, the user's CPU) can differ from the server's Game Review eval of the same position. It
-labels the engine and depth so the user can see where a number comes from.
+labels the engine and depth on the analysis page so the user can see where a number comes from.
+
+**Game Review's panel while exploring (observed 2026-10-22).** This was played on one of the user's
+own games (`/analysis/game/live/185708236598/review`, desktop layout at 1400×900). The analysis page
+above lists engine lines, but Game Review does not show them while exploring.
+- **The coach bubble** has the same layout as for a game move. The 80 px coach avatar sits next to
+  a speech bubble about 238 px wide.
+  - **Header row.** The classification icon (24 px), the class name in 15 px semibold ("Book",
+    "Inaccuracy", "Best") and the eval chip on the right ("+0.31", bold, light grey `#e7e6e5`).
+  - **Body.** The coach's sentence, for example "e4 takes full control of the center, and allows
+    the queen and light-squared bishop to develop." or "Your best move was to threaten to capture a pawn."
+  - **What it leaves out.** There is no "Exploring X instead of Y" title, no hint about dragging
+    pieces or the arrow keys, and no depth or engine name.
+- **Buttons under the bubble** (`flow-buttons-component`, 40 px tall, 5 px radius):
+  - **No better move** (a book move): a single full-width secondary button, "▶ Resume".
+  - **A better move exists**: three icon-only buttons.
+    - ★ (`circle-fill-star`, secondary) plays the best move as a variation, for example "2... e5 (2... d5)".
+      The bubble then shows "Best".
+    - 💡 (`device-bulb-fill`, secondary) plays the coach's explanation line, shown as "Explaining"
+      with ‹ › ✓ buttons.
+    - ▶ (`media-control-play`, primary green) is Resume.
+  - **Resume** returns to the game move the sideline left from and deletes the sideline from the move list.
+- **No engine lines and no depth readout** appear anywhere in the review panel. The only way to
+  reach them is the header's "Go to Analysis" icon (`aria-label="Go to Analysis"`, right end of the
+  header next to "Toggle Coach Audio"), which switches to the Analysis tab.
+- **The board** shows the explored move's classification badge and a blue arrow for the engine's
+  best reply.
 
 ## 3. What we have today
 
@@ -195,11 +223,21 @@ the wiring in `ReviewScreen.tsx`.
   - **← / → and the nav buttons** walk the open sideline, down to its branch position.
   - **Back from the branch position** leaves the sideline and steps back in the game.
   - **Forward past the sideline's end** does nothing.
-  - **Leaving.** Esc, the "Back to game" button, or any game navigation (clicking a game move, the graph, Home/End, autoplay)
+  - **Leaving.** Esc, the "Resume" button, or any game navigation (clicking a game move, the graph, Home/End, autoplay)
     leaves the sideline and closes it.
-- **What the panel shows.**
-  - **The coach panel** says what is being explored, for example "Exploring d4 instead of e4", and names
-    checkmate, stalemate, dead material and the fifty-move rule.
+- **What the panel shows** (matched to Chess.com on 2026-10-22, §2):
+  - **The coach bubble** looks as it does for a game move:
+    - **Header.** The shown move's icon and verdict ("Qxf6 is a blunder") and the eval pill. Until
+      the move is judged, the header shows only the move and the pill, and the body says "Judging the move…".
+    - **Body.** The coach's sentences. Without sentences, it says "Qb3 was best." when the judgement
+      shows the best move.
+    - **Endings.** It names checkmate, stalemate, dead material and the fifty-move rule.
+    - **Engine errors.** A browser engine that cannot start is reported in the bubble.
+    - **What it leaves out.** There is no "Exploring … instead of …" title and no hint about dragging or the arrow keys.
+  - **One "▶ Resume" button** (secondary, full width) goes back to the game. Its tooltip names Esc.
+    Chess.com's ★ Best and 💡 explanation buttons are not built yet (§7).
+  - **No engine lines by default.** The header's lines icon, in the slot of Chess.com's "Go to
+    Analysis", shows them (§5.4).
   - **The eval bar** is fed by the live engine (§5.4).
   - **Last move.** The sideline's last move is highlighted, and a check is marked as on game moves.
 - **Sounds.** Move, capture, check and castle sounds follow `docs/sound.md` ("Sidelines"), using
@@ -265,7 +303,11 @@ the wiring in `ReviewScreen.tsx`.
 - **In a sideline (built in Phase 2).**
   - **Bar and pill.** The bar is fed from live line 1 through `expectedPointsFor` at the review's rating.
     The coach bubble shows the same eval as a pill.
-  - **Lines.** An "Engine" section under the coach bubble shows the 3 live lines.
+  - **Lines.** They are hidden by default, because Chess.com's Game Review shows none (§2).
+    - **The toggle.** It is a lines icon in the panel header, shown only while a sideline move is on
+      the board. Its state is saved as `review.engineLines`.
+    - **What it shows.** An "Engine" section under the coach bubble with the 3 live lines.
+    - **The search runs either way.** The bar, the pill and the judgement need it.
   - **Readout.** The section header shows where the numbers come from:
     - "depth 16/18 · Stockfish 19 Lite, in your browser" while it searches, with a spinner;
     - "depth 18" once done.
@@ -450,7 +492,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 | **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
 | **2. Live engine (done 2026-10-21)** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Done. Vitest: `uci.test.ts` and `controller.test.ts`, a scripted fake worker covering the handshake, complete depths, superseding, cache, stop, throttle, new game and load failure. In the browser: engine ready in 151 ms and depth 14 in 0.8 s; lines, pill, bar and arrow update live; "Go deeper" goes 18 → 20; clicking a line move plays it; a revisited position answers from the cache; a hidden page pauses the search. No phone was measured. | M |
 | **3. Move feedback (done 2026-10-21)** | `POST /api/reviews/{id}/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Done. The facts-builder refactor was confirmed byte-identical on 10 games. `tests/sideline.rs` covers every fixture move judged as the review judged it, a later sideline move and bad requests. `tests/api.rs` tests the route. `useSidelineJudge.test.ts` covers provisional then final, the previous move's loss, and a move that ends the game. In the browser: 1.d4 and 1...e5 were Book, and 2.Bg5 was "a blunder. dxe5 was best". Each judge request took 7–11 ms with no engine search. | M |
-| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
+| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); Chess.com's ★ Best (plays the best move as a variation) and 💡 explanation-line buttons under the explore bubble (§2); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
 
 Phases 1 and 2 are the feature as most users will see it. Phase 3 is what makes it feel like
 Chess.com's explore mode.
