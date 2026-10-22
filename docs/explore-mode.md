@@ -10,7 +10,8 @@ October 2026. This document analyses and plans a feature. Sources:
 - Phase 1, the sideline board, is built (§5.2).
 - Phase 2, the live browser engine, is built (§5.3–5.6).
 - Phase 3, classifying explored moves, is built (§5.5).
-- Phase 4 holds the optional items (§7).
+- Coach text on explored moves, the first Phase 4 item, is built (§5.5, "The coach's note").
+- The other Phase 4 items stay optional (§7).
 
 ## 1. Summary
 
@@ -155,7 +156,30 @@ the wiring in `ReviewScreen.tsx`.
     a piece change, and `onPieceDrop` reports just the piece and the two squares (checked in Phase 0).
     - **How it works.** A pawn dropped on the last rank snaps back, and four pieces appear over the promotion file.
     - **Taking it back.** A click elsewhere or Esc takes the move back.
-  - **Click-to-move** is not built. `onSquareClick` and `onPieceClick` are available for it.
+  - **Click-to-move and move hints (built 2026-10-22), as on Chess.com.** Clicking a piece picks it
+    up, and clicking a highlighted square moves it there. A click on the piece again, an empty
+    square or the opponent's piece puts it down.
+    - **The mouse acts on the press, not the release.**
+      - **Pick-up.** The piece is picked up, with its hints, while the button is still down. In the
+        browser that took 27–39 ms after the press. Before this, nothing showed until release, or
+        until a drag started if the hand moved a pixel.
+      - **Moving.** Pressing a target square plays the move at once.
+      - **Putting down.** Clicking the piece again puts it down on the release, so a picked-up
+        piece can still be dragged.
+      - **Touch** keeps the tap path, because browsers send no mouse press for it.
+    - **What a picked-up piece shows,** while dragging too. The values were read from Chess.com's
+      stylesheets on 2026-10-22:
+      - its square fills with a yellow circle growing from the centre (`#ffff33` at 50%, 0.2 s ease-out);
+      - free target squares get a dot a third of the square wide (`rgba(0,0,0,.14)`), and pieces it
+        can take get a ring. Both pop in over 0.15 s with a slight overshoot.
+    - **Castling.** A castling king's hint is on its landing square in standard chess, and on its
+      rook in Chess960.
+    - **Moves glide with ease-in-out** over 0.18 s, Chess.com's duration and easing. react-chessboard
+      sets only the duration inline; a CSS rule sets the easing.
+    - **Where it lives.** `BoardView` draws the layers with react-chessboard's `squareRenderer`;
+      `lib/chess.ts` `legalTargets` gives the targets. Retry shows the same hints: all legal moves,
+      so nothing is given away.
+    - **Not copied.** The captured piece's fade-out and the drag hover outline (ours is an inset white edge).
 - **The sideline model.** `Sideline = { fromPly, moves, cursor }`. It is one sideline at a time, as
   Chess.com does; a variation tree is out of scope for v1.
   - **The cursor.** It counts the sideline moves shown. 0 is the branch position, which is also the
@@ -287,10 +311,28 @@ Rules for consistency:
   Lite net would shift scores and invent Inaccuracies. The branch position is analysed anyway while
   the user thinks, so this costs nothing extra.
 - **The same depth.** `played_is_best_move` and `best` come from `before` line 1, judged at the same depth as `after`.
-- **When it is sent.**
-  - **A provisional icon.** It is judged once both searches reach depth 14, which takes a median of
-    0.43 s each here (§10.1). Until then the bubble says "Judging the move…".
-  - **The final icon.** It is judged again when both reach the depth cap. Each judge call costs milliseconds, so judging twice is free.
+- **When it is sent: once, from shallow searches (changed 2026-10-22).**
+  - **The judging depth.** A move played freely is judged as soon as both positions reach
+    `JUDGE_DEPTH` = 8 and the threat searches are done. Depth 8 takes a median of 13 ms a position
+    in the browser (§10.1).
+  - **It is not re-judged deeper.** The shown position alone keeps deepening to the depth limit, for
+    the eval bar and lines.
+  - **The review's own moves keep the full-depth judgement.** The server's rules are unchanged; only
+    the browser's searches are shallower.
+  - **Measured, 5 random moves from a middlegame position.**
+
+    | | Engine searches plus server judgement |
+    |---|---|
+    | Depth 8, threats at depth 8 (now) | 19–58 ms |
+    | Depth 14, threats at depth 10 (before) | 159–727 ms; the depth-18 re-judge then took seconds more |
+
+    The reader sees the verdict about 0.15–0.2 s after the drop, which includes the 120 ms
+    stepping debounce.
+  - **The cost.** 4 of the 5 labels were the same at both depths. One became Blunder instead of
+    Miss, and some coach sentences picked a different line. A free move gets a quick opinion, not
+    the review's full-depth verdict.
+  - **Before this change:** a provisional verdict at depth 14 (median 0.43 s a position), then a
+    final one at the depth cap.
 - **Server cost: no engine search (confirmed in Phase 0, §10.5).** With the default config,
   classification needs only these engine inputs:
   - **Before-position lines, at least two.** The second line feeds Brilliant and Great Find.
@@ -318,8 +360,33 @@ Rules for consistency:
 - **Trust.** The server trusts evals the client sends. That is acceptable for this app: it has no
   accounts, rankings or stored results that a fake eval could affect.
 
-Coach sentences for explored moves (the Phase 1–4 coach) are a later step (§7, Phase 4). They need
-threat searches and line facts, which `judge` could later produce from the same inputs.
+**The coach's note (built 2026-10-22).** `judge` also returns the coach's note for the move, the
+same `CoachNote` a game move gets.
+- **Shared code.** `facts::coach_note` was moved out of `build_review` and is shared, as `judge_move` is.
+  - Full reviews of 10 calibration games stayed byte-identical (Stockfish 18, depth 10).
+  - `tests/sideline.rs` asks every move of 9 fixture games as a one-move sideline, with the threat
+    searches the review made, and gets the review's own note each time.
+- **The threat searches run in the browser, so the server still searches nothing.** The coach needs
+  three null-move searches around the move (`coach::CoachInput`):
+  - after the move, its mover to move again;
+  - before it, the opponent to move;
+  - after the engine's best move, when that is not the played move.
+
+  `useLiveEngine` runs them with one line, like the server, right after both positions reach
+  `JUDGE_DEPTH`. Their depth is the review's `threat_search_depth` (10), capped at `JUDGE_DEPTH` (8).
+  The best-move position is worked out when its step runs, from the latest result. Each search
+  takes a few milliseconds.
+- **Which searches the server uses.** `judge` takes each search with the FEN it searched.
+  - It uses a search only when that FEN is the server's own null-move position (`board::null_move`)
+    and the line starts with a legal move. Anything else is ignored, so the note falls back to what it can say without it.
+  - As in the review, there is no "after" threat when the side to move after the move has no legal move.
+- **When it is judged.** `useSidelineJudge` judges once, when both positions reach `JUDGE_DEPTH` and
+  the threat searches are ready, so the note arrives with the verdict.
+  - In the browser, at depth 14, "d6 is a miss. Qh4# was the move here: it is checkmate." appeared
+    0.3 s after 1.f3 e5 2.g4 d6. The coach's arrows were drawn on the board.
+- **Not done.**
+  - The coach's "Show …" line buttons are not offered on explored moves.
+  - The human-move model (Maia-2) is not asked, so the difficulty wording is left out, as it is when Maia-2 is off.
 
 ### 5.6 Guarding the user's CPU
 
@@ -383,7 +450,7 @@ Each phase ends in something usable and testable. Effort is relative (S < M < L)
 | **1. Sideline board (done 2026-10-21)** | chessops; drag from any ply; promotion; sideline state, move-list rendering, navigation, sounds, "Back to game". No engine yet: the bar shows "–". | Done. Vitest covers rules (`chess.test.ts`), the sideline model (`explore.test.ts`), the sideline row (`MoveList.test.tsx`) and its sounds. Checked in the browser on the Opera Game and a promotion game: branching, stepping, Esc, castling onto the rook, following the game's own move, promotion to a knight. | M |
 | **2. Live engine (done 2026-10-21)** | `EngineController` + worker, UCI parser, throttle, cache, visibility stop, depth cap and "go deeper", live bar, lines, arrow and depth readout. Lazy loading. `THIRD_PARTY.md` row. | Done. Vitest: `uci.test.ts` and `controller.test.ts`, a scripted fake worker covering the handshake, complete depths, superseding, cache, stop, throttle, new game and load failure. In the browser: engine ready in 151 ms and depth 14 in 0.8 s; lines, pill, bar and arrow update live; "Go deeper" goes 18 → 20; clicking a line move plays it; a revisited position answers from the cache; a hidden page pauses the search. No phone was measured. | M |
 | **3. Move feedback (done 2026-10-21)** | `POST /api/reviews/{id}/judge`, ts-rs types, icon and verdict line for explored moves, book detection. | Done. The facts-builder refactor was confirmed byte-identical on 10 games. `tests/sideline.rs` covers every fixture move judged as the review judged it, a later sideline move and bad requests. `tests/api.rs` tests the route. `useSidelineJudge.test.ts` covers provisional then final, the previous move's loss, and a move that ends the game. In the browser: 1.d4 and 1...e5 were Book, and 2.Bg5 was "a blunder. dxe5 was best". Each judge request took 7–11 ms with no engine search. | M |
-| **4. Later, each optional** | Coach sentences for explored moves; server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
+| **4. Later, each optional** | ~~Coach sentences for explored moves~~ (built 2026-10-22, §5.5); server fallback (§5.7); "live engine on game moves" setting; a choice between Lite and full net. The multithreaded build was dropped after Phase 0 (§10.3). | Per item. | S–L each |
 
 Phases 1 and 2 are the feature as most users will see it. Phase 3 is what makes it feel like
 Chess.com's explore mode.
@@ -399,7 +466,7 @@ Chess.com's explore mode.
   Mitigations:
   - **The adaptive cap** (16 below 150k nodes/s).
   - **Visible deepening.** Depth 12 arrives in a median of 0.15 s here, and about 0.6 s at 4× slower.
-  - **A provisional icon at depth 14** (§5.5).
+  - **Explored moves are judged at depth 8** (§5.5), which costs little even on a slow device.
 
   No real phone has been measured yet, in Phase 0 or in Phase 2.
 - **The Lite engine's numbers differ from the review's.**

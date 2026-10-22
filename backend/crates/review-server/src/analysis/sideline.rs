@@ -5,17 +5,18 @@
 
 use std::collections::HashMap;
 
-use review_core::{Classification, Eval, MissKind, Phase, Rule};
+use review_core::{Classification, Eval, MissKind, Phase, Rule, Side};
 use serde::Serialize;
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Move, Position};
 use thiserror::Error;
 use ts_rs::TS;
 
-use super::facts::{MoveInput, judge_move};
+use super::facts::{CoachContext, MoveInput, coach_note, judge_move};
 use super::model::{MoveRef, ReviewResult};
 use super::{explain, to_san_line};
 use crate::board::{self, side};
+use crate::coach::CoachNote;
 use crate::engine::EngineLine;
 use crate::openings::OpeningBook;
 
@@ -36,6 +37,26 @@ pub struct SidelineMove<'a> {
     /// Expected points the opponent lost on the previous sideline move; for the first sideline
     /// move the game's previous move is used.
     pub previous_ep_lost: Option<f64>,
+    /// The browser engine's null-move threat searches for the coach.
+    pub threats: SidelineThreats,
+}
+
+/// A threat search: the position searched (a null-move position) and its best line.
+pub struct ThreatLine {
+    pub fen: String,
+    pub line: EngineLine,
+}
+
+/// The coach's three null-move threat searches (`coach::CoachInput`). Each is used only when
+/// its position is the one the server expects and its line starts with a legal move there.
+#[derive(Default)]
+pub struct SidelineThreats {
+    /// After the move, its mover to move again.
+    pub after: Option<ThreatLine>,
+    /// Before the move, the opponent to move.
+    pub before: Option<ThreatLine>,
+    /// After the engine's best move (`before`'s first line), its mover to move again.
+    pub best: Option<ThreatLine>,
 }
 
 /// How a sideline move is classified, as a game move would be.
@@ -55,6 +76,8 @@ pub struct SidelineJudgement {
     pub best_move: Option<MoveRef>,
     /// Factual sentences, as for game moves.
     pub explanation: Vec<String>,
+    /// The coach's note, as for game moves (empty without the threat searches it needs).
+    pub coach: CoachNote,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -182,27 +205,83 @@ pub fn judge_sideline(
         .unwrap_or(0)
         .max(review.game.black_elo.unwrap_or(0));
 
-    let judged = judge_move(
-        &MoveInput {
-            before,
-            after,
-            mv: played[i],
-            uci,
-            previous: i.checked_sub(1).map(|p| played[p]),
-            lines,
-            eval_before: lines[0].eval,
-            before_is_draw: draws[i],
-            eval_after,
-            after_line: request.after.as_ref(),
-            after_is_draw: draws[i + 1],
-            is_book,
-            phase_after,
-            has_previous_move: i > 0,
-            // The "easy to find" search is not made for sidelines (it is off by default).
-            shallow_best: None,
-            opponent_previous_ep_lost,
-            rating: review.rating_used,
-            highest_elo,
+    let input = MoveInput {
+        before,
+        after,
+        mv: played[i],
+        uci,
+        previous: i.checked_sub(1).map(|p| played[p]),
+        lines,
+        eval_before: lines[0].eval,
+        before_is_draw: draws[i],
+        eval_after,
+        after_line: request.after.as_ref(),
+        after_is_draw: draws[i + 1],
+        is_book,
+        phase_after,
+        has_previous_move: i > 0,
+        // The "easy to find" search is not made for sidelines (it is off by default).
+        shallow_best: None,
+        opponent_previous_ep_lost,
+        rating: review.rating_used,
+        highest_elo,
+    };
+    let judged = judge_move(&input, cfg);
+
+    // The threat searches the browser made, where they are of the positions the coach expects.
+    let threat_depth_on = cfg.coach.threat_search_depth > 0;
+    let usable = |expected: Option<Chess>, given: &Option<ThreatLine>| -> Option<EngineLine> {
+        let (expected, given) = (expected?, given.as_ref()?);
+        let pos: Chess = given.fen.parse::<Fen>().ok()?.into_position(mode).ok()?;
+        let first = given.line.pv.first()?;
+        (board::epd(&pos) == board::epd(&expected) && board::parse_uci(&expected, first).is_some())
+            .then(|| given.line.clone())
+    };
+    let after_best = judged
+        .best_move
+        .filter(|_| !judged.played_is_best)
+        .map(|bm| {
+            let mut p = before.clone();
+            p.play_unchecked(bm);
+            p
+        });
+    // As in the review, a position whose side to move has no legal move is not searched, so it
+    // has no threat search either.
+    let threat = usable(
+        board::null_move(after).filter(|_| threat_depth_on && !after.legal_moves().is_empty()),
+        &request.threats.after,
+    );
+    let prev_threat = usable(
+        board::null_move(before).filter(|_| threat_depth_on),
+        &request.threats.before,
+    );
+    let best_threat = usable(
+        after_best
+            .as_ref()
+            .and_then(board::null_move)
+            .filter(|_| threat_depth_on && cfg.coach.best_threat_search),
+        &request.threats.best,
+    );
+    let coach_rating = cfg.coach.rating_gates.then(|| {
+        let elo = match review.settings.player_side {
+            Some(Side::White) => review.game.white_elo,
+            Some(Side::Black) => review.game.black_elo,
+            None => None,
+        };
+        elo.map_or(review.rating_used, |e| e as i32)
+    });
+    let coach = coach_note(
+        &input,
+        &judged,
+        &CoachContext {
+            threat: threat.as_ref(),
+            prev_threat: prev_threat.as_ref(),
+            best_threat: best_threat.as_ref(),
+            rating: coach_rating,
+            // No human-move model for sidelines: the coach words difficulty without it.
+            difficulty: None,
+            player_side: review.settings.player_side,
+            seed: i as u32,
         },
         cfg,
     );
@@ -237,5 +316,6 @@ pub fn judge_sideline(
             && !judged.played_is_best,
         best_move,
         explanation,
+        coach,
     })
 }

@@ -1,9 +1,9 @@
 import { Chessboard } from "react-chessboard";
 import type { Arrow } from "react-chessboard";
-import type { CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Side } from "../api/generated/Side";
-import type { PromotionPiece } from "../lib/chess";
+import type { MoveTarget, PromotionPiece } from "../lib/chess";
 import { ClassificationIcon } from "./ClassificationIcon";
 import { Piece } from "./pieces";
 import { boardPieces } from "../lib/boardPieces";
@@ -17,8 +17,10 @@ export interface BoardBadge {
 export interface BoardMoves {
   /** Whether the piece on `square` (of `side`) can be picked up. */
   canDrag: (square: string, side: Side) => boolean;
-  /** Returns whether the piece stays on the target square. */
+  /** Plays a move (a drop or a click on a target square); returns whether the piece stays there. */
   onDrop: (from: string, to: string) => boolean;
+  /** The squares the piece on `square` can move to: the move hints, and where a click moves it. */
+  targets: (square: string) => MoveTarget[];
 }
 
 /** A pawn waiting on its promotion square for the reader to choose a piece. */
@@ -86,9 +88,61 @@ function PromotionPicker({ promotion, flipped }: { promotion: BoardPromotion; fl
 
 /**
  * The board. Positions and annotations come from the backend, except in sidelines the reader plays
- * (docs/explore-mode.md §5.1); pieces can be moved only when `moves` is given.
+ * (docs/explore-mode.md §5.1); pieces can be moved only when `moves` is given, by dragging or by
+ * clicking the piece and then a square. A picked-up piece shows where it can go, as on Chess.com: a
+ * growing highlight on its square, dots on free squares and rings on pieces it can take.
  */
 export function BoardView({ fen, flipped, arrows, squareStyles, badge, moves, promotion }: Props) {
+  // The selection belongs to one position: a new position (a move, a step) clears it.
+  const [picked, setPicked] = useState<{ fen: string; square: string } | null>(null);
+  const selected = moves && !promotion && picked?.fen === fen ? picked.square : null;
+  const targets = useMemo(() => {
+    const map = new Map<string, MoveTarget>();
+    if (selected && moves) for (const t of moves.targets(selected)) map.set(t.square, t);
+    return map;
+  }, [selected, moves]);
+
+  const sideOf = (pieceType: string) => (pieceType.startsWith("w") ? "white" : "black");
+  // The press a click ends, when the press already acted (a mouse); touch only sends the click.
+  const press = useRef<{ square: string; deselect: boolean } | null>(null);
+
+  /**
+   * Acts on a square as a press does: a target square of the picked-up piece plays the move, a
+   * movable piece is picked up, anything else puts the piece down. The picked-up piece itself is
+   * put down only by a click (the release), so it can still be dragged.
+   */
+  const act = (square: string, pieceType: string | null): { deselect: boolean } => {
+    if (!moves || promotion) return { deselect: false };
+    if (selected && targets.has(square)) {
+      setPicked(null);
+      moves.onDrop(selected, square);
+      return { deselect: false };
+    }
+    if (square === selected) return { deselect: true };
+    const movable = pieceType && moves.canDrag(square, sideOf(pieceType));
+    setPicked(movable ? { fen, square } : null);
+    return { deselect: false };
+  };
+
+  // A mouse acts on the press, as on Chess.com: the piece is picked up (and shows its moves) the
+  // moment the button goes down, and a click on a target moves at once.
+  const onSquareMouseDown = (square: string, pieceType: string | null, button: number) => {
+    if (button !== 0) return;
+    press.current = { square, ...act(square, pieceType) };
+  };
+  const onSquareClick = (square: string, pieceType: string | null) => {
+    const pressed = press.current;
+    press.current = null;
+    if (pressed?.square === square) {
+      // The release of a press that already acted: it only puts down a piece clicked twice.
+      if (pressed.deselect) setPicked(null);
+      return;
+    }
+    // A tap (touch), or a release elsewhere than the press.
+    const { deselect } = act(square, pieceType);
+    if (deselect) setPicked(null);
+  };
+
   return (
     <div className="board-wrap">
       <div className="board">
@@ -101,8 +155,33 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, moves, pr
             allowDragging: !!moves && !promotion,
             canDragPiece: ({ piece, square }) =>
               !!moves && !!square && moves.canDrag(square, piece.pieceType.startsWith("w") ? "white" : "black"),
-            onPieceDrop: ({ sourceSquare, targetSquare }) =>
-              !!moves && !!targetSquare && targetSquare !== sourceSquare && moves.onDrop(sourceSquare, targetSquare),
+            // A dragged piece shows its moves too; a drop back on its square leaves it picked up.
+            onPieceDrag: ({ square }) => {
+              if (square) setPicked({ fen, square });
+            },
+            onPieceDrop: ({ sourceSquare, targetSquare }) => {
+              if (!moves || !targetSquare || targetSquare === sourceSquare) return false;
+              const kept = moves.onDrop(sourceSquare, targetSquare);
+              if (kept) setPicked(null);
+              return kept;
+            },
+            onSquareMouseDown: ({ piece, square }, e) => onSquareMouseDown(square, piece?.pieceType ?? null, e.button),
+            onSquareClick: ({ piece, square }) => onSquareClick(square, piece?.pieceType ?? null),
+            // Each square: its highlight, the selection under the piece, then the move hint over it.
+            squareRenderer: ({ square, children }) => {
+              const target = targets.get(square);
+              return (
+                <div className={`sq ${target ? "sq--target" : ""}`} style={squareStyles[square]}>
+                  {square === selected && (
+                    <span className="sq-select" aria-hidden="true">
+                      <span />
+                    </span>
+                  )}
+                  <div className="sq-piece">{children}</div>
+                  {target && <span className={`sq-hint ${target.capture ? "sq-hint--capture" : ""}`} aria-hidden="true" />}
+                </div>
+              );
+            },
             allowDrawingArrows: true,
             arrows,
             squareStyles,

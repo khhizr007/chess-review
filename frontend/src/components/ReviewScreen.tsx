@@ -4,10 +4,11 @@ import type { ArrowKind } from "../api/generated/ArrowKind";
 import type { Eval } from "../api/generated/Eval";
 import type { MoveRef } from "../api/generated/MoveRef";
 import type { ReviewResult } from "../api/generated/ReviewResult";
+import type { Sentence } from "../api/generated/Sentence";
 import type { Side } from "../api/generated/Side";
 import { useLiveEngine } from "../hooks/useLiveEngine";
 import { useSidelineJudge } from "../hooks/useSidelineJudge";
-import { canMoveFrom, ending, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
+import { canMoveFrom, ending, legalTargets, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
 import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
@@ -21,6 +22,7 @@ import { ClassificationIcon } from "./ClassificationIcon";
 import {
   CoachActions,
   CoachBubble,
+  CoachSentence,
   EvalPill,
   LiveLines,
   MoveDetails,
@@ -69,6 +71,7 @@ const SUGGEST_ARROW = "rgba(92, 139, 176, 0.85)";
 const PREVIEW_TINT = "rgba(255, 196, 64, 0.5)";
 const HINT_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(255, 196, 64, 0.95)", background: "rgba(255, 196, 64, 0.25)" };
 const MARK_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(250, 65, 45, 0.8)", background: "rgba(250, 65, 45, 0.2)" };
+const NO_SENTENCES: Sentence[] = [];
 const CHECK_GLOW: CSSProperties = {
   backgroundImage: "radial-gradient(circle, rgba(235,40,40,.9) 0%, rgba(235,40,40,.4) 45%, transparent 72%)",
 };
@@ -172,12 +175,32 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       : null;
   // The browser engine searches sideline positions only, and the position each sideline move was
   // played from, so the move can be judged on one engine's lines (docs/explore-mode.md §5.4–5.5).
-  const live = useLiveEngine(shownMove && !shownOver ? shownMove.fen : null, shownFrom, review, review.game.chess960);
+  // The coach's threat searches, as the review made them (its config), let the move be explained too.
+  const coachSearches = useMemo(
+    () =>
+      shownMove
+        ? {
+            playedUci: shownMove.uci,
+            depth: review.config.coach.threat_search_depth,
+            best: review.config.coach.best_threat_search,
+          }
+        : null,
+    [shownMove, review.config.coach.threat_search_depth, review.config.coach.best_threat_search],
+  );
+  const live = useLiveEngine(
+    shownMove && !shownOver ? shownMove.fen : null,
+    shownFrom,
+    review,
+    review.game.chess960,
+    coachSearches,
+  );
   const liveLines = live.analysis?.lines ?? [];
   const judgements = useSidelineJudge(reviewId, sideline, live, shownOver);
   const shownJudged = sideline && shownMove ? judgements[sideline.cursor - 1] : undefined;
   const shownClass = shownJudged?.judgement.classification ?? null;
   const shownMover: Side = shownFrom?.split(" ")[1] === "b" ? "black" : "white";
+  // The coach's note for the shown sideline move (docs/explore-mode.md §5.5).
+  const shownSentences = shownJudged?.judgement.coach.sentences ?? NO_SENTENCES;
   const liveBest = liveLines[0]?.moves[0];
 
   const showLine = preview?.source === "coach" ? current?.coach?.show_lines[preview.line] : undefined;
@@ -452,6 +475,12 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       if (king) styles[king] = { ...styles[king], ...CHECK_GLOW };
       // The engine arrow shows the live engine's top move.
       if (showSuggestion && liveBest) arrows.push({ startSquare: liveBest.from, endSquare: liveBest.to, color: SUGGEST_ARROW });
+      // What the coach's main sentence is about, as for game moves.
+      for (const a of shownSentences[0]?.fragments.find((f) => f.arrows.length > 0)?.arrows ?? []) {
+        if (!arrows.some((b) => b.startSquare === a.from && b.endSquare === a.to)) {
+          arrows.push({ startSquare: a.from, endSquare: a.to, color: COACH_ARROW[a.kind] });
+        }
+      }
       return { arrows, squareStyles: styles, badge };
     }
 
@@ -506,16 +535,18 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       }
     }
     return { arrows, squareStyles: styles, badge };
-  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, shownClass, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
+  }, [activeRetry, solvedMove, bestMove, ladder, shownMove, shownClass, shownSentences, liveBest, showLine, previewMove, preview, current, markedFragment, next, showSuggestion]);
 
   // Retry takes the mover's pieces; otherwise any legal move explores, except while a line plays.
+  // The move hints show every legal move of the position, in a retry too (they give nothing away).
+  const targets = (square: string) => legalTargets(displayFen, square, review.game.chess960);
   const boardMoves: BoardMoves | null = activeRetry
     ? current && !retrySolved
-      ? { canDrag: (_square, side) => side === current.mover, onDrop: onRetryDrop }
+      ? { canDrag: (_square, side) => side === current.mover, onDrop: onRetryDrop, targets }
       : null
     : preview
       ? null
-      : { canDrag: (square) => canMoveFrom(displayFen, square), onDrop: onExploreDrop };
+      : { canDrag: (square) => canMoveFrom(displayFen, square), onDrop: onExploreDrop, targets };
   const boardPromotion: BoardPromotion | null = promotion
     ? {
         square: promotion.to,
@@ -676,18 +707,21 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
                   <ClassificationIcon value={shownClass} size={20} />
                   <span>
                     <San san={shownMove.san} side={shownMover} /> is {CLASSIFICATIONS[shownClass].phrase}.
-                    {shownJudged?.judgement.show_best_move && shownJudged.judgement.best_move && (
+                    {/* The coach's sentences name the better move themselves, as for game moves. */}
+                    {shownSentences.length === 0 && shownJudged?.judgement.show_best_move && shownJudged.judgement.best_move && (
                       <>
                         {" "}
                         <San san={shownJudged.judgement.best_move.san} side={shownMover} /> was best.
                       </>
                     )}
                   </span>
-                  {!shownJudged?.final && <span className="explore-verdict__note">refining…</span>}
                 </p>
               ) : (
                 !shownJudged && live.status !== "error" && <p className="coach__note">Judging the move…</p>
               )}
+              {shownSentences.map((s, i) => (
+                <CoachSentence key={i} index={i} sentence={s} />
+              ))}
               {shownEnd && (
                 <p className="coach__end">
                   {shownEnd === "checkmate" ? `Checkmate. ${toMove === "white" ? "Black" : "White"} wins.` : ENDINGS[shownEnd]}

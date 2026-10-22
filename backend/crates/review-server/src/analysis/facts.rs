@@ -13,9 +13,10 @@ use super::detectors::{
     LineMaterial, Sacrifice, captures_free_piece, is_only_escape, is_quiet_retreat, is_recapture,
     material_gate, static_sacrifice, takes_free_piece, threatens_promotion, walk_line,
 };
-use super::eval_after_first_move;
 use super::see;
+use super::{eval_after_first_move, line_input};
 use crate::board::{self, side};
+use crate::coach::{self, CoachNote};
 use crate::engine::EngineLine;
 
 /// One move to classify, with the engine's view of the positions around it.
@@ -288,4 +289,83 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         facts,
         outcome,
     }
+}
+
+/// What the coach needs besides the move's judgement: the null-move threat searches around the
+/// move, and who is being spoken to.
+pub(crate) struct CoachContext<'a> {
+    /// The threat search after the move (its mover to move again).
+    pub threat: Option<&'a EngineLine>,
+    /// The threat search before the move (the opponent to move).
+    pub prev_threat: Option<&'a EngineLine>,
+    /// The threat search after the engine's best move, when it is not the played move.
+    pub best_threat: Option<&'a EngineLine>,
+    /// Rating for the coach's rating gates (`None` says every tag).
+    pub rating: Option<i32>,
+    pub difficulty: Option<coach::Difficulty>,
+    /// The side the reader played, if known (the coach's voice).
+    pub player_side: Option<Side>,
+    /// Picks among wordings (the ply index keeps it stable).
+    pub seed: u32,
+}
+
+/// The coach's note for a judged move (docs/coach-analysis.md), shared by the review and sidelines.
+pub(crate) fn coach_note(
+    input: &MoveInput<'_>,
+    judged: &MoveJudgement,
+    ctx: &CoachContext<'_>,
+    cfg: &ReviewConfig,
+) -> CoachNote {
+    let lines = input.lines;
+    let mover = judged.mover;
+    let rating = input.rating;
+    let oc = |v: Value| expected_outcome(v, rating, cfg);
+    // The played line from `before`: a mate the mover gives after the reply
+    // search is one move longer from here.
+    let played_line_eval = match judged.played_rank {
+        Some(k) => lines[k].eval,
+        None => match input.eval_after {
+            Eval::Mate { winner, moves } if winner == mover => Eval::Mate {
+                winner,
+                moves: moves + 1,
+            },
+            other => other,
+        },
+    };
+    // The coach's "only good move": every other engine line loses more
+    // than a Good move may.
+    let only_move = lines.get(1).is_some_and(|l| {
+        let v = Value::after_move(eval_after_first_move(l, mover), mover);
+        judged.ep_best - node_expected_points(v, false, rating) > cfg.precision_thresholds[1]
+    });
+    let line = line_input;
+    coach::coach_move(&coach::CoachInput {
+        before: input.before,
+        played: input.mv,
+        previous: input.previous,
+        reply: input.after_line.map(line),
+        best: Some(line(&lines[0])),
+        played_line: Some(coach::LineInput {
+            pv: &judged.played_pv,
+            eval: played_line_eval,
+        }),
+        threat: ctx.threat.map(line),
+        prev_threat: ctx.prev_threat.map(line),
+        best_threat: ctx.best_threat.map(line),
+        only_move,
+        sacrifice: judged.sacrifice.map(|s| s.square),
+        best_sacrifice: judged
+            .best_move
+            .filter(|_| !judged.played_is_best)
+            .and_then(|bm| static_sacrifice(input.before, bm, &cfg.brilliant, judged.pawns))
+            .map(|s| s.square),
+        swing: Some((oc(judged.mover_value_before), oc(judged.played_value))),
+        classification: judged.outcome.classification,
+        phase: input.phase_after,
+        rating: ctx.rating,
+        difficulty: ctx.difficulty,
+        style: coach::Style::for_player(ctx.player_side, mover),
+        horizon: cfg.material_horizon_plies,
+        seed: ctx.seed,
+    })
 }
