@@ -863,6 +863,22 @@ select option {
   color: var(--text-2);
 }
 
+/* The review layout while the engine works: progress sits in the coach bubble. */
+.coach__bubble .progress {
+  margin-top: 10px;
+}
+
+.coach__bubble .progress__track {
+  height: 8px;
+  background: #e6e4e1;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.coach__bubble .progress__pct {
+  color: var(--bubble-muted);
+  font-size: 0.85rem;
+}
+
 /* =================================================================== review layout */
 
 .review {
@@ -1359,6 +1375,8 @@ select option {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Holds the visually hidden labels inside, so they cannot stretch the page. */
+  position: relative;
   padding: 18px 16px 10px;
 }
 
@@ -1706,15 +1724,6 @@ select option {
   height: 16px;
   margin-top: 1px;
   color: #d9a400;
-}
-
-.coach__body--report {
-  margin-top: 0;
-  color: var(--bubble-text);
-}
-
-.coach__body--report p + p {
-  margin-top: 6px;
 }
 
 .coach__comment {
@@ -2537,8 +2546,16 @@ select option {
   outline-offset: 1px;
 }
 
+.coach__line {
+  margin: 0;
+  color: var(--bubble-text);
+  font-size: 0.94rem;
+  font-weight: 600;
+}
+
+/* Reference sizes: an 80 px graph, 64×36 accuracy boxes, 40 px tally rows. */
 .report__graph {
-  margin: 18px 0 8px;
+  margin: 16px 0 6px;
 }
 
 .report__table {
@@ -2548,7 +2565,11 @@ select option {
 }
 
 .report__col-side {
-  width: 27%;
+  width: 80px;
+}
+
+.report__col-glyph {
+  width: 28px;
 }
 
 .report__table th,
@@ -2558,76 +2579,65 @@ select option {
 
 .report__table tbody th {
   text-align: left;
+  font-size: 0.875rem;
   font-weight: 600;
-  font-size: 0.92rem;
-  color: var(--text-2);
+  color: var(--text);
 }
 
 .report__table td {
   text-align: center;
 }
 
-.report__players th {
-  padding: 10px 0 8px;
-  vertical-align: top;
-  font-weight: 600;
-}
-
-.report__players th .avatar {
-  margin: 0 auto 6px;
-  display: flex;
+.report__names th {
+  padding: 6px 0 6px;
+  vertical-align: bottom;
 }
 
 .report__name {
   display: block;
-  padding: 0 4px;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 700;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.report__elo {
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--muted);
+.report__players td .avatar {
+  display: flex;
+  margin: 0 auto;
+}
+
+.report__players th,
+.report__players td {
+  padding-bottom: 12px;
 }
 
 .report__accuracy th,
 .report__accuracy td {
-  padding: 4px 0 16px;
-}
-
-.report__accuracy th {
-  font-size: 1rem !important;
-  font-weight: 700 !important;
-  color: var(--text) !important;
+  padding-bottom: 14px;
 }
 
 .acc-box {
-  display: inline-block;
-  min-width: 76px;
-  padding: 8px 0;
-  border-radius: var(--r);
-  font-size: 1.3rem;
-  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 36px;
+  border-radius: 5px;
+  font-size: 17px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
 }
 
 .acc-box--white {
   background: #fff;
   color: var(--gray-800);
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .acc-box--black {
-  background: var(--graph-black);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -2px 0 rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .report__tally {
@@ -2636,39 +2646,43 @@ select option {
 
 .report__tally tr:first-child th,
 .report__tally tr:first-child td {
-  padding-top: 8px;
+  padding-top: 6px;
 }
 
 .report__tally th,
 .report__tally td {
-  height: 32px;
+  height: 40px;
 }
 
-.report__cls {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+.report__tally tr.is-extra:not([hidden]) {
+  animation: tally-in 0.18s var(--ease);
 }
 
-.report__tally tr.is-zero th {
-  color: var(--faint);
+@keyframes tally-in {
+  from {
+    opacity: 0;
+  }
 }
 
-.report__tally tr.is-zero .cls-icon {
-  opacity: 0.4;
-  filter: saturate(0.6);
+.report__glyph .cls-icon {
+  display: block;
+  margin: 0 auto;
+}
+
+.report__count {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .report__count-btn {
   min-width: 42px;
-  height: 28px;
+  height: 30px;
   border: 0;
   border-radius: var(--r);
   background: transparent;
+  color: inherit;
   font: inherit;
-  font-size: 1.02rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition: background-color 0.12s;
 }
@@ -2677,13 +2691,43 @@ select option {
   background: var(--surface);
 }
 
-.report__zero {
-  color: var(--faint);
-  font-weight: 700;
+.report__fold {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 4px;
+  border-bottom: 1px solid var(--border);
 }
 
-.report__phases {
-  border-top: 1px solid var(--border);
+.report__fold-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.report__fold-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.report__fold-btn svg {
+  transition: transform 0.18s var(--ease);
+}
+
+.report__fold-btn[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.report__none {
+  color: var(--faint);
+  font-weight: 700;
 }
 
 .report__phases th,
@@ -2693,7 +2737,7 @@ select option {
 
 .report__phases tr:first-child th,
 .report__phases tr:first-child td {
-  padding-top: 8px;
+  padding-top: 6px;
 }
 
 .report__phase {
@@ -2703,6 +2747,18 @@ select option {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
+}
+
+.report__notes {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.86rem;
+  color: var(--text-2);
+}
+
+.report__notes li + li {
+  margin-top: 4px;
 }
 
 .report__about {
@@ -2820,6 +2876,13 @@ select option {
     overflow: visible;
   }
 
+  /* Keep the tallies near their labels when the stacked panel is wide. */
+  .report__table,
+  .report__fold {
+    max-width: 420px;
+    margin-inline: auto;
+  }
+
   .panel__footer {
     position: sticky;
     bottom: 0;
@@ -2828,9 +2891,6 @@ select option {
     box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.25);
   }
 
-  .report__graph {
-    margin-top: 12px;
-  }
 }
 
 @media (max-width: 480px) {

@@ -4,7 +4,7 @@ import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Sentence } from "../api/generated/Sentence";
 import type { Side } from "../api/generated/Side";
-import { CLASSIFICATIONS, MISS_KINDS, formatAccuracy, moveNumberLabel } from "./format";
+import { CLASSIFICATIONS, MISS_KINDS, moveNumberLabel } from "./format";
 
 /** Coach speech for one move: everything shown in the bubble. */
 export interface CoachMessage {
@@ -167,28 +167,28 @@ export function coachMood(c: Classification | null | undefined): CoachMood {
   }
 }
 
-/** One-paragraph summary for the report view. */
-export function reportSummary(review: ReviewResult): string[] {
-  const out: string[] = [];
-  const { white, black } = review;
-  const wName = playerName(review, "white");
-  const bName = playerName(review, "black");
+/**
+ * The coach's one line atop the report, as in the reference: the result, told to the player when
+ * their side is known, then an invitation. Accuracy is left to the boxes just below it.
+ */
+export function reportHeadline(review: ReviewResult): string {
   const result = review.game.result;
-  if (result === "1-0") out.push(`${wName} won the game.`);
-  else if (result === "0-1") out.push(`${bName} won the game.`);
-  else if (result === "1/2-1/2") out.push("The game was drawn.");
+  const winner: Side | null = result === "1-0" ? "white" : result === "0-1" ? "black" : null;
+  const me = review.settings.player_side ?? null;
+  const last = review.plies[review.plies.length - 1];
+  const how = last?.flags.checkmate ? " by checkmate" : "";
+  let told: string;
+  if (winner) {
+    if (me) told = me === winner ? `You won${how}.` : `You lost${how}.`;
+    else told = `${playerName(review, winner)} won${how}.`;
+  } else if (result === "1/2-1/2") told = "The game was drawn.";
+  else told = "Here's how the game went.";
+  return `${told} Let's review!`;
+}
 
-  const wa = white.accuracy.overall;
-  const ba = black.accuracy.overall;
-  if (wa != null && ba != null) {
-    const [hi, lo] = wa >= ba ? [wName, bName] : [bName, wName];
-    out.push(
-      Math.abs(wa - ba) < 2
-        ? `Both sides played at a similar level (${formatAccuracy(wa)} vs ${formatAccuracy(ba)}).`
-        : `${hi} played more accurately than ${lo} (${formatAccuracy(Math.max(wa, ba))} vs ${formatAccuracy(Math.min(wa, ba))}).`,
-    );
-  }
-
+/** Report notes below the tallies: the turning point and the opening. */
+export function reportNotes(review: ReviewResult): string[] {
+  const out: string[] = [];
   const swingPly = review.biggest_swings[0];
   const swing = swingPly ? review.plies[swingPly - 1] : undefined;
   if (swing && swing.ep_lost >= 0.1) {

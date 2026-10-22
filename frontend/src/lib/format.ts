@@ -29,19 +29,34 @@ export const CLASSIFICATIONS: Record<Classification, ClassificationMeta> = {
   tricky: { label: "Tricky", color: "var(--c-tricky)", phrase: "a tricky move", notable: true },
 };
 
-/** Report rows, best to worst, as in the reference summary. */
+/** Report rows in the reference summary's order (Book sits after Great there). */
 export const REPORT_ORDER: Classification[] = [
   "brilliant",
   "great_find",
+  "book",
   "best",
   "excellent",
   "good",
-  "book",
   "inaccuracy",
   "mistake",
   "miss",
   "blunder",
 ];
+
+/** Rows competing for the report's three unfolded "good move" slots, in the reference's priority. */
+const SHOWN_GOOD: Classification[] = ["brilliant", "great_find", "best", "excellent", "good", "book"];
+
+/**
+ * Report rows folded behind the chevron, by the reference's rule (read from its review bundle):
+ * Mistake, Miss and Blunder always show and Inaccuracy always folds. Of the good-move rows, the first
+ * three that either player earned show, topped up in priority order with empty rows when fewer than
+ * three were earned; the rest fold.
+ */
+export function foldedReportRows(total: (c: Classification) => number): Set<Classification> {
+  const earned = SHOWN_GOOD.filter((c) => total(c) > 0);
+  const ranked = [...earned, ...SHOWN_GOOD.filter((c) => total(c) <= 0)];
+  return new Set<Classification>(["inaccuracy", ...ranked.slice(3)]);
+}
 
 export const MISS_KINDS: Record<MissKind, string> = {
   win: "missed a winning continuation",

@@ -1,10 +1,10 @@
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Phase } from "../api/generated/Phase";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
-import { reportSummary, playerName } from "../lib/coach";
-import { CLASSIFICATIONS, PHASES, REPORT_ORDER, formatAccuracy, moveNumberLabel } from "../lib/format";
+import { playerName, reportHeadline, reportNotes } from "../lib/coach";
+import { CLASSIFICATIONS, PHASES, REPORT_ORDER, foldedReportRows, formatAccuracy, moveNumberLabel } from "../lib/format";
 import { firstPlyOf } from "../lib/review";
 import { gameTakeaways } from "../lib/takeaways";
 import { ClassificationIcon } from "./ClassificationIcon";
@@ -33,30 +33,38 @@ function phaseGrade(acc: number): Classification {
 }
 
 const PHASE_KEYS: Phase[] = ["opening", "middlegame", "endgame"];
+const SIDES: Side[] = ["white", "black"];
 
+/**
+ * The report, in the reference's order: one coach line, the eval graph, players, accuracy and the
+ * move tallies first, so accuracy sits high in the panel. Phases, takeaways and notes follow.
+ */
 export function ReportView({ review, current, onSelect, onReviewAt, onStart, onNewGame }: Props) {
   const { white, black } = review;
   const takeaways = useMemo(() => gameTakeaways(review), [review]);
-  const count =(side: Side, c: Classification) =>
+  const notes = useMemo(() => reportNotes(review), [review]);
+  const [expanded, setExpanded] = useState(false);
+
+  const count = (side: Side, c: Classification) =>
     (side === "white" ? white : black).tally.find((t) => t.classification === c)?.count ?? 0;
+  const folded = foldedReportRows((c) => count("white", c) + count("black", c));
 
   const countCell = (side: Side, c: Classification) => {
     const n = count(side, c);
     const target = n > 0 ? firstPlyOf(review, side, c) : null;
     return (
-      <td className="report__count">
+      <td className="report__count" style={{ color: CLASSIFICATIONS[c].color }}>
         {target ? (
           <button
             type="button"
             className="report__count-btn"
-            style={{ color: CLASSIFICATIONS[c].color }}
             onClick={() => onReviewAt(target)}
             title={`Go to ${playerName(review, side)}'s first ${CLASSIFICATIONS[c].label.toLowerCase()}`}
           >
             {n}
           </button>
         ) : (
-          <span className="report__zero">{n}</span>
+          <span className="report__count-n">{n}</span>
         )}
       </td>
     );
@@ -66,12 +74,135 @@ export function ReportView({ review, current, onSelect, onReviewAt, onStart, onN
     <div className="report">
       <div className="panel__scroll">
         <CoachBubble>
-          <div className="coach__body coach__body--report">
-            {reportSummary(review).map((s) => (
-              <p key={s}>{s}</p>
-            ))}
-          </div>
+          <p className="coach__line">{reportHeadline(review)}</p>
         </CoachBubble>
+
+        <div className="report__graph">
+          <EvalGraph
+            points={review.graph}
+            plies={review.plies}
+            current={current}
+            phaseStarts={review.phase_starts}
+            onSelect={onSelect}
+            height={80}
+          />
+        </div>
+
+        <table className="report__table">
+          <colgroup>
+            <col className="report__col-label" />
+            <col className="report__col-side" />
+            <col className="report__col-glyph" />
+            <col className="report__col-side" />
+          </colgroup>
+          <thead>
+            <tr className="report__names">
+              <td />
+              {SIDES.map((side) => (
+                <Fragment key={side}>
+                  {side === "black" && <td />}
+                  <th scope="col">
+                    <span className="report__name" title={playerName(review, side)}>
+                      {playerName(review, side)}
+                    </span>
+                  </th>
+                </Fragment>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="report__players">
+              <th scope="row">Players</th>
+              {SIDES.map((side) => {
+                const elo = (side === "white" ? white : black).elo;
+                return (
+                  <Fragment key={side}>
+                    {side === "black" && <td />}
+                    <td>
+                      <span
+                        className={`avatar avatar--${side} avatar--lg`}
+                        title={elo != null ? `${playerName(review, side)} (${elo})` : playerName(review, side)}
+                      >
+                        <PieceIcon kind="p" side={side} size={40} />
+                      </span>
+                    </td>
+                  </Fragment>
+                );
+              })}
+            </tr>
+            <tr className="report__accuracy">
+              <th scope="row">Accuracy</th>
+              <td>
+                <span className="acc-box acc-box--white">{formatAccuracy(white.accuracy.overall)}</span>
+              </td>
+              <td />
+              <td>
+                <span className="acc-box acc-box--black">{formatAccuracy(black.accuracy.overall)}</span>
+              </td>
+            </tr>
+          </tbody>
+          <tbody className="report__tally" id="report-tally">
+            {REPORT_ORDER.map((c) => (
+              <tr key={c} hidden={!expanded && folded.has(c)} className={folded.has(c) ? "is-extra" : undefined}>
+                <th scope="row">{CLASSIFICATIONS[c].label}</th>
+                {countCell("white", c)}
+                <td className="report__glyph">
+                  <ClassificationIcon value={c} size={22} />
+                </td>
+                {countCell("black", c)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="report__fold">
+          <button
+            type="button"
+            className="report__fold-btn"
+            aria-expanded={expanded}
+            aria-controls="report-tally"
+            aria-label={expanded ? "Show fewer move classes" : "Show all move classes"}
+            title={expanded ? "Show fewer" : "Show all"}
+            onClick={() => setExpanded((e) => !e)}
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <path d="M6 9.5l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+
+        <table className="report__table report__phases">
+          <colgroup>
+            <col className="report__col-label" />
+            <col className="report__col-side" />
+            <col className="report__col-glyph" />
+            <col className="report__col-side" />
+          </colgroup>
+          <tbody>
+            {PHASE_KEYS.map((phase) => (
+              <tr key={phase}>
+                <th scope="row">{PHASES[phase]}</th>
+                {[white, black].map((s) => {
+                  const acc = s.accuracy[phase];
+                  return (
+                    <Fragment key={s.side}>
+                      {s.side === "black" && <td />}
+                      <td>
+                        {acc == null ? (
+                          <span className="report__none">—</span>
+                        ) : (
+                          <span className="report__phase" title={`${formatAccuracy(acc)} accuracy`}>
+                            <ClassificationIcon value={phaseGrade(acc)} size={18} />
+                            {acc.toFixed(0)}
+                          </span>
+                        )}
+                      </td>
+                    </Fragment>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
         {takeaways.length > 0 && (
           <section className="takeaways" aria-label="Takeaways">
@@ -108,92 +239,13 @@ export function ReportView({ review, current, onSelect, onReviewAt, onStart, onN
           </section>
         )}
 
-        <div className="report__graph">
-          <EvalGraph
-            points={review.graph}
-            plies={review.plies}
-            current={current}
-            phaseStarts={review.phase_starts}
-            onSelect={onSelect}
-            height={72}
-          />
-        </div>
-
-        <table className="report__table">
-          <colgroup>
-            <col className="report__col-label" />
-            <col className="report__col-side" />
-            <col className="report__col-side" />
-          </colgroup>
-          <thead>
-            <tr className="report__players">
-              <th scope="col">
-                <span className="visually-hidden">Players</span>
-              </th>
-              {(["white", "black"] as const).map((side) => (
-                <th scope="col" key={side}>
-                  <span className={`avatar avatar--${side} avatar--lg`} aria-hidden="true">
-                    <PieceIcon kind="p" side={side} size={42} />
-                  </span>
-                  <span className="report__name">{playerName(review, side)}</span>
-                  {(side === "white" ? white : black).elo != null && (
-                    <span className="report__elo">{(side === "white" ? white : black).elo}</span>
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="report__accuracy">
-              <th scope="row">Accuracy</th>
-              <td>
-                <span className="acc-box acc-box--white">{formatAccuracy(white.accuracy.overall)}</span>
-              </td>
-              <td>
-                <span className="acc-box acc-box--black">{formatAccuracy(black.accuracy.overall)}</span>
-              </td>
-            </tr>
-          </tbody>
-          <tbody className="report__tally">
-            {REPORT_ORDER.map((c) => {
-              const zero = count("white", c) + count("black", c) === 0;
-              return (
-                <tr key={c} className={zero ? "is-zero" : ""}>
-                  <th scope="row">
-                    <span className="report__cls">
-                      <ClassificationIcon value={c} size={20} />
-                      {CLASSIFICATIONS[c].label}
-                    </span>
-                  </th>
-                  {countCell("white", c)}
-                  {countCell("black", c)}
-                </tr>
-              );
-            })}
-          </tbody>
-          <tbody className="report__phases">
-            {PHASE_KEYS.map((phase) => (
-              <tr key={phase}>
-                <th scope="row">{PHASES[phase]}</th>
-                {[white, black].map((s) => {
-                  const acc = s.accuracy[phase];
-                  return (
-                    <td key={s.side}>
-                      {acc == null ? (
-                        <span className="report__zero">—</span>
-                      ) : (
-                        <span className="report__phase" title={`${formatAccuracy(acc)} accuracy`}>
-                          <ClassificationIcon value={phaseGrade(acc)} size={18} />
-                          {acc.toFixed(0)}
-                        </span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
+        {notes.length > 0 && (
+          <ul className="report__notes">
+            {notes.map((n) => (
+              <li key={n}>{n}</li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+        )}
 
         <details className="report__about">
           <summary>About this review</summary>

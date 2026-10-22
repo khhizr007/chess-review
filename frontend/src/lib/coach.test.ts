@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
-import { coachArrows, coachMessage, coachMood, reportSummary } from "./coach";
+import { coachArrows, coachMessage, coachMood, reportHeadline, reportNotes } from "./coach";
 import { materialFromFen } from "./material";
 
 function ply(overrides: Partial<PlyReview> = {}): PlyReview {
@@ -28,6 +28,7 @@ const review = {
   white: { name: "khhizr7", accuracy: { overall: 77.4 } },
   black: { name: "Sheep", accuracy: { overall: 83.6 } },
   game: { result: "0-1", opening: { eco: "C55", name: "Two Knights Defense" } },
+  settings: { player_side: null },
   plies: [] as PlyReview[],
   biggest_swings: [] as number[],
 } as unknown as ReviewResult;
@@ -113,12 +114,19 @@ describe("coachMood", () => {
   });
 });
 
-describe("reportSummary", () => {
-  it("states the result and who played more accurately", () => {
-    const s = reportSummary(review);
-    expect(s[0]).toBe("Sheep won the game.");
-    expect(s[1]).toBe("Sheep played more accurately than khhizr7 (83.6 vs 77.4).");
-    expect(s).toContain("Opening: Two Knights Defense.");
+describe("report lines", () => {
+  it("opens with one short line on the result, told to the player when their side is known", () => {
+    expect(reportHeadline(review)).toBe("Sheep won. Let's review!");
+    const mine = { ...review, settings: { player_side: "white" } } as unknown as ReviewResult;
+    expect(reportHeadline(mine)).toBe("You lost. Let's review!");
+    const mated = { ...review, plies: [ply({ mover: "black", flags: { ...ply().flags, checkmate: true } })] } as ReviewResult;
+    expect(reportHeadline(mated)).toBe("Sheep won by checkmate. Let's review!");
+    const drawn = { ...review, game: { result: "1/2-1/2" } } as unknown as ReviewResult;
+    expect(reportHeadline(drawn)).toBe("The game was drawn. Let's review!");
+  });
+
+  it("leaves the opening for the notes below the tallies", () => {
+    expect(reportNotes(review)).toEqual(["Opening: Two Knights Defense."]);
   });
 });
 

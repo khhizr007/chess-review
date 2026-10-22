@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import { kingSquareToMove, uciSquares } from "./fen";
-import { formatEval, formatEvalShort, moveNumberLabel } from "./format";
+import type { Classification } from "../api/generated/Classification";
+import { foldedReportRows, formatEval, formatEvalShort, moveNumberLabel } from "./format";
 import { fenAt, matchesFilter, needsAttention, stepFiltered } from "./review";
 
 function ply(n: number, overrides: Partial<PlyReview> = {}): PlyReview {
@@ -67,6 +68,29 @@ describe("formatEval", () => {
   it("labels move numbers", () => {
     expect(moveNumberLabel(12, "white")).toBe("12.");
     expect(moveNumberLabel(12, "black")).toBe("12…");
+  });
+});
+
+describe("foldedReportRows", () => {
+  const fold = (counts: Partial<Record<Classification, number>>) => [...foldedReportRows((c) => counts[c] ?? 0)].sort();
+
+  it("matches the reference on game 142636591844: earned Book and Inaccuracy still fold", () => {
+    // Chess.com's own report of this game: Book 2/1, Best 7/2, Excellent 3/2, Good 4/1, Inaccuracy 1/3.
+    expect(fold({ book: 3, best: 9, excellent: 5, good: 5, inaccuracy: 4, mistake: 7, miss: 1 })).toEqual(
+      ["book", "brilliant", "great_find", "inaccuracy"],
+    );
+  });
+
+  it("lets earned Brilliant and Great moves take the first slots", () => {
+    expect(fold({ brilliant: 1, great_find: 2, best: 9, excellent: 5, good: 5, book: 2 })).toEqual(
+      ["book", "excellent", "good", "inaccuracy"],
+    );
+  });
+
+  it("tops the slots up with empty rows in priority order and never folds the errors", () => {
+    expect(fold({ good: 1 })).toEqual(["best", "book", "excellent", "inaccuracy"]);
+    // As in the reference's loading skeleton: Brilliant, Great and Best show before any counts.
+    expect(fold({})).toEqual(["book", "excellent", "good", "inaccuracy"]);
   });
 });
 
