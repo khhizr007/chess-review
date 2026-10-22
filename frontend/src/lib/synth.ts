@@ -1,6 +1,7 @@
 // Board and review sounds, synthesised with Web Audio. Nothing is sampled: every sound is built here
 // from noise bursts and tones, so the project ships no audio files (see THIRD_PARTY.md). The set and
-// the rough shape of each sound follow the reference client's (docs/sound.md).
+// the rough shape of each sound follow the reference client's (docs/sound.md). A recorded sound pack
+// in `public/sounds/` replaces these where it is present (samples.ts).
 
 export type SoundName =
   | "move"
@@ -18,11 +19,17 @@ export type SoundName =
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
 
-function context(): AudioContext | null {
-  if (ctx) return ctx;
-  const Ctor = typeof window === "undefined" ? undefined : window.AudioContext;
-  if (!Ctor) return null;
-  ctx = new Ctor();
+/**
+ * The page's one AudioContext, made on first use and resumed if suspended (browsers start it
+ * suspended until the page has had a user gesture). Null where Web Audio is unavailable.
+ */
+export function audioContext(): AudioContext | null {
+  if (!ctx) {
+    const Ctor = typeof window === "undefined" ? undefined : window.AudioContext;
+    if (!Ctor) return null;
+    ctx = new Ctor();
+  }
+  if (ctx.state === "suspended") void ctx.resume();
   return ctx;
 }
 
@@ -116,10 +123,8 @@ const SOUNDS: Record<SoundName, (ac: AudioContext, out: AudioNode, t: number) =>
 
 /** Plays one sound now. Does nothing where Web Audio is unavailable. */
 export function playSynth(name: SoundName, volume = 1): void {
-  const ac = context();
+  const ac = audioContext();
   if (!ac) return;
-  // Browsers start the context suspended until the page has had a user gesture.
-  if (ac.state === "suspended") void ac.resume();
   const master = ac.createGain();
   master.gain.value = volume;
   master.connect(ac.destination);

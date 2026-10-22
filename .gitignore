@@ -11,3 +11,6 @@ captures/
 coach_en_us.raw
 rating_ranges.raw
 tag_names.txt
+
+# A local sound pack (docs/sound.md). It may hold the reference client's audio, which must never be committed.
+frontend/public/sounds/
