@@ -2170,6 +2170,45 @@ select option {
   font-size: 0.9rem;
 }
 
+/* The brackets around a variation inside a line: "2. e4 d5 (2... e5) 3. exd5". */
+.sideline__variation {
+  color: var(--faint);
+  font-size: 0.9rem;
+}
+
+/* Chess.com's variation picker under the shown move (values read from its stylesheet, 2026-10-22). */
+.variation-picker {
+  position: fixed;
+  z-index: 20;
+  min-width: 120px;
+  min-height: 40px;
+  overflow-x: auto;
+  border-top: 3px solid var(--gray-500);
+  background: var(--gray-900);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.variation-picker__row {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.variation-picker__row.is-selected {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.variation-picker__arrow {
+  width: 20px;
+  margin-right: 5px;
+  font-size: 16px;
+  text-align: center;
+}
+
 .move-table__number {
   width: 50px;
   padding: 0 4px 0 16px;

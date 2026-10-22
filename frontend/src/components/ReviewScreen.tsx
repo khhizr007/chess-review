@@ -10,7 +10,7 @@ import { useLiveEngine } from "../hooks/useLiveEngine";
 import { useSidelineJudge } from "../hooks/useSidelineJudge";
 import { canMoveFrom, ending, legalTargets, needsPromotion, playMove, type Ending, type PlayedMove, type PromotionPiece } from "../lib/chess";
 import { LEARNABLE, coachArrows, coachMessage, coachMood, playerName } from "../lib/coach";
-import { play, stepSideline, type BoardState, type Sideline } from "../lib/explore";
+import { back, inSideline, listedBranch, nextMoves, play, sidelineOf, type BoardState, type Explored } from "../lib/explore";
 import { kingSquareToMove, uciSquares } from "../lib/fen";
 import { CLASSIFICATIONS, formatEvalPill, moveNumberLabel } from "../lib/format";
 import { materialFromFen } from "../lib/material";
@@ -139,11 +139,18 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   const [linePlaying, setLinePlaying] = useState(false);
   const [hovered, setHovered] = useState<Mark | null>(null);
   const [pinned, setPinned] = useState<Mark | null>(null);
-  const [sideline, setSideline] = useState<Sideline | null>(null);
+  /** Every line the reader explored, kept for the session as on Chess.com (docs/explore-mode.md §5.2). */
+  const [explored, setExplored] = useState<Explored>({});
+  /** The explored move shown, as a path down `explored[ply]`; empty on a game position. */
+  const [path, setPath] = useState<number[]>([]);
+  /** Chess.com's variation picker, open on this continuation of the shown move. */
+  const [choice, setChoice] = useState<number | null>(null);
   /** A pawn move waiting for its promotion piece. */
   const [promotion, setPromotion] = useState<{ from: string; to: string } | null>(null);
+  /** The game ply last sounded (docs/sound.md). */
+  const lastPly = useRef(ply);
 
-  // Every game navigation leaves the sideline.
+  // Every game navigation leaves the sideline; the lines explored stay listed.
   const go = useCallback(
     (target: number) => {
       setPreview(null);
@@ -151,12 +158,19 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
       setRetry(null);
       setPinned(null);
       setHovered(null);
-      setSideline(null);
+      setPath([]);
+      setChoice(null);
       setPromotion(null);
       setPly(Math.max(0, Math.min(total, target)));
     },
     [total],
   );
+
+  const board: BoardState = useMemo(() => ({ ply, path, explored }), [ply, path, explored]);
+  const sideline = useMemo(() => sidelineOf(board), [board]);
+  // The game ply whose explored lines the move list shows, and the moves → can go to in a sideline.
+  const listed = listedBranch(board);
+  const choices = nextMoves(board);
 
   const current = plyAt(review, ply);
   const next = nextPlyAt(review, ply);
@@ -195,8 +209,8 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     coachSearches,
   );
   const liveLines = live.analysis?.lines ?? [];
-  const judgements = useSidelineJudge(reviewId, sideline, live, shownOver);
-  const shownJudged = sideline && shownMove ? judgements[sideline.cursor - 1] : undefined;
+  const judgedOf = useSidelineJudge(reviewId, sideline, live, shownOver);
+  const shownJudged = sideline && shownMove ? judgedOf(sideline.fromPly, sideline.moves.slice(0, sideline.cursor)) : undefined;
   const shownClass = shownJudged?.judgement.classification ?? null;
   const shownMover: Side = shownFrom?.split(" ")[1] === "b" ? "black" : "white";
   // The coach's note for the shown sideline move (docs/explore-mode.md §5.5).
@@ -247,31 +261,50 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     [filter, go, ply, review],
   );
 
-  /** Moves the board to sideline position `cursor`, with the sideline's sounds. */
-  const showSideline = useCallback(
-    (cursor: number) => {
-      if (!sideline || cursor === sideline.cursor) return;
-      if (soundOn) playSounds(sidelineSounds(sideline.moves, sideline.cursor, cursor));
+  /**
+   * Shows explored move `to` (a path down the lines branching at game ply `fromPly`; empty for that
+   * game position), with the sideline's sound: one step back plays the move taken back, anything
+   * else the move arrived at (docs/sound.md).
+   */
+  const showPath = useCallback(
+    (fromPly: number, to: number[]) => {
+      setChoice(null);
       setPromotion(null);
-      setSideline({ ...sideline, cursor });
+      const here = fromPly === ply;
+      if (here && to.join() === path.join()) return;
+      const stepBack = here && to.length === path.length - 1 && to.every((i, k) => i === path[k]);
+      const moves = sidelineOf({ ply: fromPly, path: stepBack ? path : to, explored })?.moves ?? [];
+      if (soundOn) playSounds(sidelineSounds(moves, stepBack ? path.length : 0, to.length));
+      if (!here) {
+        // From the game move the lines replace: the game steps back to their branch without its sound.
+        lastPly.current = fromPly;
+        go(fromPly);
+      }
+      setPath(to);
     },
-    [sideline, soundOn],
+    [ply, path, explored, soundOn, go],
   );
+  const closeChoice = useCallback(() => setChoice(null), []);
 
   /**
-   * ← / → and the nav buttons. While a sideline is open they walk it; back from its branch position
-   * leaves it for the game, and forward past its end does nothing.
+   * ← / → and the nav buttons, as in Chess.com's review. On a game position they step through the
+   * game, even where lines were explored. In a sideline they walk it: back from its first move is
+   * its branch (a game position), forward follows the shown move's line and stops at its end. Where
+   * variations were played after the shown move, → (`choose`) opens the picker instead.
    */
   const stepBoard = useCallback(
-    (dir: 1 | -1) => {
-      if (sideline) {
-        const next = stepSideline(sideline, dir);
-        if (next) return showSideline(next.cursor);
-        if (dir === 1) return;
+    (dir: 1 | -1, choose = false) => {
+      setChoice(null);
+      if (dir === -1) {
+        const prev = back(board);
+        return prev ? showPath(ply, prev.path) : step(-1);
       }
-      step(dir);
+      const options = nextMoves(board);
+      if (!options) return step(1);
+      if (options.length > 1 && choose) setChoice(0);
+      else if (options.length) showPath(ply, [...path, 0]);
     },
-    [sideline, showSideline, step],
+    [board, ply, path, showPath, step],
   );
 
   const advance = useCallback(() => {
@@ -322,6 +355,26 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
+      // The variation picker takes ↑ ↓ → and Enter; any other key closes it and acts as usual.
+      if (choice !== null) {
+        const options = nextMoves(board) ?? [];
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          const i = choice + (e.key === "ArrowUp" ? -1 : 1);
+          if (options[i]) setChoice(i);
+          e.preventDefault();
+          return;
+        }
+        if (e.key === "ArrowRight" || e.key === "Enter") {
+          if (options[choice]) showPath(ply, [...path, choice]);
+          e.preventDefault();
+          return;
+        }
+        setChoice(null);
+        if (e.key === "Escape") {
+          e.preventDefault();
+          return;
+        }
+      }
       if (preview && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
         setLinePlaying(false);
         stepPreview(e.key === "ArrowRight" ? 1 : -1);
@@ -330,7 +383,7 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
         stepBoard(-1);
       } else if (e.key === "ArrowRight") {
         setMode("review");
-        stepBoard(1);
+        stepBoard(1, true);
       } else if (e.key === "Home" || e.key === "End") {
         setMode("review");
         go(e.key === "Home" ? 0 : total);
@@ -350,10 +403,9 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, stepBoard, stepPreview, preview, promotion, sideline, total]);
+  }, [go, stepBoard, stepPreview, showPath, preview, promotion, sideline, total, choice, board, ply, path]);
 
   // Board sounds when the game moves (rules in docs/sound.md).
-  const lastPly = useRef(ply);
   useEffect(() => {
     const from = lastPly.current;
     lastPly.current = ply;
@@ -417,14 +469,15 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
     if (!last) return;
     setPlaying(false);
     setMode("review");
-    const after = moves.reduce<BoardState>((s, m) => play(s, review.plies, m), { ply, sideline });
-    if (!after.sideline) {
-      go(after.ply);
-      return;
-    }
+    const after = moves.reduce<BoardState>((s, m) => play(s, review.plies, m), board);
+    setExplored(after.explored);
+    // The game's own move follows the game, with the game's sound.
+    if (after.ply !== ply) go(after.ply);
+    if (!inSideline(after)) return;
     setPinned(null);
     setHovered(null);
-    setSideline(after.sideline);
+    setChoice(null);
+    setPath(after.path);
     if (soundOn) playSounds([moveSound(last.flags)]);
   };
 
@@ -980,12 +1033,27 @@ export function ReviewScreen({ review, reviewId, onNewGame }: Props) {
                 filter={filter}
                 onSelect={go}
                 sideline={
-                  sideline && {
-                    line: sideline,
-                    branchFen: fenAt(review, sideline.fromPly),
-                    onSelect: showSideline,
-                    classes: judgements.map((j) => j?.judgement.classification ?? null),
-                  }
+                  listed === null
+                    ? null
+                    : {
+                        fromPly: listed,
+                        lines: explored[listed] ?? [],
+                        branchFen: fenAt(review, listed),
+                        shown: inSideline(board) ? path : null,
+                        onSelect: (to) => showPath(listed, to),
+                        classOf: (moves) => judgedOf(listed, moves)?.judgement.classification ?? null,
+                      }
+                }
+                choice={
+                  choice !== null && choices
+                    ? {
+                        options: choices.map((n) => n.move),
+                        index: choice,
+                        onHover: setChoice,
+                        onPick: (i) => showPath(ply, [...path, i]),
+                        onClose: closeChoice,
+                      }
+                    : null
                 }
               />
               <div className="review-pane__graph">

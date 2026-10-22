@@ -180,23 +180,62 @@ the wiring in `ReviewScreen.tsx`.
       `lib/chess.ts` `legalTargets` gives the targets. Retry shows the same hints: all legal moves,
       so nothing is given away.
     - **Not copied.** The captured piece's fade-out and the drag hover outline (ours is an inset white edge).
-- **The sideline model.** `Sideline = { fromPly, moves, cursor }`. It is one sideline at a time, as
-  Chess.com does; a variation tree is out of scope for v1.
-  - **The cursor.** It counts the sideline moves shown. 0 is the branch position, which is also the
-    game position at `fromPly`.
-  - **Branch point.** A move on game ply *p* that is not the game's own starts a sideline at *p*. It
-    replaces any open sideline.
-  - **Extending.** A move inside the sideline drops everything after the cursor and appends itself.
-    Replaying the sideline's own next move keeps the rest of the line.
-  - **Matching the game.** If the move equals the game's next move, the board just advances the game.
-- **Move list.** The sideline is listed under the row of the game move it replaces, numbered from the
-  branch position, for example "1... c5 2. Nf3". While the board is inside the sideline, no game move is marked current.
-- **Navigation.**
-  - **← / → and the nav buttons** walk the open sideline, down to its branch position.
-  - **Back from the branch position** leaves the sideline and steps back in the game.
-  - **Forward past the sideline's end** does nothing.
-  - **Leaving.** Esc, the "Back to game" button, or any game navigation (clicking a game move, the graph, Home/End, autoplay)
-    leaves the sideline and closes it.
+- **The variation tree (rebuilt 2026-10-22 to match Chess.com, see "Navigation as on Chess.com" below).**
+  - **What is kept.** Every move the reader explores is kept for the session. `Explored` maps a game
+    ply *p* to the moves played instead of game move *p + 1*. Each move has its own `next` moves, and
+    `next[0]` continues its line.
+  - **Where the board is.** `BoardState = { ply, path, explored }`. An empty `path` is a game
+    position. Otherwise `path` holds the child indices down `explored[ply]` to the explored move shown.
+  - **The `Sideline` view.** `sidelineOf` derives `Sideline = { fromPly, moves, cursor }`: the line
+    through the shown move, continued along each move's `next[0]`. The engine, judge and coach panel
+    read this view.
+- **Playing a move** (`play`).
+  - **The game's own next move** on a game position follows the game.
+  - **A move already explored from the position** is entered again, with everything played after it.
+  - **Any other move is added.** From a game position it starts a new line. At the end of a line it
+    extends the line. Inside a line it becomes a variation. Nothing explored is ever dropped.
+- **Move list.** It shows only the lines that replace one game move, under that move's row. They are
+  listed while the board shows that game move or is inside one of the lines; on every other position
+  they are hidden (`listedBranch`).
+  - **One row per line,** in PGN order. A variation sits in brackets after the move it replaces, for
+    example "2. e4 d5 (2... e5) 3. exd5".
+  - **No current game move** is marked while the board is inside a line.
+  - **Clicking a listed move** shows it, including from the game move the lines replace.
+- **Navigation as on Chess.com (2026-10-22).** These are Game Review's rules. We read them in a live
+  review (game 185708236598, exploring 2. e4 d5 3. exd5 instead of 2. Nf3) and in its move-list
+  bundle (`shared.eager.*.chunk.js`).
+  - **→ on a game position always follows the game,** even where lines were explored from it.
+    - Live: from 3. exd5, ← ← ← landed on 1... c6, and → → went to 2. Nf3, then 2... d5, with the
+      review's own coach and arrows.
+    - Bundle: the keyboard plugin binds → to `openVariationsPopover() || moveForward()`. Its guard
+      `Pw` returns false when the move list's variation visibility is `active` and the selected move
+      is on the main line (`ids.line === 0`). The review's visibility is `active`.
+  - **← from a line's first move lands on its branch.** That is the game position, where the line is
+    hidden from the list and the review's coach returns.
+  - **→ in a line follows it** and does nothing at its end.
+  - **The variation picker.** → opens a picker under the shown move when variations were played after
+    it. `Pw` is true only when the line's next move has sibling lines.
+    - **The options.** The line's own move comes first and is preselected, then each variation, as
+      in `entries = [{move: next}, ...next.lines]` with `selectedIndex = 0`. So → → continues the line.
+    - **Keys.** ↑ and ↓ choose without wrapping, and → or Enter follows. Any other key closes the
+      picker and acts as usual: ← closes it and steps back. (Chess.com's handler stops only those four
+      keys.)
+    - **Mouse.** Hovering a row chooses it and a click follows it. A click elsewhere, or scrolling the
+      list, closes the picker.
+    - **Esc closes only the picker.** This is our choice: Chess.com's handler passes Esc on.
+    - **The look** is copied from Chess.com's stylesheet: fixed under the move, at least 120 px wide,
+      a 3 px `#8b8987` top border, a `#262421` background, a `0 2px 5px` shadow, 13/20 px text, and
+      the chosen row tinted 5% white with a → before it (`lib/explore.ts` `nextMoves`, `MoveList`
+      `VariationPicker`).
+  - **The ▶ button follows the line's own move** without the picker. Live, it went from 2. e4 to
+    2... d5 with 2... e5 played there. Only the → key opens the picker.
+  - **Explored lines are kept and can be re-entered.** Lines stayed in the tree (`getRawLines`) after
+    the reader left them, through Resume (our "Back to game"), clicks on game moves, and later
+    explorations. Playing 2. e4 again re-entered the line with 2... d5 3. exd5. A second move from the
+    same position (2. f4) and a line from another ply (2... g6) were added beside it.
+  - **Leaving.** Esc, "Back to game" (Chess.com's Resume, which also returns to the branch) and every
+    game navigation (game moves, the graph, Home/End, autoplay) show a game position. The lines
+    stay.
 - **What the panel shows.**
   - **The coach panel** says what is being explored, for example "Exploring d4 instead of e4", and names
     checkmate, stalemate, dead material and the fifty-move rule.
@@ -476,7 +515,7 @@ Chess.com's explore mode.
   - **Best moves.** They differ in 5 of 27 positions.
   - **What the user sees.** The bar may jump by a few hundredths of expected points when the user enters a sideline.
 - **Bundle and first-load size.** The engine is never in the main bundle. It is fetched only on the first explore move.
-- **Scope creep.** Variation trees, saving sidelines to PGN and a full analysis board are separate features. They are deliberately left out.
+- **Scope creep.** Saving sidelines to PGN and a full analysis board are separate features. They are deliberately left out. The variation tree went in only as far as Chess.com's review shows it (§5.2).
 
 ## 9. Decisions needed
 
