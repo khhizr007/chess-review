@@ -3,7 +3,6 @@ import type { Phase } from "../api/generated/Phase";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
-import { CLASSIFICATIONS } from "./format";
 
 /** Board position shown at a ply (0 = start position, n = after the n-th move). */
 export function fenAt(review: ReviewResult, ply: number): string {
@@ -32,10 +31,23 @@ export const FILTERS: { id: MoveFilter; label: string }[] = [
   { id: "endgame", label: "Endgame" },
 ];
 
-/** Whether the move list marks a move with its icon: notable classes, plus best moves at key moments. */
-export function showsListIcon(p: PlyReview): boolean {
+/** Classes the move list always marks with their icon. */
+const LIST_ICONS: ReadonlySet<Classification> = new Set(["brilliant", "great_find", "mistake", "blunder"]);
+
+/** The game's last book move (its ply), where the move list marks the end of the opening book. */
+export function lastBookPly(plies: PlyReview[]): number | null {
+  return plies.findLast((p) => p.classification === "book")?.ply ?? null;
+}
+
+/**
+ * Whether the move list marks a move with its icon, as Chess.com does (docs/polish-gaps.md #14): the
+ * brilliant, great, mistake and blunder classes, best moves at key moments, and the last book move.
+ * Inaccuracies, misses and other book moves stay plain.
+ */
+export function showsListIcon(p: PlyReview, lastBook: number | null): boolean {
   if (!p.classification) return false;
-  return CLASSIFICATIONS[p.classification].notable || (p.classification === "best" && p.is_key_moment);
+  if (p.classification === "book") return p.ply === lastBook;
+  return LIST_ICONS.has(p.classification) || (p.classification === "best" && p.is_key_moment);
 }
 
 const GOOD_ENOUGH: ReadonlySet<Classification> = new Set([

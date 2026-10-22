@@ -42,11 +42,30 @@ describe("MoveList", () => {
     expect(screen.getByText("S2").closest("button")?.className).not.toContain("is-dim");
   });
 
-  it("marks only notable moves with an icon", () => {
-    const plies = [ply(1, "white", 1), ply(2, "black", 1, { classification: "blunder" })];
+  it("marks moves with an icon as Chess.com does", () => {
+    const plies = [
+      ply(1, "white", 1, { classification: "book" }),
+      ply(2, "black", 1, { classification: "book" }),
+      ply(3, "white", 2),
+      ply(4, "black", 2, { classification: "inaccuracy" }),
+      ply(5, "white", 3, { classification: "miss" }),
+      ply(6, "black", 3, { classification: "blunder" }),
+      ply(7, "white", 4, { classification: "best", is_key_moment: true }),
+      ply(8, "black", 4, { classification: "best" }),
+    ];
     render(<MoveList plies={plies} current={0} filter="all" onSelect={() => {}} />);
-    expect(screen.queryByRole("img", { name: "Good" })).toBeNull();
-    expect(screen.getByRole("img", { name: "Blunder" })).toBeTruthy();
+    const icon = (n: number) => screen.getByText(`S${n}`).closest("button")?.querySelector("svg")?.getAttribute("aria-label") ?? null;
+    // Only the last book move, the blunder and the best move at a key moment.
+    expect([1, 2, 3, 4, 5, 6, 7, 8].map(icon)).toEqual([null, "Book", null, null, null, "Blunder", "Best", null]);
+  });
+
+  it("ends with the result, leaving Black's cell after the last move empty", () => {
+    const plies = [ply(1, "white", 1), ply(2, "black", 1), ply(3, "white", 2)];
+    render(<MoveList plies={plies} current={3} filter="all" onSelect={() => {}} result="1-0" />);
+    const rows = screen.getAllByRole("row");
+    expect(rows).toHaveLength(3);
+    expect(rows[1]?.textContent).toBe("2.S3");
+    expect(rows[2]?.textContent).toBe("1-0");
   });
 
   it("writes piece moves in figurine notation without losing the SAN text", () => {

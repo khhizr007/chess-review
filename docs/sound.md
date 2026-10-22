@@ -4,8 +4,8 @@ The review plays board and feedback sounds. **When** each sound plays follows th
 recovered with REA on 2026-10-21. The audio comes from a local **sound pack** of recordings when one
 is installed (below). Otherwise it is this project's own sounds, synthesised in the browser
 (`frontend/src/lib/synth.ts`). The repository holds no audio files (see `THIRD_PARTY.md`).
-The rules are in `frontend/src/lib/sound.ts` and are tested in `sound.test.ts`. The **Sound** switch
-under the board turns sound off; the setting is kept in `localStorage` (`review.sound`).
+The rules are in `frontend/src/lib/sound.ts` and are tested in `sound.test.ts`. The speaker icon
+in the panel header (as on Chess.com) turns sound off; the setting is kept in `localStorage` (`review.sound`).
 
 ## Sound pack
 

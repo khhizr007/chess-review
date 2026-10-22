@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
-import { kingSquareToMove, uciSquares } from "./fen";
+import { kingSquare, kingSquareToMove, uciSquares } from "./fen";
+import { parseReviewHash, reviewHash } from "./hash";
 import { formatEval, formatEvalShort, moveNumberLabel } from "./format";
 import { fenAt, matchesFilter, needsAttention, stepFiltered } from "./review";
 
@@ -61,7 +62,8 @@ describe("formatEval", () => {
     expect(formatEval({ kind: "mate", winner: "white", moves: 3 })).toBe("M3");
     expect(formatEval({ kind: "mate", winner: "black", moves: 2 })).toBe("−M2");
     expect(formatEval({ kind: "mate", winner: "black", moves: 0 })).toBe("0-1");
-    expect(formatEvalShort({ kind: "mate", winner: "white", moves: 0 })).toBe("#");
+    expect(formatEvalShort({ kind: "mate", winner: "white", moves: 0 })).toBe("1-0");
+    expect(formatEvalShort({ kind: "mate", winner: "black", moves: 0 })).toBe("0-1");
     expect(formatEvalShort({ kind: "cp", cp: 1530 })).toBe("15");
   });
 
@@ -105,10 +107,22 @@ describe("fen helpers", () => {
   it("finds the king of the side to move", () => {
     expect(kingSquareToMove("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")).toBe("e1");
     expect(kingSquareToMove("6k1/5ppp/8/8/8/8/5PPP/3R2K1 b - - 0 1")).toBe("g8");
+    expect(kingSquare("6k1/5ppp/8/8/8/8/5PPP/3R2K1 b - - 0 1", "white")).toBe("g1");
   });
 
   it("parses UCI squares", () => {
     expect(uciSquares("e7e8q")).toEqual({ from: "e7", to: "e8" });
     expect(uciSquares("bad")).toBeNull();
+  });
+});
+
+describe("review hash", () => {
+  const id = "ae2efb71-0300-4cbc-910a-c7b700c6d6fc";
+
+  it("keeps the move shown, so a reload returns to it", () => {
+    expect(reviewHash(id, 12)).toBe(`#review=${id}&move=12`);
+    expect(parseReviewHash(reviewHash(id, 12))).toEqual({ id, move: 12 });
+    expect(parseReviewHash(reviewHash(id, null))).toEqual({ id, move: null });
+    expect(parseReviewHash("#review=nope&move=3")).toBeNull();
   });
 });

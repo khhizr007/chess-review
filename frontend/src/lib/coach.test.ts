@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { ReviewResult } from "../api/generated/ReviewResult";
-import { coachArrows, coachMessage, coachMood, reportSummary } from "./coach";
+import { coachMessage, coachMood, moveArrows, reportSummary } from "./coach";
 import { materialFromFen } from "./material";
 
 function ply(overrides: Partial<PlyReview> = {}): PlyReview {
@@ -84,15 +84,20 @@ describe("coachMessage", () => {
       show_lines: [],
       events: [],
     };
-    const blunder = ply({ classification: "blunder", explanation: [fact], coach });
+    const blunder = ply({ classification: "blunder", explanation: [fact], coach, uci: "d8e8", show_best_move: true });
     const m = coachMessage(review, blunder, undefined);
     expect(m.sentences).toHaveLength(2);
     expect(m.advice).toEqual([]);
     expect(m.facts).toEqual([fact]);
-    expect(coachArrows(blunder)).toEqual([
-      { from: "b5", to: "c7", kind: "move" },
-      { from: "c7", to: "a8", kind: "attack" },
-    ]);
+    // The board shows the missed best move and one arrow of the main sentence.
+    const best = { from: "e4", to: "b7", kind: "best" };
+    expect(moveArrows(blunder)).toEqual([best, { from: "b5", to: "c7", kind: "move" }]);
+    expect(moveArrows(blunder, false)).toEqual([{ from: "b5", to: "c7", kind: "move" }]);
+    // Never an arrow along the move just played, and none on book or best moves.
+    expect(moveArrows({ ...blunder, uci: "b5c7" })).toEqual([best, { from: "c7", to: "a8", kind: "attack" }]);
+    expect(moveArrows({ ...blunder, classification: "book" })).toEqual([]);
+    expect(moveArrows({ ...blunder, classification: "best", played_is_best: true })).toEqual([]);
+    expect(moveArrows({ ...blunder, show_best_move: false })).toEqual([{ from: "b5", to: "c7", kind: "move" }]);
     // A good move shows the coach's sentences and keeps its own short advice.
     const good = coachMessage(review, ply({ classification: "good", coach }), undefined);
     expect(good.sentences).toHaveLength(2);

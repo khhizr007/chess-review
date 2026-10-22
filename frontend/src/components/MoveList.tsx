@@ -4,7 +4,7 @@ import type { PlyReview } from "../api/generated/PlyReview";
 import type { PlayedMove } from "../lib/chess";
 import { moveLabel, type ExploreNode } from "../lib/explore";
 import { CLASSIFICATIONS } from "../lib/format";
-import { matchesFilter, showsListIcon, type MoveFilter } from "../lib/review";
+import { lastBookPly, matchesFilter, showsListIcon, type MoveFilter } from "../lib/review";
 import { ClassificationIcon } from "./ClassificationIcon";
 import { San } from "./PieceIcon";
 
@@ -43,6 +43,8 @@ interface Props {
   onSelect: (ply: number) => void;
   sideline?: ListSideline | null;
   choice?: ListChoice | null;
+  /** The game's result ("1-0"), listed after the last move as on Chess.com; null when unfinished. */
+  result?: string | null;
 }
 
 interface Row {
@@ -66,18 +68,23 @@ function rows(plies: PlyReview[]): Row[] {
 
 function MoveCell({
   ply,
+  side,
+  lastBook,
   current,
   filter,
   onSelect,
 }: {
   ply?: PlyReview;
+  side: "white" | "black";
+  lastBook: number | null;
   current: number;
   filter: MoveFilter;
   onSelect: (n: number) => void;
 }) {
-  if (!ply) return <td className="move-cell move-cell--empty">…</td>;
+  // A game started by Black shows "…" for White's move; Black's cell after the last move stays empty.
+  if (!ply) return <td className="move-cell move-cell--empty">{side === "white" ? "…" : null}</td>;
   const active = ply.ply === current;
-  const icon = showsListIcon(ply);
+  const icon = showsListIcon(ply, lastBook);
   const meta = ply.classification ? CLASSIFICATIONS[ply.classification] : null;
   const dim = filter !== "all" && !matchesFilter(ply, filter);
   return (
@@ -223,7 +230,7 @@ function VariationPicker({ choice, anchor, side }: { choice: ListChoice; anchor:
   );
 }
 
-export function MoveList({ plies, current, filter, onSelect, sideline, choice }: Props) {
+export function MoveList({ plies, current, filter, onSelect, sideline, choice, result }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const shownKey = sideline?.shown ? pathKey(sideline.shown) : null;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -253,6 +260,7 @@ export function MoveList({ plies, current, filter, onSelect, sideline, choice }:
 
   // The lines are listed under the row of the game move they replace (the last row at the end).
   const all = rows(plies);
+  const lastBook = lastBookPly(plies);
   const replaced = sideline ? Math.min(sideline.fromPly + 1, plies.length) : -1;
   const at = sideline ? all.findIndex((r) => r.white?.ply === replaced || r.black?.ply === replaced) : -1;
   const lineRows = sideline?.lines.map((_, i) => <SidelineRow key={i} sideline={sideline} root={i} />);
@@ -271,12 +279,17 @@ export function MoveList({ plies, current, filter, onSelect, sideline, choice }:
                 <th scope="row" className="move-table__number">
                   {row.number}.
                 </th>
-                <MoveCell ply={row.white} current={inLine ? -1 : current} filter={filter} onSelect={onSelect} />
-                <MoveCell ply={row.black} current={inLine ? -1 : current} filter={filter} onSelect={onSelect} />
+                <MoveCell ply={row.white} side="white" lastBook={lastBook} current={inLine ? -1 : current} filter={filter} onSelect={onSelect} />
+                <MoveCell ply={row.black} side="black" lastBook={lastBook} current={inLine ? -1 : current} filter={filter} onSelect={onSelect} />
               </tr>
               {sideline && i === at && lineRows}
             </Fragment>
           ))}
+          {result && (
+            <tr className="move-table__result">
+              <td colSpan={3}>{result}</td>
+            </tr>
+          )}
         </tbody>
       </table>
       {choice && <VariationPicker choice={choice} anchor={anchor} side={pickerSide} />}

@@ -10,7 +10,7 @@ export interface ClassificationMeta {
   color: string;
   /** Completes "<move> is …" in the coach headline. */
   phrase: string;
-  /** Marked with an icon and colour in the move list (the rest stay plain). */
+  /** Marked with a dot on the eval graph (the move list has its own rule, `showsListIcon`). */
   notable: boolean;
 }
 
@@ -71,13 +71,14 @@ export function formatEval(ev: Eval): string {
   return `${ev.winner === "white" ? "" : "−"}M${ev.moves}`;
 }
 
-/** Short eval for compact places (bar label). */
+/** Short eval for compact places (bar label); a mate on the board shows the result, as on Chess.com. */
 export function formatEvalShort(ev: Eval): string {
   if (ev.kind === "cp") {
     const pawns = Math.abs(ev.cp / 100);
     return pawns >= 10 ? pawns.toFixed(0) : pawns.toFixed(1);
   }
-  return ev.moves === 0 ? "#" : `M${ev.moves}`;
+  if (ev.moves === 0) return ev.winner === "white" ? "1-0" : "0-1";
+  return `M${ev.moves}`;
 }
 
 /** Which side the evaluation favours (null for dead equal). */
