@@ -38,7 +38,7 @@ checked against what the recovered rules predict.
 | `stalemate.pgn` | 10.Qe6 (stalemate instead of mate) **Miss (mate)**; 9…Kg6 into mate when lost → **Mistake** (softened) | "Walking into mate when lost" rule; draw EP = 0.5 |
 | `special_moves.pgn` | En passant, promotion and castling reviewed; 4…Ke7 **Blunder** | Move flags; material facts |
 | `chess960.pgn` | Reviewed with `UCI_Chess960` | Chess960 support |
-| `sparse_metadata.pgn` | Rating 1000 (reference behaviour for missing ratings); Great Find disabled | Rating rule; `is_high_rated` gate |
+| `sparse_metadata.pgn` | Rating 1000 (reference behaviour for missing ratings); Great uses the low-rated branch | Rating rule; `is_high_rated` branch |
 
 ## Mismatch found and fixed during parity work
 
@@ -62,12 +62,12 @@ move with this app; see `docs/calibration/log.md` and `tests/calibration/README.
 constants (EP curve, precision thresholds, outcome buckets, CAPS2) were **not** changed. Two
 findings bear on recovered rules:
 
-- **Great Find's high-rated gate.** `TEP::is_high_rated` was recovered as `max(WhiteElo, BlackElo)
-  ≥ 1000`. In game 185209623352 (tuning set) both players are rated below 1000 (995 and 980) in the
-  PGN, yet the app gives six Great moves. So the reference either reads a different rating (for
-  example the account's current rating rather than the rating at game time) or the gate is not what
-  was recovered. Turning the gate off (`great_find.require_high_rated: false`) adds one matching
-  label on the tuning set. **Not changed; this needs the owner's decision.**
+- **Great Find's high-rated gate (resolved 2026-10-23).** `TEP::is_high_rated` (`max(WhiteElo,
+  BlackElo) > 999`) was read as a requirement for Great. In game 185209623352 (tuning set) both
+  players are rated below 1000 (995 and 980), yet the app gives six Great moves. A new decompile
+  showed that the flag *chooses* between two branches, and the low-rated one is more generous, as
+  Chess.com's help article says. Great was rebuilt on the recovered structure; see
+  `docs/calibration/great-blunder-analysis.md`.
 - **Accuracy bias.** Our per-player accuracy is higher than the app's by about +2.8 on average
   (tuning set, higher in 24 of 28 player-games; holdout +1.7, 9 of 12). No detector touches CAPS2, so the
   likely causes are the engine (we use Stockfish 17.1, the app Stockfish 16) and search details,
@@ -98,9 +98,8 @@ See `open-questions.md`.
 The recovered rule feeds `max(WhiteElo, BlackElo)` (clamped to 1000–2500) into the EP curve. Using
 the app's own evals, the app's grades are reproduced best with that rating raised by about 200
 (86.5% → 89.0% on tuning, 85.8% → 88.4% on holdout), and the full pipeline agrees 1.3 (tuning) and
-1.9 (holdout) points more often with `rating_offset: 200`. Together with the Great Find gate finding
-above, this suggests the reference reads a higher rating than the PGN's game-time ratings, for
-example the players' current ratings. At the owner's decision `rating_offset` defaults to 200; set
+1.9 (holdout) points more often with `rating_offset: 200`. This suggests the reference reads a
+higher rating than the PGN's game-time ratings, for example the players' current ratings. At the owner's decision `rating_offset` defaults to 200; set
 it to 0 for the recovered rule.
 
 ### Search noise is the main remaining gap

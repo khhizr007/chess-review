@@ -229,3 +229,41 @@ nothing else in that game. Remaining differences:
   (gives false reasons, such as a rook hanging since move 5); pawns left behind at low ratings (+4
   false); "the opponent takes the piece next move" (Chess.com Brilliants 28...Bxc2, 27...Ncxb3+ and
   19.O-O-O were not taken).
+
+### Great rebuilt on the recovered structure (2026-10-23)
+
+All 142 games with a captured Chess.com review (tuning 99, holdout 43; Stockfish 18, depth 18, MultiPV 3;
+engine results from the local disk cache, so every run sees identical engine output). Design and
+evidence: `great-blunder-analysis.md`. Intermediate runs were not kept; the code of each step is
+described below.
+
+| run | change | exact | within-one | Great P / R (tuning · holdout) | Blunder P / R |
+|---|---|---:|---:|---|---|
+| `gr-baseline` | `daf2d0d`: gap ≥ 0.20, Great only when max Elo ≥ 1000 | 68.7% | 88.7% | 0.62 / 0.05 (0.65 / 0.05 · 0.56 / 0.04) | 0.85 / 0.78 |
+| (step 1) | recovered candidate and tags; `is_high_rated` as a branch | 70.4% | 90.3% | 0.73 / 0.67 (0.72 / 0.69 · 0.74 / 0.65) | unchanged |
+| (step 2) | an immediate best-move recapture is never critical (0 of 25 were Great) | 70.7% | 90.6% | 0.79 / 0.68 | unchanged |
+| (step 3) | only-safe-square exclusion: not for pawns | 70.7% | 90.6% | 0.78 / 0.71 | unchanged |
+| (step 4) | only-safe-square exclusion: threatened pieces only | 70.9% | 90.8% | 0.79 / 0.75 | unchanged |
+| `great-recovered` | wins material: not when the mover's previous move already won it (recovered) | 70.9% | 90.8% | **0.81 / 0.74** (0.79 / 0.73 · 0.84 / 0.75) | unchanged |
+| `gr-crit-0.09` | trial: `critical_min_alternative_loss` 0.09 | 70.9% | 90.8% | 0.79 / 0.78 | unchanged |
+| `gr-crit-0.08` | trial: 0.08 | 70.8% | 90.8% | 0.76 / 0.80 | unchanged |
+| `gr-crit-0.07` | trial: 0.07 | 70.7% | 90.6% | 0.71 / 0.83 | unchanged |
+
+Holdout agrees with tuning at every step, so nothing is overfitted. The threshold trials ran on all
+142 games, holdout included, so the recovered 0.10 is kept. Brilliant is unchanged (P 0.54, R 0.52).
+Four of Chess.com's Brilliants are now our Great instead of Best.
+
+On khhizr7's own moves, Chess.com gives 125 Greats. We gave 10 (6 right); we now give 121 (99 right).
+
+Remaining misses (84), by the first gate that stops them:
+- 44: no tag, after an opponent move we grade below Mistake. 11 of these would be key moments
+  (winning material or a free piece) if the grade were Mistake. Usually our engine grades the
+  opponent's move one step milder than Chess.com, or the second line is 0.05–0.10 behind.
+- 15: excluded as easy to find, or by the high-rated exclusions.
+- 14: no tag at all.
+- 4: Brilliant took precedence.
+- 3: our grade is Good, not Best or Excellent.
+- 4: other (the previous-move rule, the key-moment gates).
+
+Remaining extras (57): 45 are Chess.com Best moves, mostly critical by our engine's gap but not by
+Chess.com's.

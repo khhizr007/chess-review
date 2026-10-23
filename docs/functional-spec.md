@@ -203,22 +203,39 @@ Brilliant, Tricky and Great Find are events in circumstances 13, 14 and 15 (`TEP
   the 9 Brilliants; this rule finds 7 of 9 and gives 5 others (see `calibration/log.md`). The earlier
   line-walk test gave 60 Brilliants for the app's 3.
 
-**Great Find** (`is_great_find_candidate_core` [`0x1071764`], `compute_board_event<15>`):
-- **Confirmed.** Candidate requires: the parent and grandparent are scored, precision is Best or Excellent,
-  the move is not "easy to find", and it is not an obvious quiet retreat.
-- **Confirmed.** The event additionally requires: a high-rated game (`max(Elo) ≥ 1000`), not merely taking
-  a free piece, not in time trouble, the same endgame and material gates as Brilliant, and a
-  position-difficulty label combined with a human move-probability model.
-- **Unknown.** The difficulty and move-probability models are machine-learned and were not recovered.
-- **This project.** Use an "only good move" proxy: the MultiPV gap between the best and second-best move is
-  at least 0.20 EP (configurable). Plus the confirmed gates that can be computed:
-  rating, not a simple free capture, not a recapture; and the confirmed exclusions as far as they can be
-  computed without the ML models: the moved piece's only escape, a free capture, a promoting pawn, an
-  obvious quiet retreat.
-- **Calibrated.** Every Great move the app gave on the tuning set is our engine's best move, but the
-  gap proxy finds few of them (4 of 26, precision 0.57). Lowering the gap to 0.13 found 7 on the tuning
-  games but was mostly wrong on the holdout games. A shallow-search stand-in for "easy to find" removed
-  all of them and is off. The rating gate may read a different rating than the PGN's: see `parity.md`.
+**Great Find** (`is_candidate<15>`, `is_great_find_candidate_core` [raw `0x11d652c` in APK 4.10.15],
+`compute_board_event<15>`; decompiled again 2026-10-23, `calibration/great-blunder-analysis.md` §2.1):
+- **Confirmed.** A move is Great when it is a candidate and one of the eligible tags fires.
+- **Confirmed.** Candidate: precision is Best or Excellent, the move is not "easy to find", and it is not
+  an obvious quiet retreat. In a high-rated game (`TEP::is_high_rated`: `max(WhiteElo, BlackElo) > 999`)
+  it is also not a simple recapture after an even trade, not a mating move, and does not take the
+  attacker in an even exchange. If the same side's previous move was a candidate with a tag, this move
+  is neither a capture nor a passed-pawn push.
+- **Confirmed.** "Easy to find", in order: castling never; a hard position by the position-difficulty
+  model never; a safe promotion; the piece's only safe square; and, only when high-rated, an obvious
+  recapture or a free piece.
+- **Confirmed.** The tags:
+  - key moments, after an opponent's move graded Mistake or Blunder (or a missed mate, or ungraded),
+    when the mover's EP after the move is ≥ 0.47, the mover was not completely winning after their
+    own previous move, and the move is not a recapture: it forces mate in ≤ 4 (from ≤ 1499 cp after
+    the mover's previous move); it wins more than 100 cp along the line (not a free piece, and not
+    already won by the mover's previous move); or, below the high-rated mark only, it takes a free
+    piece;
+  - critical: the best move, EP(best) ≥ 0.35, the second line's EP < 0.80 and at least 0.10 below
+    (an interposition with a piece that is lost there does not count), and not an obvious recapture;
+  - winning: from the opponent's equal-or-better before the mover's previous move to the mover's
+    winning now;
+  - comeback: from the opponent's winning then to the mover's equal now.
+- **Unknown.** The position-difficulty model is machine-learned; it only makes a position "hard" and
+  so never easy. The gates once attributed to Great here (time trouble, the Brilliant endgame gate,
+  move probability) belong to other events.
+- **This project.** The recovered structure without the difficulty model. Three readings differ from the
+  decompile, each because the calibration games disagreed with it:
+  - an immediate recapture is never critical, whether or not our exchange test calls the square safe;
+  - the only-safe-square test needs a threatened piece other than a pawn;
+  - material gain is our line walk.
+- **Calibrated.** On 142 Chess.com reviews, precision 0.81 and recall 0.74 (holdout 0.84 / 0.75),
+  against 0.62 / 0.05 for the earlier gap proxy.
 
 **Tricky** (`compute_board_event<14>`):
 - **Confirmed.** It depends on the position-difficulty and move-probability models.

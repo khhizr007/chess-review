@@ -5,14 +5,14 @@
 
 use std::collections::HashMap;
 
-use review_core::{Classification, Eval, MissKind, Phase, Rule, Side};
+use review_core::{Classification, Eval, MissKind, Phase, Rule, Side, Value};
 use serde::Serialize;
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Move, Position};
 use thiserror::Error;
 use ts_rs::TS;
 
-use super::facts::{CoachContext, MoveInput, coach_note, judge_move};
+use super::facts::{CoachContext, MoveInput, PreviousMoves, coach_note, judge_move};
 use super::model::{MoveRef, ReviewResult};
 use super::{explain, to_san_line};
 use crate::board::{self, side};
@@ -204,6 +204,36 @@ pub fn judge_sideline(
         .white_elo
         .unwrap_or(0)
         .max(review.game.black_elo.unwrap_or(0));
+    // Game moves are known from the review. Earlier sideline moves are not: the opponent's is graded
+    // from its loss alone, and the positions before it have no score here.
+    let game_ply = |k: usize| (k < from).then(|| &review.plies[k]);
+    let mover = side(before.turn());
+    let previous_moves = PreviousMoves {
+        opponent_erred: match i.checked_sub(1) {
+            Some(k) if k < from => {
+                PreviousMoves::is_error(review.plies[k].precision, review.plies[k].miss_kind)
+            }
+            // Mistake or worse, or not graded.
+            Some(_) => {
+                opponent_previous_ep_lost.is_none_or(|lost| lost > cfg.precision_thresholds[2])
+            }
+            None => false,
+        },
+        own_value: i
+            .checked_sub(2)
+            .and_then(game_ply)
+            .map(|p| Value::after_move(p.eval_after, mover)),
+        opponent_earlier_value: i
+            .checked_sub(3)
+            .and_then(game_ply)
+            .map(|p| Value::after_move(p.eval_after, mover.opponent())),
+        own_great_tag: i
+            .checked_sub(2)
+            .and_then(game_ply)
+            .is_some_and(|p| p.classification == Some(Classification::GreatFind)),
+        // Not kept in the review; only the wins-material key moment reads it.
+        own_wins_material: false,
+    };
 
     let input = MoveInput {
         before,
@@ -223,6 +253,7 @@ pub fn judge_sideline(
         // The "easy to find" search is not made for sidelines (it is off by default).
         shallow_best: None,
         opponent_previous_ep_lost,
+        previous_moves,
         rating: review.rating_used,
         highest_elo,
     };

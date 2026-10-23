@@ -521,6 +521,8 @@ fn build_review(
     let mut caps = Caps2State::default();
     let mut outcomes: Vec<MoveOutcome> = Vec::with_capacity(game.moves.len());
     let mut opponent_previous_ep_lost: Option<f64> = None;
+    // Per move: (it carried a Great tag, its line wins material), read by the mover's next move.
+    let mut great_tags: Vec<(bool, bool)> = Vec::with_capacity(game.moves.len());
 
     for (i, parsed) in game.moves.iter().enumerate() {
         let before = &game.positions[i];
@@ -555,10 +557,23 @@ fn build_review(
             has_previous_move: i > 0,
             shallow_best: infos[i].shallow_best.as_deref(),
             opponent_previous_ep_lost,
+            previous_moves: facts::PreviousMoves {
+                opponent_erred: i.checked_sub(1).is_some_and(|p| {
+                    let ply = &outcomes[p].ply;
+                    facts::PreviousMoves::is_error(ply.precision, ply.miss_kind)
+                }),
+                own_value: (i >= 2)
+                    .then(|| Value::after_move(infos[i - 1].eval, side(mover_color))),
+                opponent_earlier_value: (i >= 3)
+                    .then(|| Value::after_move(infos[i - 2].eval, side(mover_color.other()))),
+                own_great_tag: i >= 2 && great_tags[i - 2].0,
+                own_wins_material: i >= 2 && great_tags[i - 2].1,
+            },
             rating,
             highest_elo,
         };
         let judged = facts::judge_move(&input, cfg);
+        great_tags.push((judged.great_tag, judged.line_wins_material));
         let coach = facts::coach_note(
             &input,
             &judged,

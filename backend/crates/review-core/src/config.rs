@@ -93,25 +93,40 @@ pub struct BrilliantConfig {
     pub min_ep_after: f64,
 }
 
-/// Great Find detection. Gates are recovered; the "hard to find" test is a fallback.
+/// Great detection (`is_candidate<15>` and its tags, recovered; see
+/// `docs/calibration/great-blunder-analysis.md`). A Great move is a Best or Excellent move that is
+/// not easy to find and is a key moment after the opponent's error (it forces mate, wins material,
+/// or, in low-rated games, takes a free piece), the only good move in a critical position, or a
+/// move that makes the mover winning or brings them back to equal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export)]
 pub struct GreatFindConfig {
     pub enabled: bool,
-    /// Minimum EP gap between the best and second-best moves (fallback for the
-    /// reference engine's difficulty/move-probability models).
-    pub min_gap_to_second_best: f64,
-    /// `TEP::is_high_rated`: `max(WhiteElo, BlackElo) >= 1000`. Recovered.
-    pub require_high_rated: bool,
+    /// `TEP::is_high_rated`: `max(WhiteElo, BlackElo)` at least this. Not a requirement: below it
+    /// Great is more generous (free captures and recaptures are not "easy", a free piece taken
+    /// after the opponent's error is a key moment, recaptures and mates are not excluded).
+    /// Recovered: 1000.
     pub high_rated_min: i32,
-    /// "Easy to find" proxy for the reference's move-probability model: a search
+    /// Key moments need the mover's EP after the move at least this. Recovered: 0.47.
+    pub key_moment_min_ep: f64,
+    /// Wins-material key moment: the line gains more than this (cp). Recovered: 100.
+    pub wins_material_min_gain_cp: i32,
+    /// Forces-mate key moment: mate in at most this many moves, from a position where the mover's
+    /// score after their own previous move was at most `forces_mate_max_previous_cp`.
+    /// Recovered: 4 and 1499.
+    pub forces_mate_max_moves: u32,
+    pub forces_mate_max_previous_cp: i32,
+    /// Critical position (the only good move): the best move's EP is at least
+    /// `critical_min_best_ep`, the second line's EP is below `critical_max_alternative_ep` and
+    /// loses at least `critical_min_alternative_loss`. Recovered: 0.35, 0.80, 0.10.
+    pub critical_min_best_ep: f64,
+    pub critical_max_alternative_ep: f64,
+    pub critical_min_alternative_loss: f64,
+    /// "Easy to find" proxy for the reference's position-difficulty model: a search
     /// this deep already picks the move as best. 0 turns it off (the default:
     /// on the calibration games depths 4 to 8 found nearly every Great move).
     pub easy_search_depth: u32,
-    /// A quiet retreat is "obvious" unless it wins at least this much material
-    /// along the line (`is_quiet_obvious_retreat`; 200 recovered).
-    pub quiet_retreat_min_stake_cp: i32,
 }
 
 /// Miss-subtype detection (fallback heuristics; guards recovered).
@@ -192,11 +207,15 @@ impl Default for GreatFindConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_gap_to_second_best: 0.20,
-            require_high_rated: true,
             high_rated_min: 1000,
+            key_moment_min_ep: 0.47,
+            wins_material_min_gain_cp: 100,
+            forces_mate_max_moves: 4,
+            forces_mate_max_previous_cp: 1499,
+            critical_min_best_ep: 0.35,
+            critical_max_alternative_ep: 0.80,
+            critical_min_alternative_loss: 0.10,
             easy_search_depth: 0,
-            quiet_retreat_min_stake_cp: 200,
         }
     }
 }
