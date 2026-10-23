@@ -1,6 +1,6 @@
 import { Chessboard } from "react-chessboard";
-import type { Arrow } from "react-chessboard";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { Arrow, PieceDropHandlerArgs, PieceHandlerArgs } from "react-chessboard";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Classification } from "../api/generated/Classification";
 import type { Side } from "../api/generated/Side";
 import type { MoveTarget, PromotionPiece } from "../lib/chess";
@@ -65,6 +65,8 @@ function corner(square: string, flipped: boolean): { left: string; top: string }
 const NOTATION: CSSProperties = { fontSize: "clamp(10px, 2.05cqw, 17px)", fontWeight: 600, lineHeight: 1 };
 /** The outline of the square under a held or dragged piece: white, 5% of the square (1cqw is 1% of the board). */
 const HOVER_OUTLINE = "inset 0 0 0 0.625cqw rgba(255, 255, 255, 0.65)";
+/** A mouse or pen rather than a finger. */
+const FINE_POINTER = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: fine)").matches;
 const PROMOTION_PIECES: PromotionPiece[] = ["q", "n", "r", "b"];
 const PROMOTION_NAMES: Record<PromotionPiece, string> = { q: "Queen", n: "Knight", r: "Rook", b: "Bishop" };
 
@@ -129,6 +131,8 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
 
   // The press a click ends, when the press already acted (a mouse); touch only sends the click.
   const press = useRef<{ square: string; again: boolean } | null>(null);
+  // A mouse press on a piece starts its drag before the mousedown arrives; the drag has then acted.
+  const dragPress = useRef<string | null>(null);
 
   /**
    * Acts on a square as a press does: a target square of the picked-up piece plays the move, any
@@ -164,6 +168,10 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
     }
     if (button !== 0) return;
     setMarked({ fen, squares: [] });
+    if (dragPress.current === square) {
+      dragPress.current = null;
+      return;
+    }
     const done = act(square, pieceType);
     press.current = { square, again: done === "again" };
     setHeld(done === "pick" || done === "again" ? square : null);
@@ -182,6 +190,42 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
   const onSquareRightClick = (square: string) =>
     setMarked({ fen, squares: marks.includes(square) ? marks.filter((s) => s !== square) : [...marks, square] });
 
+  // A dragged piece shows its moves too. With a mouse this is the press itself.
+  const onPieceDrag = ({ square }: PieceHandlerArgs) => {
+    setHeld(null);
+    if (!square) return;
+    if (FINE_POINTER) {
+      dragPress.current = square;
+      press.current = { square, again: square === selected };
+    }
+    setPicked({ fen, square });
+  };
+  // A refused drop flashes its square and goes back, still picked up. Off the board it just goes
+  // back; back on its own square it is a click (it puts down a piece picked up before).
+  const onPieceDrop = ({ sourceSquare, targetSquare }: PieceDropHandlerArgs) => {
+    dragPress.current = null;
+    if (!moves || !targetSquare) return false;
+    if (targetSquare === sourceSquare) {
+      if (press.current?.again) setPicked(null);
+      // The click that may follow this release is already handled.
+      if (press.current) press.current = { square: sourceSquare, again: false };
+      return false;
+    }
+    if (!moves.legal(sourceSquare, targetSquare)) {
+      refuse(targetSquare);
+      return false;
+    }
+    const kept = moves.onDrop(sourceSquare, targetSquare);
+    if (kept) setPicked(null);
+    return kept;
+  };
+  // react-chessboard keeps its drag callbacks from an earlier render (until a move's glide ends), so a
+  // press right after a move would see the old position. It calls the current ones through this ref.
+  const drag = useRef({ onPieceDrag, onPieceDrop });
+  useLayoutEffect(() => {
+    drag.current = { onPieceDrag, onPieceDrop };
+  });
+
   return (
     <div className="board-wrap">
       <div className="board">
@@ -191,31 +235,15 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
             pieces: boardPieces,
             position: fen,
             boardOrientation: flipped ? "black" : "white",
-            // Any piece can be dragged, of either side; the drop decides.
+            // Any piece can be dragged, of either side; the drop decides. A press on a piece the
+            // picked-up one can take plays the move instead.
             allowDragging: !!moves && !promotion,
-            // A dragged piece shows its moves too.
-            onPieceDrag: ({ square }) => {
-              setHeld(null);
-              if (square) setPicked({ fen, square });
-            },
-            // A refused drop flashes its square and goes back, still picked up. Off the board it just
-            // goes back; back on its own square it is a click (it puts down a piece picked up before).
-            onPieceDrop: ({ sourceSquare, targetSquare }) => {
-              if (!moves || !targetSquare) return false;
-              if (targetSquare === sourceSquare) {
-                if (press.current?.again) setPicked(null);
-                // The click that may follow this release is already handled.
-                if (press.current) press.current = { square: sourceSquare, again: false };
-                return false;
-              }
-              if (!moves.legal(sourceSquare, targetSquare)) {
-                refuse(targetSquare);
-                return false;
-              }
-              const kept = moves.onDrop(sourceSquare, targetSquare);
-              if (kept) setPicked(null);
-              return kept;
-            },
+            canDragPiece: ({ square }) => !(square && targets.has(square)),
+            // With a mouse the piece lifts on the press, centred under the pointer wherever the square
+            // was pressed, as on Lichess. Touch waits for a move, so a tap stays a tap.
+            dragActivationDistance: FINE_POINTER ? 0 : 1,
+            onPieceDrag: (args) => drag.current.onPieceDrag(args),
+            onPieceDrop: (args) => drag.current.onPieceDrop(args),
             onSquareMouseDown: ({ piece, square }, e) => onSquareMouseDown(square, piece?.pieceType ?? null, e.button),
             onSquareClick: ({ piece, square }) => onSquareClick(square, piece?.pieceType ?? null),
             onSquareRightClick: ({ square }) => onSquareRightClick(square),

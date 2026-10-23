@@ -195,6 +195,25 @@ the wiring in `ReviewScreen.tsx`.
       - **Pick-up.** The piece is picked up, with its hints, while the button is still down. In the
         browser that took 27–39 ms after the press. Before this, nothing showed until release, or
         until a drag started if the hand moved a pixel.
+      - **Lift on the press (2026-10-24), as on Lichess.** Lichess (chessground) starts the drag on
+        the press itself: measured on lichess.org/analysis, a press 6 px into the g1 square's corner
+        got the `dragging` class at once, and the knight moved to centre under the pointer 1.7 ms
+        later, before any mouse move. The board now does the same with a mouse
+        (`dragActivationDistance` 0 under `(pointer: fine)`). A press anywhere in the square lifts
+        the piece centred under the pointer, with its hints, in one render: 18.6 ms in a
+        production build (39 ms in dev). A release where it was puts it back, still picked up.
+        Touch keeps the 1 px threshold, so a tap stays a tap. A press on a piece the picked-up
+        one can take is not a drag: it plays the capture.
+        - **Pieces fill their square.** Inline SVG pieces were 7% taller than the square (the
+          text baseline), so a lifted piece sat 2.5 px above the pointer. They are blocks now.
+        - **Stale drag callbacks.** react-chessboard memoises its drag start on the position it
+          shows, which changes only when a move's glide ends. A press within 180 ms of a move
+          therefore saw the old FEN and was dropped. `BoardView` hands it the current callbacks
+          through a ref.
+        - **What is left.** The press costs ~15–20 ms of React work in a production build: every
+          square, droppable and draggable re-renders. Lichess mutates the DOM directly (~2 ms).
+          Closing that gap means replacing react-chessboard, for example with chessground
+          (GPL-3.0, like this project).
       - **Moving.** Pressing a target square plays the move at once.
       - **Putting down.** Clicking the piece again puts it down on the release, so a picked-up
         piece can still be dragged.
@@ -256,8 +275,8 @@ the wiring in `ReviewScreen.tsx`.
       - `BoardMoves.legal` gives the legality check, `lib/chess.ts` `canPlay`, which counts a
         promotion and a king dropped on its rook.
     - **Not copied.** On a press, Chess.com lifts the piece in place and scales it with a short
-      spring, then tilts it with the drag's speed. Ours still lifts after a 1 px move, with
-      react-chessboard's clone at `scale(1.12)` and a shadow.
+      spring, then tilts it with the drag's speed. Ours lifts on the press (with a mouse) but
+      snaps to react-chessboard's clone at `scale(1.12)` with a shadow, without the spring or tilt.
 - **The variation tree (rebuilt 2026-10-22 to match Chess.com, see "Navigation as on Chess.com" below).**
   - **What is kept.** Every move the reader explores is kept for the session. `Explored` maps a game
     ply *p* to the moves played instead of game move *p + 1*. Each move has its own `next` moves, and

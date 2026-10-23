@@ -927,8 +927,10 @@ select option {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
-/* Pieces sit on the board with a short contact shadow. */
+/* Pieces sit on the board with a short contact shadow. As blocks they fill the square exactly (inline,
+   the text baseline made each piece 7% taller than its square, so a lifted piece sat off the pointer). */
 .board .pc {
+  display: block;
   filter: drop-shadow(0 0.04em 0 rgba(0, 0, 0, 0.18));
   overflow: visible;
 }
