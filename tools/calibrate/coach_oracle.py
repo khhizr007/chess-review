@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import json
 import os
 import re
@@ -553,7 +554,7 @@ def main_event(labels: list[dict]) -> dict | None:
 
 
 def cmd_ingest(args) -> int:
-    """Split `coachPull()` output (coach_capture.js) into <captures>/raw/<id>.json. The input may be
+    """Split `coachPull()` or `coachPullGz()` output (coach_capture.js) into <captures>/raw/<id>.json. The input may be
     the bare JSON string, or a saved tool result wrapping it (a JSON list of {text} parts holding a
     JSON-encoded string, optionally followed by padding on later lines)."""
     raw = args.captures_dir / "raw"
@@ -564,6 +565,8 @@ def cmd_ingest(args) -> int:
             text = "".join(x.get("text", "") for x in json.loads(text))
         if text.startswith('"'):
             text = json.JSONDecoder().raw_decode(text)[0]
+        if text.startswith("GZ1:"):  # coachPullGz()
+            text = gzip.decompress(base64.b64decode(text[4 : text.index("|")])).decode("utf-8")
         payload = json.JSONDecoder().raw_decode(text.lstrip())[0]
         for cap in payload["caps"]:
             if not cap or not cap.get("ok") or not re.fullmatch(r"\d+", str(cap.get("id"))):

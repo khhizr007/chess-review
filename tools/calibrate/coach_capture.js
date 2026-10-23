@@ -15,6 +15,17 @@
 //   coachStart([["185058622904", "live"], ["1011026868", "daily"]]);
 //   coachStatus();   // {done, ok, failed, running}
 //   coachPull();     // frames captured since the last pull
+//   await coachPullGz(40);  // the same, gzipped: "GZ1:<base64>|" padded past the size at which a tool
+//                           // result is saved to disk instead of entering the transcript (batch 5)
+//
+// The review engine comes from the page's cached settings (localStorage `json_settings`,
+// `fullAnalysisEngine`). A page load can refresh that cache from the server and switch it back to
+// Torch, so before each game the cached value is set back to Stockfish. Check every capture's score
+// engines anyway (13 = Stockfish 18, 11 = Torch).
+//
+// When the browser pane is hidden, timers are throttled and a timer-driven hook can attach after the
+// app has opened its socket. The hook therefore polls on a MessageChannel, which is not throttled,
+// until it is installed.
 
 (() => {
   const isBin = (x) => x && typeof x === "object" && typeof x.byteLength === "number";
@@ -67,7 +78,18 @@
         w.WebSocket = Wrapped;
         w.__coachHooked = true;
       };
-      const hookTimer = setInterval(hook, 1);
+      let stopHook = false;
+      const hookTimer = setInterval(hook, 50);
+      const mc = new MessageChannel();
+      mc.port1.onmessage = () => {
+        hook();
+        let hooked = false;
+        try {
+          hooked = !!ifr.contentWindow.__coachHooked;
+        } catch (e) {}
+        if (!stopHook && !hooked) mc.port2.postMessage(0);
+      };
+      mc.port2.postMessage(0);
       ifr.src = path;
       document.body.appendChild(ifr);
       const t0 = Date.now();
@@ -75,6 +97,7 @@
         // The review arrives as one large frame after a few small progress frames.
         const big = rec.sockets.some((s) => s.in.some((x) => size(x) > 2000));
         if (big || Date.now() - t0 > timeoutMs) {
+          stopHook = true;
           clearInterval(hookTimer);
           clearInterval(doneTimer);
           setTimeout(() => {
@@ -98,6 +121,13 @@
     for (const [id, kind] of games) {
       if (window.__coachStop) break;
       if (window.__caps[id] && window.__caps[id].ok) continue;
+      const js = localStorage.getItem("json_settings");
+      if (js && js.includes('"fullAnalysisEngine":"torch-human"')) {
+        localStorage.setItem(
+          "json_settings",
+          js.replace('"fullAnalysisEngine":"torch-human"', '"fullAnalysisEngine":"stockfish16 nnue"'),
+        );
+      }
       const rec = await capture(`/analysis/game/${kind}/${id}/review`, timeoutMs);
       window.__caps[id] = {
         id,
@@ -132,5 +162,18 @@
     const ids = Object.keys(window.__caps).filter((i) => window.__caps[i].ok && !window.__pulled[i]);
     ids.forEach((i) => (window.__pulled[i] = 1));
     return JSON.stringify({ caps: ids.map((i) => window.__caps[i]) });
+  };
+
+  window.coachPullGz = async (max = 40, pad = 130000) => {
+    const ids = Object.keys(window.__caps)
+      .filter((i) => window.__caps[i].ok && !window.__pulled[i])
+      .slice(0, max);
+    const json = JSON.stringify({ caps: ids.map((i) => window.__caps[i]) });
+    const gz = await new Response(
+      new Blob([json]).stream().pipeThrough(new CompressionStream("gzip")),
+    ).arrayBuffer();
+    ids.forEach((i) => (window.__pulled[i] = 1));
+    const out = "GZ1:" + b64(gz) + "|";
+    return out.length < pad ? out + ".".repeat(pad - out.length) : out;
   };
 })();
