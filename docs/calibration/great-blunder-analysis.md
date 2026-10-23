@@ -267,3 +267,25 @@ browser sends.
 under the 0.80 target. Most remaining misses come from our engine grading the opponent's move one
 step milder than Chess.com, or from a second line 0.05–0.10 behind. The difficulty model would not
 fix those.
+
+## 6. Phase 2 result: Blunder (2026-10-23)
+
+Rules and measurements: `implementation-notes.md` (Miss subtypes, the mate rule) and `log.md`
+("Blunder fixes").
+
+| | before | after | tuning | holdout |
+|---|---:|---:|---:|---:|
+| Blunder precision / recall | 0.85 / 0.78 | **0.86 / 0.83** | 0.85 / 0.82 | 0.88 / 0.87 |
+| Miss precision / recall | 0.71 / 0.70 | **0.79 / 0.68** | 0.78 / 0.68 | 0.79 / 0.69 |
+| Mistake recall | 0.61 | 0.69 | 0.69 | 0.70 |
+| Overall exact agreement | 70.9% | **71.7%** | 71.3% | 72.5% |
+
+**Built** (plan §4 Phase 2):
+- step 1: rating floor 1200;
+- steps 2–3: a move into forced mate is never a Miss, and the recovered getting-mated softening;
+- step 5: a missed tactic or free piece needs the opponent's error, at least an Inaccuracy's loss.
+
+**Not built:** step 4, the coach's events as the material fact. It changes at most 17 plies, which
+Chess.com itself splits about evenly.
+
+**Side effect:** Brilliant recall 0.52 → 0.48 (one fewer correct Brilliant).

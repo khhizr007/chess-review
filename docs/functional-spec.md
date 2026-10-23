@@ -87,7 +87,10 @@ The inverse, `expected_points_to_centipawns` [`0x1138a3c`], is `cp = ln(1/EP −
   - **This project (calibrated).** The upper clamp is 3000 (`rating_max`), not 2500: applied to
     Chess.com's own captured scores, the 2500 cap grades titled games too leniently (81% → 88% of
     labels reproduced; `calibration/log.md`). Set it to 2500 for the recovered rule.
-  - Missing ratings count as 0 and therefore become **1000**.
+  - **This project (calibrated, 2026-10-23).** The lower clamp is 1200 (`rating_min`), not 1000:
+    Chess.com grades games below 1000 as if rated about 1200, Blunders above all
+    (`calibration/great-blunder-analysis.md` §3.2). Set it to 1000 for the recovered rule.
+  - Missing ratings count as 0 and therefore become the lower clamp (recovered: **1000**).
   - With no game context at all, R is **2000**.
 - **EP of a node** (`node_lib::expected_points` [`0x130c9c8`]) is `0.5` if the position is a draw by
   rule. Otherwise it is `EP(score, R)` from the mover's perspective. Mate scores saturate to about 1 or 0.

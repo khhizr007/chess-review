@@ -16,8 +16,9 @@ pub struct ReviewConfig {
     /// Expected-outcome bucket boundaries. Recovered: `[0.10, 0.20, 0.35, 0.65, 0.80, 0.90]`.
     pub outcome_thresholds: [f64; 6],
     /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
-    /// Calibrated upper bound: 3000. On Chess.com's own scores the 2500 cap makes
-    /// titled games too lenient (see `docs/calibration/log.md`, exact-score oracle).
+    /// Calibrated: 1200..=3000. On Chess.com's own scores the 2500 cap makes
+    /// titled games too lenient, and games below 1000 are graded as if rated
+    /// about 1200, Blunders above all (see `docs/calibration/log.md`).
     pub rating_min: i32,
     pub rating_max: i32,
     /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
@@ -140,6 +141,10 @@ pub struct MissConfig {
     pub tactic_min_gain_cp: i32,
     /// Opponent's previous EP loss that counts as an opportunity to punish.
     pub opportunity_min_opponent_ep_lost: f64,
+    /// A missed free piece or tactic is a Miss only after the opponent's previous move lost at
+    /// least this (Chess.com: a Miss fails "to capitalize on your opponent's mistake").
+    /// Calibrated: 0.05. 0 turns it off.
+    pub tactic_min_opponent_ep_lost: f64,
     /// "Missed brilliant": the best move is a sacrifice and its EP is at least this.
     pub brilliant_min_best_ep: f64,
 }
@@ -168,7 +173,7 @@ impl Default for ReviewConfig {
         Self {
             precision_thresholds: [0.02, 0.05, 0.10, 0.20],
             outcome_thresholds: [0.10, 0.20, 0.35, 0.65, 0.80, 0.90],
-            rating_min: 1000,
+            rating_min: 1200,
             rating_max: 3000,
             rating_offset: 200,
             blunder_material_threshold_cp: 100,
@@ -236,6 +241,7 @@ impl Default for MissConfig {
             free_piece_min_value_cp: 300,
             tactic_min_gain_cp: 200,
             opportunity_min_opponent_ep_lost: 0.10,
+            tactic_min_opponent_ep_lost: 0.05,
             brilliant_min_best_ep: 0.20,
         }
     }

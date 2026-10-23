@@ -121,9 +121,10 @@ mod tests {
 
     #[test]
     fn rating_rule_uses_higher_rating_and_clamps() {
-        // The recovered rule, without the calibrated offset and upper clamp.
+        // The recovered rule, without the calibrated offset and clamp.
         let cfg = ReviewConfig {
             rating_offset: 0,
+            rating_min: 1000,
             rating_max: 2500,
             ..ReviewConfig::default()
         };

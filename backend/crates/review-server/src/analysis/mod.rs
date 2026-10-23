@@ -837,7 +837,7 @@ fn summarise(
     }
     if game.elo(Color::White).is_none() && game.elo(Color::Black).is_none() {
         notes.push(format!(
-            "The PGN has no ratings, so the win-probability curve uses rating {rating} (reference behaviour) and Great Find is disabled."
+            "The PGN has no ratings, so the win-probability curve uses the lowest rating, {rating}, and Great moves are judged as for new players."
         ));
     }
 

@@ -84,7 +84,7 @@ All horizons and thresholds are in `ReviewConfig`.
 | Reference fact | Fallback |
 |---|---|
 | `material_lost` | `max(0, start − end)` of the played line. It is reported as unknown when the played move's score is a forced mate, because the mate rules decide those positions and material is meaningless there. |
-| `is_losing_material_or_getting_mated` | material lost ≥ `blunder_material_threshold_cp` (100), or the played score is a mate against the mover |
+| `is_losing_material_or_getting_mated` | material lost ≥ `blunder_material_threshold_cp` (100), or the played score is a mate against the mover while the best move's is not (recovered: being mated counts unless the best alternative is mated too) |
 | `loses_more_material_than_best` | the played line ends at least `forgiving_material_lost_cp` (200) below the best line. The margin was added after parity runs: in lost positions every line sheds material, and tiny PV differences between runs flipped the verdict. |
 | Guard A ("drops material") | the move is not the best move, it loses ≥ 100, and it loses more than the best line gains |
 | Sacrifice (`is_sacrifice`) | static test, not a line walk: see Brilliant below |
@@ -188,12 +188,14 @@ softened Blunders that lose material through a later tactic, such as a fork. See
 
 ### Miss subtypes
 
-These are only consulted when precision is Mistake or Blunder, under the recovered A/B guards and order.
+These are only consulted when precision is Mistake or Blunder, under the recovered A/B guards and order,
+and never for a move that walks into a forced mate. In the calibration games, 1 of Chess.com's 319
+Misses allows mate, against 34 of its 228 Blunders.
 
 | Subtype | Fallback test |
 |---|---|
-| free piece | the best move's first capture is worth ≥ 300 and is not won back |
-| tactic | the best line gains ≥ 200 |
+| free piece | the best move's first capture is worth ≥ 300 and is not won back, after an opponent's move that lost ≥ 0.05 EP (`miss.tactic_min_opponent_ep_lost`) |
+| tactic | the best line gains ≥ 200, after an opponent's move that lost ≥ 0.05 EP |
 | win | best outcome bucket ≥ Winning and played ≤ Equal |
 | comeback | mover ≤ Worse before the move, best ≥ Equal, played ≤ Worse |
 | brilliant | the best move is a sacrifice (the Brilliant test above) and EP(best) ≥ 0.20 (`miss.brilliant_min_best_ep`) |

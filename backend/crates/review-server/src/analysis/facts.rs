@@ -190,8 +190,10 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         has_siblings: lines.len() > 1,
         events: MoveEvents::default(),
         material: MaterialFacts {
+            // Getting mated counts unless the best move is mated too (recovered).
             loses_material_or_mated: material_lost >= cfg.blunder_material_threshold_cp
-                || played_value.mate_moves().is_some_and(|n| n < 0),
+                || (played_value.mate_moves().is_some_and(|n| n < 0)
+                    && !best_value.mate_moves().is_some_and(|n| n < 0)),
             // A margin keeps PV noise in lost positions (where every line sheds
             // material) from flipping this fact.
             loses_more_material_than_best: played_walk.end
@@ -344,9 +346,14 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
     facts.events.great_find = gf.enabled && !facts.events.brilliant && great_tag;
 
     // What the best line would have achieved (used only for Mistake/Blunder).
+    let after_opponent_error = cfg.miss.tactic_min_opponent_ep_lost <= 0.0
+        || input
+            .opponent_previous_ep_lost
+            .is_some_and(|l| l >= cfg.miss.tactic_min_opponent_ep_lost);
     facts.missed = MissedChances {
-        free_piece: takes_free_piece(&best_walk, cfg.miss.free_piece_min_value_cp),
-        tactic: best_gain >= cfg.miss.tactic_min_gain_cp,
+        free_piece: after_opponent_error
+            && takes_free_piece(&best_walk, cfg.miss.free_piece_min_value_cp),
+        tactic: after_opponent_error && best_gain >= cfg.miss.tactic_min_gain_cp,
         win: oc(best_value) >= ExpectedOutcome::Winning
             && oc(played_value) <= ExpectedOutcome::Equal,
         comeback: oc(mover_value_before) <= ExpectedOutcome::Worse

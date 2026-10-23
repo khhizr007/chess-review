@@ -267,3 +267,50 @@ Remaining misses (84), by the first gate that stops them:
 
 Remaining extras (57): 45 are Chess.com Best moves, mostly critical by our engine's gap but not by
 Chess.com's.
+
+### Blunder fixes (2026-10-23)
+
+Same 142 games and engine cache as the Great rebuild above. Reference: `great-recovered`. Design:
+`great-blunder-analysis.md` §3, §4 Phase 2.
+
+| run | change | tuning exact | holdout exact | Blunder P / R (tuning · holdout) | Miss P / R (tuning · holdout) | Mistake P / R (tuning) |
+|---|---|---:|---:|---|---|---|
+| `great-recovered` | reference | 70.6% | 71.4% | 0.83 / 0.76 · 0.87 / 0.82 | 0.70 / 0.70 · 0.72 / 0.71 | 0.70 / 0.61 |
+| `bl-floor-1100` | trial: `rating_min` 1100 | 71.0% | 71.8% | 0.85 / 0.76 · 0.86 / 0.83 | 0.72 / 0.71 · 0.72 / 0.71 | 0.70 / 0.63 |
+| `bl-floor-1200` | trial: `rating_min` 1200 | 71.2% | 72.4% | 0.85 / 0.78 · 0.89 / 0.84 | 0.71 / 0.71 · 0.72 / 0.72 | 0.71 / 0.66 |
+| `bl-floor-1300` | trial: `rating_min` 1300 | 71.2% | 72.4% | 0.82 / 0.81 · 0.88 / 0.83 | 0.70 / 0.71 · 0.70 / 0.75 | 0.70 / 0.65 |
+| (step 1) | `rating_min` 1200; a move into forced mate is never a Miss; recovered getting-mated softening | 71.2% | 72.4% | 0.85 / 0.80 · 0.89 / 0.86 | 0.72 / 0.70 · 0.72 / 0.72 | 0.71 / 0.66 |
+| `blunder-phase2` | + missed tactic and free piece need an opponent move that lost ≥ 0.05 EP | **71.3%** | **72.5%** | **0.85 / 0.82 · 0.88 / 0.87** | **0.78 / 0.68 · 0.79 / 0.69** | 0.70 / 0.69 |
+| `bl-miss-0.02` … `-0.10` | trials of that threshold: 0.02, 0.03, 0.08, 0.10 | 71.3–71.4% | | 0.85 / 0.82 | 0.78–0.81 / 0.68–0.65 | |
+
+**Picks.**
+- `rating_min` 1200 ties 1300 on tuning exact agreement, with better Blunder precision. It is also the
+  floor that Chess.com's own scores pointed to beforehand (§3.2).
+- The Miss threshold barely matters between 0.02 and 0.10. 0.05, the Inaccuracy bound, says "after at
+  least an Inaccuracy".
+
+**All 142 games** (reference → final):
+- Blunder 0.85 / 0.78 → **0.86 / 0.83**;
+- Miss 0.71 / 0.70 → **0.79 / 0.68**;
+- Mistake recall 0.61 → 0.69;
+- exact agreement 70.9% → **71.7%**, within-one 90.8% → 91.2%;
+- Great is unchanged (0.81 / 0.74). Brilliant loses one (P 0.55, R 0.48): the floor raises the EP of
+  a sub-1000 sacrifice's alternative.
+
+On khhizr7's own moves:
+- Blunder: Chess.com 101; ours 89 (79 right) → 98 (87 right);
+- Miss: Chess.com 122; ours 118 (83 right) → 96 (78 right).
+
+**Not done.**
+- Replacing the material fact with the coach's board events (Permits + WinsMaterial). It touches at
+  most 17 plies, mostly pawn-only losses that Chess.com splits about evenly. The line walk already
+  measures the reply's gain.
+
+**What remains for Blunder** (38 missed, 31 extra). Among the 43 Blunder/Mistake swaps:
+- 21 are engine noise: Chess.com's own score grades the move as Chess.com labels it, and ours does
+  not.
+- 22 are labels Chess.com's own displayed score does not support: 9 Blunders that score as a
+  Mistake, and 13 Mistakes that score as a Blunder. No rule on that score reproduces them.
+
+The rest: 12 Chess.com Blunders are our Miss, and 14 Chess.com Misses are our Blunder. Both are the
+Miss detectors' heuristics.

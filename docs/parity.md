@@ -100,7 +100,9 @@ the app's own evals, the app's grades are reproduced best with that rating raise
 (86.5% → 89.0% on tuning, 85.8% → 88.4% on holdout), and the full pipeline agrees 1.3 (tuning) and
 1.9 (holdout) points more often with `rating_offset: 200`. This suggests the reference reads a
 higher rating than the PGN's game-time ratings, for example the players' current ratings. At the owner's decision `rating_offset` defaults to 200; set
-it to 0 for the recovered rule.
+it to 0 for the recovered rule. For the same reason the lower clamp `rating_min` is 1200 (recovered
+1000) since 2026-10-23: below 1000, Chess.com's own scores are graded as if rated about 1200
+(`docs/calibration/great-blunder-analysis.md` §3.2, §6).
 
 ### Search noise is the main remaining gap
 
