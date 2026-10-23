@@ -10,7 +10,7 @@ const ROLES: [PieceKind, string][] = [
 ];
 
 /** Our piece set for chessground, which draws each piece as a `<piece class="white pawn">` background. */
-export const boardPiecesCss = (["w", "b"] as const)
+const boardPiecesCss = (["w", "b"] as const)
   .flatMap((colour) =>
     ROLES.map(([kind, role]) => {
       const url = `data:image/svg+xml,${encodeURIComponent(pieceSvg(kind, colour))}`;
