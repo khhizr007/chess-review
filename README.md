@@ -17,7 +17,7 @@ used ([`docs/open-questions.md`](docs/open-questions.md)).
 
 - **Backend:** Rust (axum, tokio, shakmaty, pgn-reader). The `review-core` crate holds the recovered
   rules with no I/O. `review-server` holds the API, PGN import, the Stockfish pool and the pipeline.
-- **Frontend:** React + TypeScript (Vite, react-chessboard). Its API types are generated from the
+- **Frontend:** React + TypeScript (Vite, chessground, chessops). Its API types are generated from the
   Rust types.
 
 ## Requirements

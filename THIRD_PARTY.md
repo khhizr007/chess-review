@@ -13,11 +13,11 @@ rules and PGN libraries below are GPL-3.0.
 | [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) | Opening names and book positions (`backend/data/openings/*.tsv`) | CC0 (public domain) | Yes (data files) |
 | [lichess puzzle database](https://database.lichess.org/#puzzles) | Independent check of the coach's tactic detectors against the puzzle themes (`tools/calibrate/puzzle_check.py`, `docs/calibration/detector-check.md`) | CC0 (public domain) | Partly: the ids of the 14,190 sampled puzzles (`tools/calibrate/puzzle_ids.tsv`), and the FEN, moves and themes of the 110 puzzles quoted in `docs/calibration/detector-check.md`. The database itself is downloaded separately and not committed. |
 | React, React DOM | UI | MIT | Bundled into the frontend build |
-| [react-chessboard](https://github.com/Clariity/react-chessboard) | Board rendering, arrows, highlights | MIT | Bundled into the frontend build |
+| [chessground](https://github.com/lichess-org/chessground) 9.2.1 (Lichess's board) | Pieces, dragging and move animation on the board (`frontend/src/components/BoardView.tsx`); its base stylesheet | GPL-3.0-or-later | Bundled into the frontend build |
 | [Stockfish.js](https://github.com/nmrugg/stockfish.js) 19.0.1, build `stockfish-19-lite-single` (Stockfish 19 with the `nn-61e7af4bb97d` net by Chris Bao) | Live analysis of sideline positions in the reader's browser (`frontend/public/engine/`, `docs/explore-mode.md`) | GPL-3.0 | **Yes**, unmodified: the `.js` and `.wasm` files from the npm package `stockfish@19.0.1`. The corresponding source is the upstream repository at [tag v19.0.1](https://github.com/nmrugg/stockfish.js/tree/v19.0.1). |
 | [chessops](https://github.com/niklasf/chessops) | Legal moves, SAN and FEN for the reader's own sideline moves (`frontend/src/lib/chess.ts`) | GPL-3.0-or-later | Bundled into the frontend build |
 | [@badrap/result](https://github.com/badrap/result) (dependency of chessops) | Result type | MIT | Bundled into the frontend build |
-| Piece outlines by Colin M.L. Burnett ("cburnett", as shipped in react-chessboard) | Piece geometry in `frontend/src/components/pieces.tsx`; the shading and colours are this project's own | GPL-2.0-or-later / BSD / GFDL | Bundled into the frontend build |
+| Piece outlines by Colin M.L. Burnett ("cburnett", as shipped in react-chessboard and Lichess) | Piece geometry in `frontend/src/lib/pieceShapes.ts`; the shading and colours are this project's own | GPL-2.0-or-later / BSD / GFDL | Bundled into the frontend build |
 
 ## Reference application
 

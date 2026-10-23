@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Arrow } from "react-chessboard";
 import type { ArrowKind } from "../api/generated/ArrowKind";
 import type { Eval } from "../api/generated/Eval";
 import type { MoveRef } from "../api/generated/MoveRef";
@@ -19,7 +18,7 @@ import { materialFromFen } from "../lib/material";
 import { expectedPointsFor, hintLadder, hintStep, judgeRetry, type RetryAnswer } from "../lib/retry";
 import { FILTERS, fenAt, nextPlyAt, plyAt, stepFiltered, type MoveFilter } from "../lib/review";
 import { moveSound, navigationSounds, playSounds, retrySound, sanFlags, sidelineSounds } from "../lib/sound";
-import { BoardView, type BoardBadge, type BoardEndMark, type BoardMoves, type BoardPromotion } from "./BoardView";
+import { BoardView, type Arrow, type BoardBadge, type BoardEndMark, type BoardMoves, type BoardPromotion } from "./BoardView";
 import { ClassificationIcon } from "./ClassificationIcon";
 import {
   CoachActions,

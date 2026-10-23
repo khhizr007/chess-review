@@ -920,19 +920,11 @@ select option {
 }
 
 .board {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: var(--r-sm);
-  overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-
-/* Pieces sit on the board with a short contact shadow. As blocks they fill the square exactly (inline,
-   the text baseline made each piece 7% taller than its square, so a lifted piece sat off the pointer). */
-.board .pc {
-  display: block;
-  filter: drop-shadow(0 0.04em 0 rgba(0, 0, 0, 0.18));
-  overflow: visible;
 }
 
 .board-badge {
@@ -946,22 +938,108 @@ select option {
   animation: badge-pop 0.28s cubic-bezier(0.3, 1.6, 0.6, 1);
 }
 
-/* Squares (BoardView's squareRenderer). Layers, in paint order: the square's own highlight (its
-   background), a right-click mark, the selection, the held outline, the piece, the move hint, a
-   refused move's flash. Nothing here starts a stacking context, so
-   a moving piece (z-index 10 while it animates) still passes over the other squares. The values
-   follow Chess.com's board (observed 2026-10-22). */
-.sq {
+/* The board's layers, in paint order: the squares (their colours, the review's highlights, the
+   right-click marks, the coordinates), then chessground's board, which holds BoardView's layer
+   under the pieces (the selection, the held outline), the pieces, and its layer over them (the move
+   hints, a refused move's flash), then the arrows. A piece moving (z-index 8) or dragged (11) passes
+   over the hints and the dragged one over the arrows too. The squares and arrows take chessground's
+   size, which it rounds to whole device pixels per square (---cg-width). Nothing here clips the
+   board, so a dragged piece can leave it. */
+.board .cg-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.board-squares,
+.board-arrows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(---cg-width, 100%);
+  height: var(---cg-height, 100%);
+}
+
+.board-squares {
+  display: grid;
+  grid-template: repeat(8, 1fr) / repeat(8, 1fr);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.board-square {
   position: relative;
-  width: 100%;
-  height: 100%;
 }
 
-.sq--target {
-  cursor: pointer;
+.board-square--light {
+  background-color: var(--board-light);
 }
 
-.sq-piece {
+.board-square--dark {
+  background-color: var(--board-dark);
+}
+
+.board-coord {
+  position: absolute;
+  user-select: none;
+}
+
+.board-arrows {
+  z-index: 10;
+  pointer-events: none;
+}
+
+.board cg-board {
+  cursor: default;
+}
+
+/* Pieces sit on the board with a short contact shadow (lib/boardPieces.ts draws them). Every piece
+   can be grabbed while moves are allowed. */
+.board .cg-wrap piece {
+  filter: drop-shadow(0 0.04em 0 rgba(0, 0, 0, 0.18));
+}
+
+.board--movable .cg-wrap cg-board piece {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+/* A lifted piece grows and casts a shadow; the background scales, not the box, whose transform
+   chessground sets. Its square keeps a faint copy. */
+.board .cg-wrap cg-board piece.dragging {
+  cursor: grabbing;
+  background-size: 112%;
+  background-position: center;
+  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.35));
+}
+
+.board .cg-wrap piece.ghost {
+  opacity: 0.5;
+}
+
+.board-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.board-layer--under {
+  z-index: 1;
+}
+
+.board-layer--over {
+  z-index: 3;
+}
+
+/* Each mark on a layer covers one square; BoardView sets its left and top. */
+.board-layer > span {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+}
+
+/* A square's highlight from the review (its style is set inline). The values follow Chess.com's
+   board (observed 2026-10-22). */
+.sq {
   position: relative;
   width: 100%;
   height: 100%;
@@ -969,10 +1047,7 @@ select option {
 
 /* The picked-up piece's square: a yellow circle that grows from the centre to fill it. */
 .sq-select {
-  position: absolute;
-  inset: 0;
   overflow: hidden;
-  pointer-events: none;
 }
 
 .sq-select > span {
@@ -995,17 +1070,22 @@ select option {
 }
 
 /* Where the piece can go: a dot on a free square, a ring around a piece it can take. Both pop in
-   with a slight overshoot. */
-.sq-hint {
+   with a slight overshoot. The square takes the press, so it shows a pointer. */
+.board-layer > .sq-hint {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.sq-hint::before {
+  content: "";
   position: absolute;
   inset: 33.5%;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.14);
-  pointer-events: none;
   animation: sq-hint-grow 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.sq-hint--capture {
+.sq-hint--capture::before {
   inset: 0;
   background: radial-gradient(circle closest-side at center, transparent 0 90%, rgba(0, 0, 0, 0.14) 90% 100%);
   animation-name: sq-capture-grow;
@@ -1034,20 +1114,16 @@ select option {
   pointer-events: none;
 }
 
-/* Under a held piece: the white outline a drag carries along (its box-shadow is set inline). */
+/* Under a held piece, and under a dragged one as it goes: Chess.com's white outline, 5% of the
+   square (1cqw is 1% of the board). */
 .sq-held {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+  box-shadow: inset 0 0 0 0.625cqw rgba(255, 255, 255, 0.65);
 }
 
 /* A refused move (an illegal drop, a click on a square the piece cannot reach, any move by the side
    not to move): its square flashes red while a faint dark circle spreads from the centre. */
 .sq-refused {
-  position: absolute;
-  inset: 0;
   overflow: hidden;
-  pointer-events: none;
 }
 
 .sq-refused__flash {
@@ -1093,14 +1169,10 @@ select option {
   }
 }
 
-/* Moves glide with ease-in-out, as on Chess.com (react-chessboard sets only the duration inline). */
-.board [data-piece] {
-  transition-timing-function: ease-in-out !important;
-}
 
 @media (prefers-reduced-motion: reduce) {
   .sq-select > span,
-  .sq-hint,
+  .sq-hint::before,
   .sq-refused__circle {
     animation: none;
   }
