@@ -405,8 +405,11 @@ pub fn classify(f: &MoveFacts, cfg: &ReviewConfig) -> ClassificationOutcome {
         }
     }
 
-    // Missed opportunities, checked against the unadjusted precision grade.
-    if grade >= Precision::Mistake {
+    // Missed opportunities, checked against the unadjusted precision grade. A move that walks
+    // into a forced mate is never a Miss (calibration: 1 of Chess.com's 319 Misses allows mate,
+    // 34 of its 228 Blunders do).
+    let walks_into_mate = f.played.mate_moves().is_some_and(|n| n < 0);
+    if grade >= Precision::Mistake && !walks_into_mate {
         let a = f.material.drops_material;
         let b = f
             .opponent_previous_ep_lost
@@ -721,6 +724,12 @@ mod tests {
         let cfg = ReviewConfig::default();
         let mut f = facts(0, 50);
         f.played = mate(Side::Black, 2);
+        assert_eq!(
+            classify(&f, &cfg).classification,
+            Some(Classification::Blunder)
+        );
+        // Even when the best move would have won a piece: walking into mate is no Miss.
+        f.missed.free_piece = true;
         assert_eq!(
             classify(&f, &cfg).classification,
             Some(Classification::Blunder)

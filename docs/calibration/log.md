@@ -229,3 +229,88 @@ nothing else in that game. Remaining differences:
   (gives false reasons, such as a rook hanging since move 5); pawns left behind at low ratings (+4
   false); "the opponent takes the piece next move" (Chess.com Brilliants 28...Bxc2, 27...Ncxb3+ and
   19.O-O-O were not taken).
+
+### Great rebuilt on the recovered structure (2026-10-23)
+
+All 142 games with a captured Chess.com review (tuning 99, holdout 43; Stockfish 18, depth 18, MultiPV 3;
+engine results from the local disk cache, so every run sees identical engine output). Design and
+evidence: `great-blunder-analysis.md`. Intermediate runs were not kept; the code of each step is
+described below.
+
+| run | change | exact | within-one | Great P / R (tuning · holdout) | Blunder P / R |
+|---|---|---:|---:|---|---|
+| `gr-baseline` | `daf2d0d`: gap ≥ 0.20, Great only when max Elo ≥ 1000 | 68.7% | 88.7% | 0.62 / 0.05 (0.65 / 0.05 · 0.56 / 0.04) | 0.85 / 0.78 |
+| (step 1) | recovered candidate and tags; `is_high_rated` as a branch | 70.4% | 90.3% | 0.73 / 0.67 (0.72 / 0.69 · 0.74 / 0.65) | unchanged |
+| (step 2) | an immediate best-move recapture is never critical (0 of 25 were Great) | 70.7% | 90.6% | 0.79 / 0.68 | unchanged |
+| (step 3) | only-safe-square exclusion: not for pawns | 70.7% | 90.6% | 0.78 / 0.71 | unchanged |
+| (step 4) | only-safe-square exclusion: threatened pieces only | 70.9% | 90.8% | 0.79 / 0.75 | unchanged |
+| `great-recovered` | wins material: not when the mover's previous move already won it (recovered) | 70.9% | 90.8% | **0.81 / 0.74** (0.79 / 0.73 · 0.84 / 0.75) | unchanged |
+| `gr-crit-0.09` | trial: `critical_min_alternative_loss` 0.09 | 70.9% | 90.8% | 0.79 / 0.78 | unchanged |
+| `gr-crit-0.08` | trial: 0.08 | 70.8% | 90.8% | 0.76 / 0.80 | unchanged |
+| `gr-crit-0.07` | trial: 0.07 | 70.7% | 90.6% | 0.71 / 0.83 | unchanged |
+
+Holdout agrees with tuning at every step, so nothing is overfitted. The threshold trials ran on all
+142 games, holdout included, so the recovered 0.10 is kept. Brilliant is unchanged (P 0.54, R 0.52).
+Four of Chess.com's Brilliants are now our Great instead of Best.
+
+On khhizr7's own moves, Chess.com gives 125 Greats. We gave 10 (6 right); we now give 121 (99 right).
+
+Remaining misses (84), by the first gate that stops them:
+- 44: no tag, after an opponent move we grade below Mistake. 11 of these would be key moments
+  (winning material or a free piece) if the grade were Mistake. Usually our engine grades the
+  opponent's move one step milder than Chess.com, or the second line is 0.05–0.10 behind.
+- 15: excluded as easy to find, or by the high-rated exclusions.
+- 14: no tag at all.
+- 4: Brilliant took precedence.
+- 3: our grade is Good, not Best or Excellent.
+- 4: other (the previous-move rule, the key-moment gates).
+
+Remaining extras (57): 45 are Chess.com Best moves, mostly critical by our engine's gap but not by
+Chess.com's.
+
+### Blunder fixes (2026-10-23)
+
+Same 142 games and engine cache as the Great rebuild above. Reference: `great-recovered`. Design:
+`great-blunder-analysis.md` §3, §4 Phase 2.
+
+| run | change | tuning exact | holdout exact | Blunder P / R (tuning · holdout) | Miss P / R (tuning · holdout) | Mistake P / R (tuning) |
+|---|---|---:|---:|---|---|---|
+| `great-recovered` | reference | 70.6% | 71.4% | 0.83 / 0.76 · 0.87 / 0.82 | 0.70 / 0.70 · 0.72 / 0.71 | 0.70 / 0.61 |
+| `bl-floor-1100` | trial: `rating_min` 1100 | 71.0% | 71.8% | 0.85 / 0.76 · 0.86 / 0.83 | 0.72 / 0.71 · 0.72 / 0.71 | 0.70 / 0.63 |
+| `bl-floor-1200` | trial: `rating_min` 1200 | 71.2% | 72.4% | 0.85 / 0.78 · 0.89 / 0.84 | 0.71 / 0.71 · 0.72 / 0.72 | 0.71 / 0.66 |
+| `bl-floor-1300` | trial: `rating_min` 1300 | 71.2% | 72.4% | 0.82 / 0.81 · 0.88 / 0.83 | 0.70 / 0.71 · 0.70 / 0.75 | 0.70 / 0.65 |
+| (step 1) | `rating_min` 1200; a move into forced mate is never a Miss; recovered getting-mated softening | 71.2% | 72.4% | 0.85 / 0.80 · 0.89 / 0.86 | 0.72 / 0.70 · 0.72 / 0.72 | 0.71 / 0.66 |
+| `blunder-phase2` | + missed tactic and free piece need an opponent move that lost ≥ 0.05 EP | **71.3%** | **72.5%** | **0.85 / 0.82 · 0.88 / 0.87** | **0.78 / 0.68 · 0.79 / 0.69** | 0.70 / 0.69 |
+| `bl-miss-0.02` … `-0.10` | trials of that threshold: 0.02, 0.03, 0.08, 0.10 | 71.3–71.4% | | 0.85 / 0.82 | 0.78–0.81 / 0.68–0.65 | |
+
+**Picks.**
+- `rating_min` 1200 ties 1300 on tuning exact agreement, with better Blunder precision. It is also the
+  floor that Chess.com's own scores pointed to beforehand (§3.2).
+- The Miss threshold barely matters between 0.02 and 0.10. 0.05, the Inaccuracy bound, says "after at
+  least an Inaccuracy".
+
+**All 142 games** (reference → final):
+- Blunder 0.85 / 0.78 → **0.86 / 0.83**;
+- Miss 0.71 / 0.70 → **0.79 / 0.68**;
+- Mistake recall 0.61 → 0.69;
+- exact agreement 70.9% → **71.7%**, within-one 90.8% → 91.2%;
+- Great is unchanged (0.81 / 0.74). Brilliant loses one (P 0.55, R 0.48): the floor raises the EP of
+  a sub-1000 sacrifice's alternative.
+
+On khhizr7's own moves:
+- Blunder: Chess.com 101; ours 89 (79 right) → 98 (87 right);
+- Miss: Chess.com 122; ours 118 (83 right) → 96 (78 right).
+
+**Not done.**
+- Replacing the material fact with the coach's board events (Permits + WinsMaterial). It touches at
+  most 17 plies, mostly pawn-only losses that Chess.com splits about evenly. The line walk already
+  measures the reply's gain.
+
+**What remains for Blunder** (38 missed, 31 extra). Among the 43 Blunder/Mistake swaps:
+- 21 are engine noise: Chess.com's own score grades the move as Chess.com labels it, and ours does
+  not.
+- 22 are labels Chess.com's own displayed score does not support: 9 Blunders that score as a
+  Mistake, and 13 Mistakes that score as a Blunder. No rule on that score reproduces them.
+
+The rest: 12 Chess.com Blunders are our Miss, and 14 Chess.com Misses are our Blunder. Both are the
+Miss detectors' heuristics.

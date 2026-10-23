@@ -160,15 +160,10 @@ async fn chess960_game_is_reviewed() {
 }
 
 #[tokio::test]
-async fn unrated_game_uses_reference_rating_and_notes_it() {
+async fn unrated_game_uses_the_lowest_rating_and_notes_it() {
     let r = review("sparse_metadata.pgn").await;
-    assert_eq!(r.rating_used, 1000);
+    assert_eq!(r.rating_used, ReviewConfig::default().rating_min);
     assert!(r.notes.iter().any(|n| n.contains("no ratings")));
-    assert!(
-        r.plies
-            .iter()
-            .all(|p| p.classification != Some(Classification::GreatFind))
-    );
 }
 
 #[tokio::test]

@@ -16,8 +16,9 @@ precision_thresholds: [number, number, number, number],
 outcome_thresholds: [number, number, number, number, number, number], 
 /**
  * Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
- * Calibrated upper bound: 3000. On Chess.com's own scores the 2500 cap makes
- * titled games too lenient (see `docs/calibration/log.md`, exact-score oracle).
+ * Calibrated: 1200..=3000. On Chess.com's own scores the 2500 cap makes
+ * titled games too lenient, and games below 1000 are graded as if rated
+ * about 1200, Blunders above all (see `docs/calibration/log.md`).
  */
 rating_min: number, rating_max: number, 
 /**

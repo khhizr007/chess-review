@@ -84,7 +84,7 @@ All horizons and thresholds are in `ReviewConfig`.
 | Reference fact | Fallback |
 |---|---|
 | `material_lost` | `max(0, start − end)` of the played line. It is reported as unknown when the played move's score is a forced mate, because the mate rules decide those positions and material is meaningless there. |
-| `is_losing_material_or_getting_mated` | material lost ≥ `blunder_material_threshold_cp` (100), or the played score is a mate against the mover |
+| `is_losing_material_or_getting_mated` | material lost ≥ `blunder_material_threshold_cp` (100), or the played score is a mate against the mover while the best move's is not (recovered: being mated counts unless the best alternative is mated too) |
 | `loses_more_material_than_best` | the played line ends at least `forgiving_material_lost_cp` (200) below the best line. The margin was added after parity runs: in lost positions every line sheds material, and tiny PV differences between runs flipped the verdict. |
 | Guard A ("drops material") | the move is not the best move, it loses ≥ 100, and it loses more than the best line gains |
 | Sacrifice (`is_sacrifice`) | static test, not a line walk: see Brilliant below |
@@ -133,31 +133,69 @@ softened Blunders that lose material through a later tactic, such as a fork. See
     fails the recovered material gate by equality. One identical position (the Traxler
     8...Nxg3 in games 185058622904 and 185438343298, same score) is Brilliant in one review and Best in
     the other, so part of Chess.com's decision is not visible in the review data.
-- **Great Find** requires all of:
-  - precision Best or Excellent, and the played move is line 1;
-  - an EP gap to line 2 of at least `min_gap_to_second_best` (0.20): a proxy for the unrecovered
-    difficulty and move-probability models. 0.12–0.14 matched the tuning games better but gave
-    mostly wrong Great Finds on the holdout games, so the default stays;
-  - the recovered gates: `max(Elo) ≥ 1000` (but see `docs/parity.md`), not simply taking a free
-    piece, not a recapture;
-  - the recovered exclusions: not easy to find (the moved piece's only safe square; a free capture
-    by static exchange; a pawn reaching the seventh rank or promoting) and not an obvious quiet retreat
-    (a backward, non-capturing, non-checking piece move that wins less than 200 along the line);
-  - the mover was not already completely winning;
-  - the same endgame gate as Brilliant.
-  - An optional proxy for the move-probability model, `easy_search_depth`, excludes moves that a
-    shallow search already picks. It is **off** (0): at depths 4, 6 and 8 it removed every Great
-    Find on the tuning set.
+- **Great Find** (`facts::judge_move`, rebuilt 2026-10-23 on the recovered structure;
+  `docs/calibration/great-blunder-analysis.md` §2.1 and §5) is a candidate with a tag.
+  - `high_rated` is `max(Elo) ≥ great_find.high_rated_min` (1000). It picks a branch, and is not a
+    gate: below it Great is more generous.
+  - **Candidate:** all of:
+    - precision Best or Excellent;
+    - not easy to find. Castling is never easy. Easy moves are:
+      - a promotion that cannot be won back by exchange;
+      - a threatened piece (not a pawn) going to its only safe square;
+      - only when high-rated: a best-move recapture, or a free capture (static exchange, not a
+        recapture);
+      - a shallow search's own choice (`easy_search_depth`, off).
+    - only when high-rated: not a recapture of equal or greater value with no capture in reply, not
+      a mate on the board, and not taking the attacker in an even exchange;
+    - if the mover's previous move carried a tag, this move is neither a capture nor a passed-pawn
+      push.
+  - **Tags** (any one):
+    - **key moments.** They need all of:
+      - the opponent's previous move graded Mistake or Blunder, a missed mate, or ungraded;
+      - EP after the move ≥ `key_moment_min_ep` (0.47);
+      - the mover not completely winning after their own previous move;
+      - not a recapture.
+
+      Then the move does one of these:
+      - forces mate in ≤ `forces_mate_max_moves` (4), with the mover's score after their previous
+        move ≤ `forces_mate_max_previous_cp` (1499);
+      - gains more than `wins_material_min_gain_cp` (100) along the line walk, is not a free capture,
+        and the mover's previous move's line did not already win material;
+      - not high-rated only: takes a free piece.
+    - **critical.** The best move, with all of:
+      - EP(best) ≥ `critical_min_best_ep` (0.35);
+      - the second line's EP < `critical_max_alternative_ep` (0.80), and at least
+        `critical_min_alternative_loss` (0.10) below;
+      - the second line is not an interposition with a piece that is lost there;
+      - the move is not a best-move recapture.
+    - **winning.** The opponent's outcome before the mover's previous move was Equal or better; the
+      mover's now is Winning or better.
+    - **comeback.** The opponent's outcome then was Winning or better; the mover's now is Equal or
+      Better.
+  - **Deliberate departures from the decompile**, each because the 142 calibration games disagreed:
+    - the reference asks an obvious recapture to land safely. Here any best-move recapture counts,
+      because no recapture was Great whatever our exchange test said: 0 of 25;
+    - the only-safe-square exclusion needs a threatened non-pawn piece. A pawn nearly always has one
+      legal move, and the wider rule removed more Great moves than wrong ones.
+  - **Previous moves.** The review fills these from the moves before (`PreviousMoves`). A sideline
+    knows the game's moves before its branch point. For its own earlier moves it reads only the
+    loss the browser sends: the opponent counts as erring above the Inaccuracy bound, and the
+    mover's outcome and wins-material history are unknown.
+  - **Tuning.** The recovered constants are kept. `critical_min_alternative_loss` 0.09 gave precision
+    0.79 and recall 0.78, but it was not adopted: it was measured on all 142 games, holdout
+    included.
 - **Tricky** is not implemented (it needs ML models, and the reference client drops it).
 
 ### Miss subtypes
 
-These are only consulted when precision is Mistake or Blunder, under the recovered A/B guards and order.
+These are only consulted when precision is Mistake or Blunder, under the recovered A/B guards and order,
+and never for a move that walks into a forced mate. In the calibration games, 1 of Chess.com's 319
+Misses allows mate, against 34 of its 228 Blunders.
 
 | Subtype | Fallback test |
 |---|---|
-| free piece | the best move's first capture is worth ≥ 300 and is not won back |
-| tactic | the best line gains ≥ 200 |
+| free piece | the best move's first capture is worth ≥ 300 and is not won back, after an opponent's move that lost ≥ 0.05 EP (`miss.tactic_min_opponent_ep_lost`) |
+| tactic | the best line gains ≥ 200, after an opponent's move that lost ≥ 0.05 EP |
 | win | best outcome bucket ≥ Winning and played ≤ Equal |
 | comeback | mover ≤ Worse before the move, best ≥ Equal, played ≤ Worse |
 | brilliant | the best move is a sacrifice (the Brilliant test above) and EP(best) ≥ 0.20 (`miss.brilliant_min_best_ep`) |

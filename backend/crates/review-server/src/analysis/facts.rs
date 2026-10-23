@@ -6,12 +6,13 @@ use review_core::classification::{
     self, ClassificationOutcome, MaterialFacts, MissedChances, MoveEvents, MoveFacts,
 };
 use review_core::expected_points::{ExpectedOutcome, expected_outcome, node_expected_points};
-use review_core::{Eval, Phase, Precision, ReviewConfig, Side, Value};
-use shakmaty::{Chess, Move, Position};
+use review_core::{Eval, MissKind, Phase, Precision, ReviewConfig, Side, Value};
+use shakmaty::{Chess, Move, Position, Role};
 
 use super::detectors::{
-    LineMaterial, Sacrifice, captures_free_piece, is_only_escape, is_quiet_retreat, is_recapture,
-    material_gate, static_sacrifice, takes_free_piece, threatens_promotion, walk_line,
+    LineMaterial, Sacrifice, captures_free_piece, is_only_safe_square, is_passed_pawn_push,
+    is_recapture, is_safe_promotion, lands_safely, material_gate, removes_attacker,
+    static_sacrifice, takes_free_piece, walk_line,
 };
 use super::see;
 use super::{eval_after_first_move, line_input};
@@ -44,9 +45,42 @@ pub(crate) struct MoveInput<'a> {
     pub shallow_best: Option<&'a str>,
     /// Expected points the opponent lost on their previous move, if known.
     pub opponent_previous_ep_lost: Option<f64>,
+    /// The two moves before this one, as Great needs them.
+    pub previous_moves: PreviousMoves,
     /// Rating for the expected-points curve, and the higher of the two players' Elo (0 if unknown).
     pub rating: i32,
     pub highest_elo: u32,
+}
+
+/// What the two moves before this one did: Great's key moments answer the opponent's error, and its
+/// winning and comeback tags compare the mover's outcome with the one after their own previous
+/// move (docs/calibration/great-blunder-analysis.md §2.1).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct PreviousMoves {
+    /// The opponent's previous move was graded Mistake or Blunder, missed a mate, or could not be
+    /// graded (the reference's `precision(parent) >= 8`). False when there was no such move.
+    pub opponent_erred: bool,
+    /// The mover's value after their own previous move (the position before the opponent's move).
+    pub own_value: Option<Value>,
+    /// The opponent's value before the mover's own previous move (after the opponent's move
+    /// before that).
+    pub opponent_earlier_value: Option<Value>,
+    /// The mover's own previous move carried a Great tag.
+    pub own_great_tag: bool,
+    /// The mover's own previous move already won material along its line (the reference's
+    /// `is_any_previous_move_in_sequence_wins_material`): taking it now is no new key moment.
+    pub own_wins_material: bool,
+}
+
+impl PreviousMoves {
+    /// Whether a move's grade is an error a key moment answers (`precision >= 8`): Mistake or
+    /// Blunder, a missed mate, or no grade at all.
+    pub fn is_error(precision: Option<Precision>, miss_kind: Option<MissKind>) -> bool {
+        matches!(
+            precision,
+            None | Some(Precision::Mistake | Precision::Blunder)
+        ) || matches!(miss_kind, Some(MissKind::Mate | MissKind::FasterMate))
+    }
 }
 
 /// The facts found for a move, its classification, and the values the review goes on to use.
@@ -72,6 +106,10 @@ pub(crate) struct MoveJudgement {
     /// Pawns count as sacrifices (low-rated games).
     pub pawns: bool,
     pub good_grade: bool,
+    /// The move carried a Great tag (before Brilliant takes precedence), and its line wins
+    /// material: the next move by the same side reads both.
+    pub great_tag: bool,
+    pub line_wins_material: bool,
     pub recapture: bool,
     pub mover_completely_winning_before: bool,
     pub facts: MoveFacts,
@@ -152,8 +190,10 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         has_siblings: lines.len() > 1,
         events: MoveEvents::default(),
         material: MaterialFacts {
+            // Getting mated counts unless the best move is mated too (recovered).
             loses_material_or_mated: material_lost >= cfg.blunder_material_threshold_cp
-                || played_value.mate_moves().is_some_and(|n| n < 0),
+                || (played_value.mate_moves().is_some_and(|n| n < 0)
+                    && !best_value.mate_moves().is_some_and(|n| n < 0)),
             // A margin keeps PV noise in lost positions (where every line sheds
             // material) from flipping this fact.
             loses_more_material_than_best: played_walk.end
@@ -216,41 +256,104 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         })
         && (endgame_gain_ok(&played_walk, bc.endgame_min_gain_cp) || second_drops_bucket);
 
-    // Great Find: the only good move in a position that is not already won.
-    let other_ep = if played_is_best {
-        lines.get(1).map(|l| {
-            let v = Value::after_move(eval_after_first_move(l, mover), mover);
-            node_expected_points(v, false, rating)
-        })
-    } else {
-        None
-    };
-    // Recovered exclusions: easy to find (only escape, free capture, promoting
-    // pawn, or a shallow search already finds it) and obvious quiet retreats.
+    // Great (`is_candidate<15>` and its tags; docs/calibration/great-blunder-analysis.md §2.1): a
+    // Best or Excellent move that is not easy to find and is a key moment after the opponent's
+    // error, the only good move in a critical position, or a move that makes the mover winning or
+    // brings them back to equal. Low-rated games (`!high_rated`) get the more generous branch.
     let gf = &cfg.great_find;
-    let easy_to_find = is_only_escape(before, m)
-        || captures_free_piece(before, m, 100)
-        || threatens_promotion(before, m)
-        || input.shallow_best == Some(uci);
-    let obvious_retreat = is_quiet_retreat(before, m)
-        && played_walk.max - played_walk.start < gf.quiet_retreat_min_stake_cp;
-    facts.events.great_find = gf.enabled
-        && !facts.events.brilliant
-        && good_grade
-        && input.has_previous_move
-        && other_ep.is_some_and(|other| ep_played - other >= gf.min_gap_to_second_best)
-        && (!gf.require_high_rated || input.highest_elo as i32 >= gf.high_rated_min)
-        && !takes_free_piece(&played_walk, 100)
+    let prev = &input.previous_moves;
+    let high_rated = input.highest_elo as i32 >= gf.high_rated_min;
+    let is_best = grade == Some(Precision::Best);
+    // Our line's reply to the move, if it captures.
+    let reply_captures = played_pv
+        .get(1)
+        .and_then(|reply| board::parse_uci(after, reply))
+        .is_some_and(|r| r.is_capture());
+    // The reference also asks the recapturing piece to be safe (`is_safe`), but its notion of
+    // safety is not our exchange test: on the calibration games no best-move recapture was Great
+    // whether our test called the square safe or not.
+    let obvious_recapture = is_best && recapture;
+    let free_piece = !recapture && captures_free_piece(before, m, 100);
+    let easy_to_find = !m.is_castle()
+        && (is_safe_promotion(before, m)
+            || is_only_safe_square(before, m)
+            || (high_rated && (obvious_recapture || free_piece))
+            || input.shallow_best == Some(uci));
+    // Exclusions for high-rated games only: taking back after an even trade, mating, and taking
+    // the attacker in an even exchange.
+    let simple_recapture = m.is_capture()
+        && input.previous.is_some_and(|p| {
+            p.capture().is_some_and(|theirs| {
+                m.capture()
+                    .is_some_and(|ours| see::value(theirs) <= see::value(ours))
+            })
+        })
+        && lands_safely(before, m)
+        && !reply_captures;
+    let even_trade = reply_captures && played_walk.net().abs() < 100;
+    let high_rated_excluded =
+        simple_recapture || after.is_checkmate() || (removes_attacker(before, m) && even_trade);
+    let candidate = good_grade
         && !easy_to_find
-        && !obvious_retreat
-        && !recapture
-        && !mover_completely_winning_before
-        && endgame_gain_ok(&played_walk, cfg.brilliant.endgame_min_gain_cp);
+        && !(high_rated && high_rated_excluded)
+        && !(prev.own_great_tag && (m.is_capture() || is_passed_pawn_push(before, m)));
+
+    // Key moments answer the opponent's error, from a position the mover was not already winning
+    // completely after their own previous move.
+    let key_moment = input.has_previous_move
+        && prev.opponent_erred
+        && ep_played >= gf.key_moment_min_ep
+        && !prev
+            .own_value
+            .is_some_and(|v| oc(v) == ExpectedOutcome::CompletelyWinning)
+        && !recapture;
+    let forces_mate = played_mate
+        .is_some_and(|n| (0..=gf.forces_mate_max_moves as i32).contains(&n))
+        && oc(played_value) >= ExpectedOutcome::Winning
+        && prev
+            .own_value
+            .is_some_and(|v| v.0 <= gf.forces_mate_max_previous_cp);
+    let line_wins_material = played_walk.net() > gf.wins_material_min_gain_cp;
+    let wins_material = !free_piece && line_wins_material && !prev.own_wins_material;
+    let key_tag = key_moment && (forces_mate || wins_material || (!high_rated && free_piece));
+    // The only good move: the best move keeps a playable position and the second line loses at
+    // least a tenth of a point without staying clearly better.
+    let critical = is_best
+        && !obvious_recapture
+        && lines.get(1).is_some_and(|alt| {
+            let alt_value = Value::after_move(eval_after_first_move(alt, mover), mover);
+            let alt_ep = node_expected_points(alt_value, false, rating);
+            // Interposing a piece that is lost there does not count as an alternative.
+            let unsafe_block = before.is_check()
+                && board::parse_uci(before, &alt.pv[0]).is_some_and(|a| {
+                    a.role() != Role::King && !a.is_capture() && !lands_safely(before, a)
+                });
+            !unsafe_block
+                && ep_best >= gf.critical_min_best_ep
+                && alt_ep < gf.critical_max_alternative_ep
+                && ep_best - alt_ep >= gf.critical_min_alternative_loss
+        });
+    // The outcome changed since before the mover's own previous move: from the opponent's equal or
+    // better to the mover's winning, or from the opponent's winning back to the mover's equal.
+    let earlier = prev.opponent_earlier_value.map(oc);
+    let now = oc(played_value);
+    let winning =
+        earlier.is_some_and(|b| b >= ExpectedOutcome::Equal) && now >= ExpectedOutcome::Winning;
+    let comeback = earlier.is_some_and(|b| b >= ExpectedOutcome::Winning)
+        && now >= ExpectedOutcome::Equal
+        && now < ExpectedOutcome::Winning;
+    let great_tag = candidate && (key_tag || critical || winning || comeback);
+    facts.events.great_find = gf.enabled && !facts.events.brilliant && great_tag;
 
     // What the best line would have achieved (used only for Mistake/Blunder).
+    let after_opponent_error = cfg.miss.tactic_min_opponent_ep_lost <= 0.0
+        || input
+            .opponent_previous_ep_lost
+            .is_some_and(|l| l >= cfg.miss.tactic_min_opponent_ep_lost);
     facts.missed = MissedChances {
-        free_piece: takes_free_piece(&best_walk, cfg.miss.free_piece_min_value_cp),
-        tactic: best_gain >= cfg.miss.tactic_min_gain_cp,
+        free_piece: after_opponent_error
+            && takes_free_piece(&best_walk, cfg.miss.free_piece_min_value_cp),
+        tactic: after_opponent_error && best_gain >= cfg.miss.tactic_min_gain_cp,
         win: oc(best_value) >= ExpectedOutcome::Winning
             && oc(played_value) <= ExpectedOutcome::Equal,
         comeback: oc(mover_value_before) <= ExpectedOutcome::Worse
@@ -284,6 +387,8 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         sacrifice,
         pawns,
         good_grade,
+        great_tag,
+        line_wins_material,
         recapture,
         mover_completely_winning_before,
         facts,
