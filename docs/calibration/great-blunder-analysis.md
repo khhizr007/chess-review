@@ -289,3 +289,14 @@ Rules and measurements: `implementation-notes.md` (Miss subtypes, the mate rule)
 Chess.com itself splits about evenly.
 
 **Side effect:** Brilliant recall 0.52 → 0.48 (one fewer correct Brilliant).
+
+## 7. Check on batch 5 (2026-10-24)
+
+435 new Chess.com reviews from ratings below 700 to 2200+ (`log.md`, "Batch 5 check"), measured
+with the rules unchanged:
+- **Great** holds on new data. In the random sample, precision 0.84 and recall 0.73 (was 0.77 /
+  0.10); on the holdout games 0.85 / 0.74. Recall is at least 0.65 in every rating band.
+- **Blunder recall** improves everywhere (random sample 0.70 → 0.77). **Blunder precision** stays at
+  0.74: Chess.com softens many more Blunders that do not lose material by its definition than the
+  142 games showed.
+- **Next step:** the coach-event material fact (§4 Phase 2 step 4), now that it has enough examples.

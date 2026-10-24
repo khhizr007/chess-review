@@ -1,15 +1,32 @@
-import { createElement, type CSSProperties } from "react";
-import type { PieceRenderObject } from "react-chessboard";
-import { Piece, type PieceKind } from "../components/pieces";
+import { pieceSvg, type PieceKind } from "./pieceShapes";
 
-const KINDS: PieceKind[] = ["p", "n", "b", "r", "q", "k"];
+const ROLES: [PieceKind, string][] = [
+  ["p", "pawn"],
+  ["n", "knight"],
+  ["b", "bishop"],
+  ["r", "rook"],
+  ["q", "queen"],
+  ["k", "king"],
+];
 
-/** react-chessboard piece renderers keyed "wP", "bN", … */
-export const boardPieces: PieceRenderObject = Object.fromEntries(
-  (["w", "b"] as const).flatMap((colour) =>
-    KINDS.map((kind) => [
-      `${colour}${kind.toUpperCase()}`,
-      (props?: { svgStyle?: CSSProperties }) => createElement(Piece, { kind, colour, style: props?.svgStyle }),
-    ]),
-  ),
-);
+/** Our piece set for chessground, which draws each piece as a `<piece class="white pawn">` background. */
+const boardPiecesCss = (["w", "b"] as const)
+  .flatMap((colour) =>
+    ROLES.map(([kind, role]) => {
+      const url = `data:image/svg+xml,${encodeURIComponent(pieceSvg(kind, colour))}`;
+      return `.cg-wrap piece.${colour === "w" ? "white" : "black"}.${role}{background-image:url("${url}")}`;
+    }),
+  )
+  .join("\n");
+
+let installed = false;
+
+/** Adds the piece set's stylesheet to the page, once. */
+export function installBoardPieces() {
+  if (installed || typeof document === "undefined") return;
+  installed = true;
+  const style = document.createElement("style");
+  style.dataset.boardPieces = "";
+  style.textContent = boardPiecesCss;
+  document.head.appendChild(style);
+}

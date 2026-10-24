@@ -184,8 +184,9 @@ the wiring in `ReviewScreen.tsx`.
 - **Castling.** The king can be dropped on its target square or on its rook. UCI follows the backend:
   king squares in standard chess, king-takes-rook in Chess960.
 - **Promotion and clicks.**
-  - **Our own promotion picker.** react-chessboard 5.12.1 has no promotion dialog: its promotion code only animates
-    a piece change, and `onPieceDrop` reports just the piece and the two squares (checked in Phase 0).
+  - **Our own promotion picker.** react-chessboard 5.12.1, the board until 2026-10-24, had no promotion
+    dialog: its promotion code only animated a piece change, and `onPieceDrop` reported just the piece
+    and the two squares (checked in Phase 0). Chessground has none either.
     - **How it works.** A pawn dropped on the last rank snaps back, and four pieces appear over the promotion file.
     - **Taking it back.** A click elsewhere or Esc takes the move back.
   - **Click-to-move and move hints (built 2026-10-22), as on Chess.com.** Clicking a piece picks it
@@ -195,6 +196,48 @@ the wiring in `ReviewScreen.tsx`.
       - **Pick-up.** The piece is picked up, with its hints, while the button is still down. In the
         browser that took 27–39 ms after the press. Before this, nothing showed until release, or
         until a drag started if the hand moved a pixel.
+      - **Lift on the press (2026-10-24), as on Lichess.** Lichess (chessground) starts the drag on
+        the press itself: measured on lichess.org/analysis, a press 6 px into the g1 square's corner
+        got the `dragging` class at once, and the knight moved to centre under the pointer 1.7 ms
+        later, before any mouse move. The board does the same with a mouse (a drag distance of 0
+        under `(pointer: fine)`): a press anywhere in the square lifts the piece, centred under the
+        pointer on the next frame, with its hints. A release where it was puts it back, still
+        picked up. Touch keeps a 1 px threshold, so a tap stays a tap. A press on a piece the
+        picked-up one can take is not a drag: it plays the capture.
+        - **On chessground since 2026-10-24.** With react-chessboard the press cost 15–20 ms of
+          React work in a production build, because every square, droppable and draggable
+          re-rendered. The board is now chessground (Lichess's board, GPL-3.0-or-later), which
+          moves pieces in the DOM itself. `BoardView` draws the selection, held outline, hints
+          and refused flash straight into chessground's board element, so a press renders
+          nothing in React. Measured on a page with `BoardView` alone (production build,
+          minify off, headless Chrome 152, trusted mouse presses over the DevTools protocol, 20
+          presses each, medians):
+
+          | | react-chessboard | chessground |
+          |---|---|---|
+          | Press → selection and hints in the DOM | 19–22 ms | 1.0–1.3 ms |
+          | Press → piece centred under the pointer | 19–22 ms | 2.3–3.6 ms (the next frame) |
+          | Press → next paint (Event Timing `duration`) | 48 ms | 16–24 ms |
+          | The same at 4× CPU throttling: lift / paint | 155 / 232 ms | 20 / 40 ms |
+
+          The chessground figures match Lichess's ~2 ms. The DOM times come from a
+          MutationObserver timed from the `pointerdown`'s timestamp; Event Timing rounds to 8 ms
+          and reports nothing under 16 ms. The harness and scripts are not committed.
+        - **What chessground does and BoardView adds.** Chessground picks up, moves on a press
+          or drop on a target, glides moves (0.18 s, cubic ease-in-out) and handles touch.
+          BoardView listens on the board just before and just after chessground's own press and
+          release listeners to add Chess.com's rules: the red flash on a refused click or drop,
+          a refused or off-board drop keeping the piece picked up, a drop on its own square
+          counting as a click, and the right button putting the piece down. It gives chessground
+          only the picked-up piece's moves (`movable.dests`), plus the king-onto-rook drop.
+          The squares (colours, the review's highlights, the marks, the coordinates) and the
+          arrows are React layers under and over chessground; they change with the position,
+          not on a press. Right-click marks and drawn arrows are BoardView's own, drawn as
+          react-chessboard drew them (bent knight arrows), since chessground's drawing differs.
+        - **Pieces fill their square.** Inline SVG pieces were 7% taller than the square (the
+          text baseline), so a lifted piece sat 2.5 px above the pointer. They are blocks now;
+          chessground shows them as CSS backgrounds made from the same drawing
+          (`lib/pieceShapes.ts`, `lib/boardPieces.ts`).
       - **Moving.** Pressing a target square plays the move at once.
       - **Putting down.** Clicking the piece again puts it down on the release, so a picked-up
         piece can still be dragged.
@@ -206,10 +249,10 @@ the wiring in `ReviewScreen.tsx`.
         can take get a ring. Both pop in over 0.15 s with a slight overshoot.
     - **Castling.** A castling king's hint is on its landing square in standard chess, and on its
       rook in Chess960.
-    - **Moves glide with ease-in-out** over 0.18 s, Chess.com's duration and easing. react-chessboard
-      sets only the duration inline; a CSS rule sets the easing.
-    - **Where it lives.** `BoardView` draws the layers with react-chessboard's `squareRenderer`;
-      `lib/chess.ts` `legalTargets` gives the targets. Retry shows the same hints: all legal moves,
+    - **Moves glide with ease-in-out** over 0.18 s, Chess.com's duration and easing (chessground's
+      cubic ease-in-out).
+    - **Where it lives.** `BoardView` draws the layers (its `Layers` class, straight into
+      chessground's board); `lib/chess.ts` `legalTargets` gives the targets. Retry shows the same hints: all legal moves,
       so nothing is given away.
     - **Not copied.** The captured piece's fade-out.
   - **Picking up any piece (built 2026-10-22), as on Chess.com.** Observed on 2026-10-22 on
@@ -256,8 +299,9 @@ the wiring in `ReviewScreen.tsx`.
       - `BoardMoves.legal` gives the legality check, `lib/chess.ts` `canPlay`, which counts a
         promotion and a king dropped on its rook.
     - **Not copied.** On a press, Chess.com lifts the piece in place and scales it with a short
-      spring, then tilts it with the drag's speed. Ours still lifts after a 1 px move, with
-      react-chessboard's clone at `scale(1.12)` and a shadow.
+      spring, then tilts it with the drag's speed. Ours lifts on the press (with a mouse) and
+      snaps to `scale(1.12)` with a shadow, without the spring or tilt. A Shift+click does
+      nothing: chessground keeps Shift+press for drawing, which the board does not use.
 - **The variation tree (rebuilt 2026-10-22 to match Chess.com, see "Navigation as on Chess.com" below).**
   - **What is kept.** Every move the reader explores is kept for the session. `Explored` maps a game
     ply *p* to the moves played instead of game move *p + 1*. Each move has its own `next` moves, and
