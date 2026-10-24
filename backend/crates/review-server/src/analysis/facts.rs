@@ -266,6 +266,17 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
                 .mate_moves()
                 .is_some_and(|n| n < 0)
         });
+    // `defensible_by_alternative` (report 4 §5, report 5 §5-6): another candidate move, graded Good
+    // or better, loses no material along its line.
+    let alt_defends = lines
+        .iter()
+        .filter(|l| l.pv.first().map(String::as_str) != Some(uci))
+        .any(|l| {
+            let alt_value = Value::after_move(eval_after_first_move(l, mover), mover);
+            let alt_ep = node_expected_points(alt_value, false, rating);
+            ep_best - alt_ep <= cfg.precision_thresholds[1]
+                && walk_line(before, mover_color, &l.pv, 64).lost() < 1
+        });
     let any_sacrifice = sacrifice(
         before,
         m,
@@ -273,6 +284,7 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         high_rated,
         prev.own_ignored_threat,
         input.own_history,
+        alt_defends,
     );
     let given_up = any_sacrifice.filter(|_| qualifies);
     let opponent_lost = node_expected_points(opponent_value_before, input.before_is_draw, 2000)
@@ -380,6 +392,7 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
                 high_rated,
                 prev.own_ignored_threat,
                 input.own_history,
+                false,
             )
             .is_some()
         }) && ep_best >= cfg.miss.brilliant_min_best_ep,
@@ -411,7 +424,9 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         // the same side's later moves reads it.
         ignored_threat: if bc.reference_standing {
             (!after.is_check() && !before.is_check() && !m.is_promotion())
-                .then(|| reference_ignored_threat(before, after, m, input.own_history, bc))
+                .then(|| {
+                    reference_ignored_threat(before, after, m, input.own_history, bc, alt_defends)
+                })
                 .flatten()
         } else {
             any_sacrifice
@@ -503,6 +518,7 @@ pub(crate) fn coach_note(
                     judged.high_rated,
                     None,
                     &[],
+                    false,
                 )
             })
             .map(|s| s.square),

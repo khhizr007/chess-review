@@ -102,4 +102,17 @@ ref_trapped: boolean,
 /**
  * Report 4, high-rated moved piece: a non-pinned capturer and no deflection.
  */
-ref_deflection: boolean, };
+ref_deflection: boolean, 
+/**
+ * Report 5: pins follow the reference's slider collectors instead of the standard definition.
+ */
+ref_decoded_pins: boolean, 
+/**
+ * Report 5: trapped follows the reference's theme 31 instead of "threatened, no safe square".
+ */
+ref_decoded_trapped: boolean, 
+/**
+ * Report 4 §5: an ignored piece that is relatively pinned counts only if another Good-or-better
+ * move loses no material (`defensible_by_alternative`).
+ */
+ref_relative_pin_defensible: boolean, };

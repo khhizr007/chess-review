@@ -278,3 +278,41 @@ means threatened with no safe square.
 **Not modelled yet:** `defensible_by_alternative` (needs the sibling moves' material loss; a relatively
 pinned piece always passes), `ForkIfCaptured` (tag 19) and the endgame gate's
 `moves_better_than(n, 6)`.
+
+
+## 10. Pin, trap and alternative-defence rules (2026-10-24, third round)
+
+Decompile report 5 (WSL `~/work/claude-scratchpad/brilliant-decompile-report-5.md`) located the theme
+builders: `ThemeProfilesRegistry::compute` → `collect_profiles` → `collect_pieces_profiles<Type,
+Color>`. The report's reading of the relative pin swapped the front and back pieces; the rules below
+were re-read from the rook collector (`out/dr5b/clean/011a2bd4.c`).
+
+- **Relative pin (theme 9):** a slider sees an enemy piece B behind exactly one enemy piece A; B is
+  not a pawn and not the king; with A removed, the slider's capture of B wins at least 100 (SEE); A
+  cannot capture the slider losing at most 100; A has a pseudo-legal move off the line; and
+  value(A) ≤ value(B). Stored under the pinner's colour.
+- **Absolute pin (theme 8):** A is the only piece between the slider and A's king.
+- **Trapped (theme 31):** SEE-threatened; no escape (unpinned: no destination with own SEE ≥ 0;
+  pinned: none with SEE ≥ −100); no threatener is itself SEE-threatened; the most valuable threatener
+  it attacks back, if any, is worth less than 500.
+- **`defensible_by_alternative`:** another candidate graded Good or better whose line loses no
+  material (`material_lost < 1`). We use the engine's other MultiPV lines. Not modelled: the
+  pawn-tension exception (a loss of exactly 100 that only resolves pawn tension counts as 0).
+
+| Rule | Config | All P / R | Tuning P / R | Holdout P / R | Best-move set, holdout P |
+|---|---|---|---|---|---|
+| before (`70ec97a`) | | 0.71 / 0.83 | 0.72 / 0.86 | 0.68 / 0.73 | 0.66 |
+| decoded pins | `ref_decoded_pins` | **0.72 / 0.83** | 0.73 / 0.86 | 0.70 / 0.73 | 0.68 |
+| decoded trapped | `ref_decoded_trapped` | no change | | | no change |
+| relative pin needs an alternative defence | `ref_relative_pin_defensible` | no change | | | not measurable |
+
+Only `ref_decoded_pins` improved all three, so only it is on by default. The other two stay off: they
+are decoded rules, but they change no result.
+
+**Why precision stops near 0.72.** In all 31 remaining wrong Brilliants, Chess.com attaches no
+sacrifice tag at all. Its sacrifice detector does not fire where ours does. Every check named in its
+code is now built, so the remaining differences sit inside the shared primitives: `see_gain` and
+`see_greater_equal` (x-rays, pins and king captures inside the exchange), the per-square threat
+tables of `collect_eval_terms`, and `most_valuable_pieces` ties. Comparing those needs Chess.com's
+values for the same positions; the next step is to run the shipped `libcee.so` on the 31 positions
+and compare its threat tables with ours.

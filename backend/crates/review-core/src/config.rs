@@ -112,6 +112,13 @@ pub struct BrilliantConfig {
     pub ref_trapped: bool,
     /// Report 4, high-rated moved piece: a non-pinned capturer and no deflection.
     pub ref_deflection: bool,
+    /// Report 5: pins follow the reference's slider collectors instead of the standard definition.
+    pub ref_decoded_pins: bool,
+    /// Report 5: trapped follows the reference's theme 31 instead of "threatened, no safe square".
+    pub ref_decoded_trapped: bool,
+    /// Report 4 §5: an ignored piece that is relatively pinned counts only if another Good-or-better
+    /// move loses no material (`defensible_by_alternative`).
+    pub ref_relative_pin_defensible: bool,
 }
 
 /// Great detection (`is_candidate<15>` and its tags, recovered; see
@@ -234,6 +241,9 @@ impl Default for BrilliantConfig {
             ref_promotion: true,
             ref_trapped: true,
             ref_deflection: true,
+            ref_decoded_pins: true,
+            ref_decoded_trapped: false,
+            ref_relative_pin_defensible: false,
         }
     }
 }

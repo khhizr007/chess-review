@@ -152,6 +152,7 @@ pub fn sacrifice(
     high_rated: bool,
     ignored_before: Option<Square>,
     history: &[EarlierOwnMove],
+    alt_defends: bool,
 ) -> Option<Sacrifice> {
     let mover = before.turn();
     let opponent = mover.other();
@@ -218,7 +219,7 @@ pub fn sacrifice(
                     && (!high_rated
                         || !cfg.ref_deflection
                         || (!(see_threateners(after.board(), m.to())
-                            & !pinned_attackers(after.board(), m.to(), true))
+                            & !pinned_attackers(after.board(), m.to(), true, cfg.ref_decoded_pins))
                         .is_empty()
                             && !has_overloaded_attacker(after.board(), m.to(), captured)))
             });
@@ -239,7 +240,7 @@ pub fn sacrifice(
         };
         if cfg.ignored_threats {
             found.extend(
-                reference_ignored_threat(before, &after, m, history, cfg)
+                reference_ignored_threat(before, &after, m, history, cfg, alt_defends)
                     .and_then(|sq| standing(sq, SacrificeKind::IgnoredThreat)),
             );
         }
@@ -465,6 +466,7 @@ pub fn reference_ignored_threat(
     m: Move,
     history: &[EarlierOwnMove],
     cfg: &BrilliantConfig,
+    alt_defends: bool,
 ) -> Option<Square> {
     let mover = before.turn();
     let opponent = mover.other();
@@ -488,7 +490,7 @@ pub fn reference_ignored_threat(
             return None;
         }
     }
-    sacrifice_of_not_moved(before, after, m, sq, true, cfg).then_some(sq)
+    sacrifice_of_not_moved(before, after, m, sq, true, cfg, alt_defends).then_some(sq)
 }
 
 /// `node_lib::is_indirect_sacrifice`: of the mover's pieces strongly threatened after the move and
@@ -509,7 +511,7 @@ pub fn reference_indirect_sacrifice(
     });
     most_valuable(after.board(), candidates)
         .into_iter()
-        .find(|&sq| sacrifice_of_not_moved(before, after, m, sq, false, cfg))
+        .find(|&sq| sacrifice_of_not_moved(before, after, m, sq, false, cfg, false))
 }
 
 /// `node_lib::is_sacrifice_of_not_moved(n, sq, from_ignored)` (decompile report 2 §1). Parts not
@@ -522,6 +524,7 @@ fn sacrifice_of_not_moved(
     sq: Square,
     from_ignored: bool,
     cfg: &BrilliantConfig,
+    alt_defends: bool,
 ) -> bool {
     let mover = before.turn();
     let opponent = mover.other();
@@ -562,12 +565,20 @@ fn sacrifice_of_not_moved(
         return false;
     }
     if from_ignored {
-        let trapped = if cfg.ref_trapped {
+        let trapped = if cfg.ref_decoded_trapped {
+            decoded_trapped(ab, sq)
+        } else if cfg.ref_trapped {
             is_trapped_piece(after, sq)
         } else {
             !has_reference_safe_square(after, sq)
         };
         if trapped || crate::coach::facts::is_absolutely_pinned(ab, sq) {
+            return false;
+        }
+        // A relatively pinned piece counts only if another move could have defended it
+        // (defensible_by_alternative, report 4 §5).
+        if cfg.ref_relative_pin_defensible && decoded_pin(ab, sq, opponent, None).0 && !alt_defends
+        {
             return false;
         }
     }
@@ -588,7 +599,8 @@ fn sacrifice_of_not_moved(
         return false;
     }
     // The piece's attacker is pinned, or busy guarding something else (report 4 §1, §3).
-    if cfg.ref_pinned_attacker && !pinned_attackers(ab, sq, false).is_empty() {
+    if cfg.ref_pinned_attacker && !pinned_attackers(ab, sq, false, cfg.ref_decoded_pins).is_empty()
+    {
         return false;
     }
     if cfg.ref_overloaded && has_overloaded_attacker(ab, sq, cap_val) {
@@ -663,6 +675,147 @@ fn reference_saved_pieces(before: &Chess, after: &Chess, from: Square, loss: i32
                     && see::see(ab, s, opponent) >= STRONG_THREAT_CP)
         })
         .count()
+}
+
+/// SEE of the move `from`→`to` (the reference's `see_gain` / `see_greater_equal`): what the moving
+/// piece captures there, minus what the other side then wins by exchange on `to`.
+fn move_see(board: &shakmaty::Board, from: Square, to: Square) -> i32 {
+    let Some(mover) = board.piece_at(from) else {
+        return 0;
+    };
+    let captured = board.role_at(to).map_or(0, see::value);
+    let mut b = board.clone();
+    b.discard_piece_at(from);
+    b.set_piece_at(to, mover);
+    captured - see::see(&b, to, mover.color.other()).max(0)
+}
+
+/// The slider on `p` and the piece on `a` stand on one of the slider's lines with nothing between.
+fn slider_line_to(board: &shakmaty::Board, p: Square, a: Square) -> bool {
+    use shakmaty::attacks;
+    if attacks::ray(p, a).is_empty() || !(attacks::between(p, a) & board.occupied()).is_empty() {
+        return false;
+    }
+    let orthogonal = p.file() == a.file() || p.rank() == a.rank();
+    match board.role_at(p) {
+        Some(Role::Queen) => true,
+        Some(Role::Rook) => orthogonal,
+        Some(Role::Bishop) => !orthogonal,
+        _ => false,
+    }
+}
+
+/// The first piece behind `a` on the line from `p` through `a`.
+fn first_behind(board: &shakmaty::Board, p: Square, a: Square) -> Option<Square> {
+    use shakmaty::attacks;
+    let occupied = board.occupied();
+    (attacks::ray(p, a) & occupied).into_iter().find(|&b| {
+        b != a
+            && attacks::between(p, b).contains(a)
+            && (attacks::between(a, b) & occupied).is_empty()
+    })
+}
+
+/// Pseudo-legal destinations of the piece on `a` (its attacks on squares not held by its side, plus
+/// pawn pushes).
+fn pseudo_destinations(board: &shakmaty::Board, a: Square) -> shakmaty::Bitboard {
+    let Some(piece) = board.piece_at(a) else {
+        return shakmaty::Bitboard::EMPTY;
+    };
+    let own = board.by_color(piece.color);
+    if piece.role == Role::Pawn {
+        let theirs = board.by_color(piece.color.other());
+        let mut out = shakmaty::attacks::pawn_attacks(piece.color, a) & theirs;
+        let step = if piece.color == Color::White { 8 } else { -8 };
+        if let Some(push) = a.offset(step).filter(|p| !board.occupied().contains(*p)) {
+            out.add(push);
+        }
+        out
+    } else {
+        board.attacks_from(a) & !own
+    }
+}
+
+/// Whether the piece on `a` is pinned by a slider of colour `by` other than the one on `exclude`
+/// (`collect_pieces_profiles` for sliders, decoded in report 5 and re-read from the code):
+/// - **absolute** (theme 8): `a` is the only piece between the slider and its own king;
+/// - **relative** (theme 9): the first piece behind `a` is of the same side, not a pawn and not the
+///   king; with `a` removed the slider's capture there wins at least 100 (SEE); `a` cannot capture
+///   the slider losing at most 100; `a` has a pseudo-legal move off the line; and `a` is worth no
+///   more than the piece behind it.
+///
+/// Returns (relative, absolute).
+fn decoded_pin(
+    board: &shakmaty::Board,
+    a: Square,
+    by: Color,
+    exclude: Option<Square>,
+) -> (bool, bool) {
+    use shakmaty::attacks;
+    let (mut relative, mut absolute) = (false, false);
+    let Some(front) = board.piece_at(a).filter(|p| p.color != by) else {
+        return (false, false);
+    };
+    for p in board.by_color(by) & (board.bishops() | board.rooks() | board.queens()) {
+        if Some(p) == exclude || !slider_line_to(board, p, a) {
+            continue;
+        }
+        let Some(b) = first_behind(board, p, a) else {
+            continue;
+        };
+        let Some(back) = board.piece_at(b).filter(|x| x.color == front.color) else {
+            continue;
+        };
+        if back.role == Role::King {
+            absolute = true;
+            continue;
+        }
+        if back.role == Role::Pawn {
+            continue;
+        }
+        let mut without = board.clone();
+        without.discard_piece_at(a);
+        let wins = move_see(&without, p, b) >= 100;
+        let can_take_pinner = board.attacks_from(a).contains(p) && move_see(board, a, p) >= -100;
+        let off_line = !(pseudo_destinations(board, a) & !attacks::between(p, b)).is_empty();
+        if wins && !can_take_pinner && off_line && see::value(front.role) <= see::value(back.role) {
+            relative = true;
+        }
+    }
+    (relative, absolute)
+}
+
+/// `Piece::is_trapped` (theme 31, `collect_pieces_profiles`, read from the code): the piece is
+/// SEE-threatened; it has no escape (unpinned: no square it attacks where its own exchange does not
+/// lose; pinned to its king: none losing at most 100); no piece threatening it is itself
+/// SEE-threatened; and the most valuable threatener it attacks back, if any, is worth less than 500.
+fn decoded_trapped(board: &shakmaty::Board, sq: Square) -> bool {
+    let Some(piece) = board.piece_at(sq) else {
+        return false;
+    };
+    let threateners = see_threateners(board, sq);
+    if threateners.is_empty() {
+        return false;
+    }
+    let escapes = board.attacks_from(sq) & !board.by_color(piece.color);
+    let floor = if crate::coach::facts::is_absolutely_pinned(board, sq) {
+        -100
+    } else {
+        0
+    };
+    if escapes.into_iter().any(|e| move_see(board, sq, e) >= floor) {
+        return false;
+    }
+    if threateners
+        .into_iter()
+        .any(|t| !see_threateners(board, t).is_empty())
+    {
+        return false;
+    }
+    let hit_back = threateners & board.attacks_from(sq);
+    most_valuable(board, hit_back.into_iter())
+        .first()
+        .is_none_or(|&t| board.role_at(t).map_or(0, see::value) < 500)
 }
 
 /// Material `by` wins when the piece on `from` captures first on `sq` and the exchange is then played
@@ -750,6 +903,7 @@ fn pinned_attackers(
     board: &shakmaty::Board,
     sq: Square,
     relative_only: bool,
+    decoded: bool,
 ) -> shakmaty::Bitboard {
     let Some(target) = board.piece_at(sq) else {
         return shakmaty::Bitboard::EMPTY;
@@ -758,6 +912,16 @@ fn pinned_attackers(
     let threateners = see_threateners(board, sq);
     let all = board.attacks_to(sq, by, board.occupied()) & board.by_color(by);
     let mut out = shakmaty::Bitboard::EMPTY;
+    if decoded {
+        // Pins by the target's own side, other than by the target itself (report 4 §1, report 5).
+        for a in all {
+            let (relative, absolute) = decoded_pin(board, a, target.color, Some(sq));
+            if (relative && threateners.contains(a)) || (!relative_only && absolute) {
+                out.add(a);
+            }
+        }
+        return out;
+    }
     for a in all {
         let value = board.role_at(a).map_or(0, see::value);
         for (pinner, b) in pinned_behind(board, a) {
@@ -985,7 +1149,7 @@ mod tests {
     fn sac(fen: &str, uci: &str, cfg: &BrilliantConfig) -> Option<Sacrifice> {
         let p = pos(fen);
         let m = board::parse_uci(&p, uci).expect("legal move");
-        sacrifice(&p, m, cfg, true, None, &[])
+        sacrifice(&p, m, cfg, true, None, &[], false)
     }
 
     #[test]
@@ -1057,10 +1221,10 @@ mod tests {
         };
         let (p, m) = mv(fen, "f3e5");
         assert_eq!(
-            sacrifice(&p, m, &cfg, false, None, &[]).map(|s| s.role),
+            sacrifice(&p, m, &cfg, false, None, &[], false).map(|s| s.role),
             Some(Role::Knight)
         );
-        assert_eq!(sacrifice(&p, m, &cfg, true, None, &[]), None);
+        assert_eq!(sacrifice(&p, m, &cfg, true, None, &[], false), None);
     }
 
     #[test]
@@ -1071,7 +1235,7 @@ mod tests {
         let fen = "r1b1k2r/pppp1Npp/2n5/4p3/2B1n2q/6P1/PPPP3P/RNBQK2R b kq - 0 8";
         let (p, m) = mv(fen, "e4g3");
         assert_eq!(
-            sacrifice(&p, m, &BrilliantConfig::default(), false, None, &[]),
+            sacrifice(&p, m, &BrilliantConfig::default(), false, None, &[], false),
             Some(Sacrifice {
                 square: Square::G3,
                 role: Role::Knight,
@@ -1080,7 +1244,7 @@ mod tests {
             })
         );
         assert_eq!(
-            sacrifice(&p, m, &BrilliantConfig::default(), true, None, &[]),
+            sacrifice(&p, m, &BrilliantConfig::default(), true, None, &[], false),
             None
         );
     }
@@ -1099,7 +1263,10 @@ mod tests {
             see_gain: 500,
             kind: SacrificeKind::IgnoredThreat,
         });
-        assert_eq!(sacrifice(&p, m, &cfg, false, None, &[]), ignored_rook);
+        assert_eq!(
+            sacrifice(&p, m, &cfg, false, None, &[], false),
+            ignored_rook
+        );
         // Had Black's previous move already ignored the rook while it stood threatened, this one
         // would not.
         let earlier = EarlierOwnMove {
@@ -1107,7 +1274,15 @@ mod tests {
             ignored: Some(Square::H8),
         };
         assert_eq!(
-            sacrifice(&p, m, &cfg, false, None, std::slice::from_ref(&earlier)),
+            sacrifice(
+                &p,
+                m,
+                &cfg,
+                false,
+                None,
+                std::slice::from_ref(&earlier),
+                false
+            ),
             None
         );
         // An earlier move that ignored something else does not stop it.
@@ -1115,7 +1290,10 @@ mod tests {
             ignored: Some(Square::A8),
             ..earlier
         };
-        assert_eq!(sacrifice(&p, m, &cfg, false, None, &[other]), ignored_rook);
+        assert_eq!(
+            sacrifice(&p, m, &cfg, false, None, &[other], false),
+            ignored_rook
+        );
     }
 
     #[test]
@@ -1123,10 +1301,10 @@ mod tests {
         // The black knight on d6 attacks the rook on e4 but is pinned by the bishop on b4 to the
         // queen on f8, worth more than the bishop.
         let p = pos("5qk1/8/3n4/8/1B2R3/8/8/6K1 w - - 0 1");
-        assert!(pinned_attackers(p.board(), Square::E4, false).contains(Square::D6));
+        assert!(pinned_attackers(p.board(), Square::E4, false, true).contains(Square::D6));
         // Without the bishop nothing pins it.
         let p = pos("5qk1/8/3n4/8/4R3/8/8/6K1 w - - 0 1");
-        assert!(pinned_attackers(p.board(), Square::E4, false).is_empty());
+        assert!(pinned_attackers(p.board(), Square::E4, false, true).is_empty());
     }
 
     #[test]
@@ -1238,8 +1416,16 @@ mod tests {
             let parsed = &game.moves[ply - 1];
             (
                 parsed.san.as_str(),
-                sacrifice(&game.positions[ply - 1], parsed.mv, &cfg, true, None, &[])
-                    .map(|s| s.role),
+                sacrifice(
+                    &game.positions[ply - 1],
+                    parsed.mv,
+                    &cfg,
+                    true,
+                    None,
+                    &[],
+                    false,
+                )
+                .map(|s| s.role),
             )
         };
         assert_eq!(at(19), ("Nxb5", Some(Role::Knight)));
