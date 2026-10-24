@@ -824,6 +824,17 @@ fn capture_see(board: &shakmaty::Board, from: Square, sq: Square) -> i32 {
     let (Some(mover), Some(target)) = (board.piece_at(from), board.piece_at(sq)) else {
         return 0;
     };
+    // `collect_eval_terms` skips a capture that would break a pin on the capturer's own king
+    // (`violates_pin`): such a piece threatens nothing off its pin line. Checked against the
+    // reference's own threat tables (docs/calibration/brilliant-analysis.md §11).
+    if mover.role != Role::King
+        && crate::coach::facts::is_absolutely_pinned(board, from)
+        && !board
+            .king_of(mover.color)
+            .is_some_and(|k| shakmaty::attacks::aligned(from, sq, k))
+    {
+        return i32::MIN / 2;
+    }
     let mut b = board.clone();
     b.discard_piece_at(from);
     b.set_piece_at(sq, mover);

@@ -316,3 +316,19 @@ code is now built, so the remaining differences sit inside the shared primitives
 tables of `collect_eval_terms`, and `most_valuable_pieces` ties. Comparing those needs Chess.com's
 values for the same positions; the next step is to run the shipped `libcee.so` on the 31 positions
 and compare its threat tables with ours.
+
+## 11. Threat tables checked against Chess.com's own code (2026-10-24)
+
+Chess.com's `collect_eval_terms` was run in an emulator (WSL `~/work/cee-emu`, not committed) and its
+per-square threat tables were compared with ours (details in `mismatch-analysis.md` §5). One
+difference was found and fixed: a piece pinned to its own king does not threaten captures off its
+pin line (`violates_pin`). After the fix, 99.4% of 2,000 random positions have identical
+`see_threats_to` and 99.8% identical strong-threat sets.
+
+| Run | All P / R | Tuning P / R | Holdout P / R |
+|---|---|---|---|
+| before (`c783bf8`) | 0.72 / 0.83 | 0.73 / 0.86 | 0.70 / 0.73 |
+| pinned-capture fix | **0.74 / 0.83** | 0.74 / 0.86 | 0.73 / 0.73 |
+
+The threat tables are no longer the cause of the remaining wrong Brilliants. Those come from the
+engine-line parts of the decision and from engine score differences.
