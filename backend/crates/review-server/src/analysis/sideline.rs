@@ -258,6 +258,7 @@ pub fn judge_sideline(
         previous_moves,
         rating: review.rating_used,
         highest_elo,
+        own_history: &[],
     };
     let judged = judge_move(&input, cfg);
 

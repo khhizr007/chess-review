@@ -104,17 +104,21 @@ softened Blunders that lose material through a later tactic, such as a fork. See
   - the mover's EP after the move is at least `min_ep_after` (0.47); when answering check, the
     second line is not mated; the move neither threatens to promote nor takes a pawn about to;
   - a **sacrifice** (`detectors::sacrifice`): a piece the opponent wins at least `min_threat_cp`
-    (100) by exchange on. The piece is
-    - the moved piece, which had a safe square, loses material in its own exchange
-      (`moved_net_loss`), and is not a doomed or mutual-threat piece; pawns only with `pawns` (off);
-    - or a piece left standing: one already threatened that could have been saved
-      (`ignored_threats`, not if the previous move already left it), or one newly en prise
-      (`left_en_prise`), e.g. the queen in Legal's trap or a piece left behind by castling. Not when
-      the move gives or answers check or promotes, nor when the move captured a piece worth as much
-      (`standing_trade_excludes`) or threatens one (`counter_threat_excludes`);
-    - in high-rated games (max Elo ≥ `great_find.high_rated_min`) worth more than what the move
-      captured plus the best piece it newly attacks by discovery (no disguised trade). Newer players
-      get no such test;
+    (200, the reference's "strongly SEE-threatened") by exchange on. The piece is
+    - the moved piece, which had a safe square (a square it attacks where its own exchange does not
+      lose, `reference_safe_squares`), loses material in its own exchange (`moved_net_loss`), is not
+      a doomed or mutual-threat piece, and does not save more than one other strongly threatened
+      piece (`reference_moved`);
+    - or a piece left standing (`reference_standing`, after `ignored_threats`,
+      `is_indirect_sacrifice` and `is_sacrifice_of_not_moved`): the single most valuable piece
+      strongly threatened before and after the move, unless an earlier move of the same side already
+      ignored it while it stayed threatened (`ignored_threats`); or the most valuable piece newly
+      strongly threatened (`left_en_prise`). Either way not when the move gives or answers check or
+      promotes, saves a piece worth as much, captures plus newly threatens at least what is lost, or
+      hits back at a bigger piece; an ignored piece must not be trapped or pinned to its king;
+    - in high-rated games (max Elo ≥ `great_find.high_rated_min`) the moved piece must be worth more
+      than what the move captured plus the best piece an uncovered slider now strongly threatens (no
+      disguised trade). Newer players get no such test;
   - the recovered gates: not when the mover is already ahead by the piece's value against an
     opponent whose EP before the move (at rating 2000) is below `opponent_lost_ep` (0.10); in the
     endgame the position is critical or the line wins at least `endgame_min_gain_cp` (200).

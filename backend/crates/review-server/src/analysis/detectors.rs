@@ -151,6 +151,7 @@ pub fn sacrifice(
     cfg: &BrilliantConfig,
     high_rated: bool,
     ignored_before: Option<Square>,
+    history: &[EarlierOwnMove],
 ) -> Option<Sacrifice> {
     let mover = before.turn();
     let opponent = mover.other();
@@ -160,7 +161,11 @@ pub fn sacrifice(
         return None;
     }
     let captured = m.capture().map_or(0, see::value);
-    let discovered = discovered_attack_value(before, &after, m);
+    let discovered = if cfg.reference_moved {
+        reference_discovered_attack_value(before, &after, m)
+    } else {
+        discovered_attack_value(before, &after, m)
+    };
     // A disguised trade: the piece is worth no more than what the move wins at once.
     let worth_giving = |role: Role| !high_rated || captured + discovered < see::value(role);
     let threatened_before =
@@ -186,9 +191,27 @@ pub fn sacrifice(
             .filter(|s| {
                 // `is_safe(n)`: the move's own exchange must lose material, so a trade is none.
                 (!cfg.moved_net_loss || s.see_gain > captured)
-                    && !safe_squares(before, from).is_empty()
-                    && (!threatened_before(from) || !mutual_or_bigger_threat(before, from, role))
-                    && saved_pieces(before, &after, from, s.see_gain) <= 1
+                    && if cfg.reference_safe_squares {
+                        has_reference_safe_square(before, from)
+                    } else {
+                        !safe_squares(before, from).is_empty()
+                    }
+                    && (!threatened_before(from)
+                        || !mutual_or_bigger_threat(
+                            before,
+                            from,
+                            role,
+                            if cfg.reference_moved {
+                                STRONG_THREAT_CP
+                            } else {
+                                1
+                            },
+                        ))
+                    && if cfg.reference_moved {
+                        reference_saved_pieces(before, &after, from, s.see_gain) <= 1
+                    } else {
+                        saved_pieces(before, &after, from, s.see_gain) <= 1
+                    }
                     && worth_giving(role)
             });
         found.extend(moved);
@@ -196,7 +219,29 @@ pub fn sacrifice(
 
     // Pieces the move leaves standing.
     let quiet_context = !after.is_check() && !before.is_check() && !m.is_promotion();
-    if quiet_context && (cfg.ignored_threats || cfg.left_en_prise) {
+    if quiet_context && cfg.reference_standing {
+        let ab = after.board();
+        let standing = |sq: Square, kind: SacrificeKind| {
+            ab.role_at(sq).map(|role| Sacrifice {
+                square: sq,
+                role,
+                see_gain: see::see(ab, sq, opponent).max(0),
+                kind,
+            })
+        };
+        if cfg.ignored_threats {
+            found.extend(
+                reference_ignored_threat(before, &after, m, history)
+                    .and_then(|sq| standing(sq, SacrificeKind::IgnoredThreat)),
+            );
+        }
+        if cfg.left_en_prise {
+            found.extend(
+                reference_indirect_sacrifice(before, &after, m)
+                    .and_then(|sq| standing(sq, SacrificeKind::LeftEnPrise)),
+            );
+        }
+    } else if quiet_context && (cfg.ignored_threats || cfg.left_en_prise) {
         let moved_to = (!m.is_castle()).then(|| m.to());
         for sq in after.board().by_color(mover) {
             let Some(role) = after.board().role_at(sq) else {
@@ -211,7 +256,7 @@ pub fn sacrifice(
                 // Ignoring a threat gives the piece up only if it could have been saved.
                 if !cfg.ignored_threats
                     || ignored_before == Some(sq)
-                    || safe_squares(before, sq).is_empty()
+                    || (cfg.ignored_needs_safe_square && safe_squares(before, sq).is_empty())
                 {
                     continue;
                 }
@@ -237,7 +282,7 @@ pub fn sacrifice(
 
 /// For a moved piece that was already threatened: another piece of at least its value (the
 /// mover's or the opponent's) was threatened too, so moving it is no sacrifice.
-fn mutual_or_bigger_threat(before: &Chess, from: Square, role: Role) -> bool {
+fn mutual_or_bigger_threat(before: &Chess, from: Square, role: Role, min_threat: i32) -> bool {
     let mover = before.turn();
     let opponent = mover.other();
     let board = before.board();
@@ -246,7 +291,7 @@ fn mutual_or_bigger_threat(before: &Chess, from: Square, role: Role) -> bool {
         board
             .role_at(sq)
             .is_some_and(|r| r != Role::King && see::value(r) >= value)
-            && see::see(board, sq, by) > 0
+            && see::see(board, sq, by) >= min_threat
     };
     board
         .by_color(mover)
@@ -325,6 +370,265 @@ fn safe_squares(before: &Chess, from: Square) -> Vec<Square> {
         })
         .map(|mv| mv.to())
         .collect()
+}
+
+/// The reference's `Piece::safe_squares` is non-empty. `collect_eval_terms` builds it from the
+/// piece's attacked squares, not its legal moves: a destination not held by its own side, along the
+/// pin line if the piece is pinned to its king, whose own exchange does not lose (SEE ≥ 0). Check is
+/// ignored, and an even trade counts as safe, unlike [`safe_squares`]. Pawns and kings never reach
+/// this test.
+fn has_reference_safe_square(before: &Chess, from: Square) -> bool {
+    let board = before.board();
+    let Some(piece) = board.piece_at(from) else {
+        return false;
+    };
+    let mover = piece.color;
+    let opponent = mover.other();
+    let pinned = crate::coach::facts::is_absolutely_pinned(board, from);
+    let king = board.king_of(mover);
+    let targets = board.attacks_from(from) & !board.by_color(mover);
+    targets.into_iter().any(|to| {
+        if pinned && !king.is_some_and(|k| shakmaty::attacks::aligned(from, to, k)) {
+            return false;
+        }
+        let captured = board.role_at(to).map_or(0, see::value);
+        let mut b = board.clone();
+        b.discard_piece_at(from);
+        b.set_piece_at(to, piece);
+        // What the opponent then wins by capturing on `to` (never negative: it need not capture).
+        let lost = see::see(&b, to, opponent).max(0);
+        captured - lost >= 0
+    })
+}
+
+/// A move the same side played earlier, nearest first (`ignored_threats`' walk-back): the board after
+/// it and the threatened piece it ignored, if any.
+#[derive(Debug, Clone)]
+pub struct EarlierOwnMove {
+    pub board_after: shakmaty::Board,
+    pub ignored: Option<Square>,
+}
+
+/// The reference's SEE thresholds (`collect_eval_terms`): a capture that wins at least this much
+/// SEE-threatens the piece, and at least [`STRONG_THREAT_CP`] strongly threatens it.
+const THREAT_CP: i32 = 100;
+const STRONG_THREAT_CP: i32 = 200;
+
+/// The square of the piece the move moved (the rook when castling).
+fn moved_square(before: &Chess, m: Move) -> Square {
+    if m.is_castle() {
+        let king = m.from().unwrap_or(m.to());
+        let rook = m.to();
+        let back = king.rank();
+        let file = if rook.file() > king.file() {
+            shakmaty::File::F
+        } else {
+            shakmaty::File::D
+        };
+        let _ = before;
+        Square::from_coords(file, back)
+    } else {
+        m.to()
+    }
+}
+
+/// The squares in `squares` holding the most valuable pieces (all of them, on a tie).
+fn most_valuable(board: &shakmaty::Board, squares: impl Iterator<Item = Square>) -> Vec<Square> {
+    let with_value: Vec<(Square, i32)> = squares
+        .filter_map(|sq| board.role_at(sq).map(|r| (sq, see::value(r))))
+        .collect();
+    let Some(top) = with_value.iter().map(|(_, v)| *v).max() else {
+        return Vec::new();
+    };
+    with_value
+        .into_iter()
+        .filter(|(_, v)| *v == top)
+        .map(|(sq, _)| sq)
+        .collect()
+}
+
+/// `node_lib::ignored_threats(n, false, false, true)`: the single most valuable piece of the mover
+/// strongly threatened both before and after the move, not already ignored by an earlier move of the
+/// same side while it stayed threatened, and given up (`is_sacrifice_of_not_moved`). The caller has
+/// excluded checks, check evasions and promotions.
+pub fn reference_ignored_threat(
+    before: &Chess,
+    after: &Chess,
+    m: Move,
+    history: &[EarlierOwnMove],
+) -> Option<Square> {
+    let mover = before.turn();
+    let opponent = mover.other();
+    let candidates = after.board().by_color(mover).into_iter().filter(|&sq| {
+        after.board().role_at(sq).is_some_and(|r| r != Role::King)
+            && before.board().piece_at(sq) == after.board().piece_at(sq)
+            && see::see(before.board(), sq, opponent) >= STRONG_THREAT_CP
+            && see::see(after.board(), sq, opponent) >= STRONG_THREAT_CP
+    });
+    let top = most_valuable(after.board(), candidates);
+    let [sq] = top[..] else {
+        return None;
+    };
+    for earlier in history {
+        if earlier.board_after.piece_at(sq) != after.board().piece_at(sq)
+            || see::see(&earlier.board_after, sq, opponent) < THREAT_CP
+        {
+            break;
+        }
+        if earlier.ignored == Some(sq) {
+            return None;
+        }
+    }
+    sacrifice_of_not_moved(before, after, m, sq, true).then_some(sq)
+}
+
+/// `node_lib::is_indirect_sacrifice`: of the mover's pieces strongly threatened after the move and
+/// not threatened before it, the most valuable one that is given up (`is_sacrifice_of_not_moved`).
+pub fn reference_indirect_sacrifice(before: &Chess, after: &Chess, m: Move) -> Option<Square> {
+    let mover = before.turn();
+    let opponent = mover.other();
+    let candidates = after.board().by_color(mover).into_iter().filter(|&sq| {
+        after.board().role_at(sq).is_some_and(|r| r != Role::King)
+            && see::see(after.board(), sq, opponent) >= STRONG_THREAT_CP
+            && !(before.board().piece_at(sq) == after.board().piece_at(sq)
+                && see::see(before.board(), sq, opponent) >= THREAT_CP)
+    });
+    most_valuable(after.board(), candidates)
+        .into_iter()
+        .find(|&sq| sacrifice_of_not_moved(before, after, m, sq, false))
+}
+
+/// `node_lib::is_sacrifice_of_not_moved(n, sq, from_ignored)` (decompile report 2 §1). Parts not
+/// modelled: `has_pinned_attacker`, `has_overloaded_attacker`, the safe-promotion-square test and
+/// `defensible_by_alternative` (a relatively pinned piece always passes).
+fn sacrifice_of_not_moved(
+    before: &Chess,
+    after: &Chess,
+    m: Move,
+    sq: Square,
+    from_ignored: bool,
+) -> bool {
+    let mover = before.turn();
+    let opponent = mover.other();
+    let ab = after.board();
+    let moved_to = moved_square(before, m);
+    if sq == moved_to {
+        return false;
+    }
+    let Some(role) = ab.role_at(sq) else {
+        return false;
+    };
+    let value = see::value(role);
+    let cap_val = m.capture().map_or(0, see::value);
+    let occupied = ab.occupied();
+    let attackers_of_sq = ab.attacks_to(sq, opponent, occupied) & ab.by_color(opponent);
+    // The most valuable opponent piece the move newly strongly threatens, other than the king and
+    // the pieces attacking `sq`, and what taking it wins.
+    let created = ab.by_color(opponent).into_iter().filter(|&s| {
+        !attackers_of_sq.contains(s)
+            && ab.role_at(s).is_some_and(|r| r != Role::King)
+            && see::see(ab, s, mover) >= STRONG_THREAT_CP
+            && !(before.board().piece_at(s) == ab.piece_at(s)
+                && see::see(before.board(), s, mover) >= STRONG_THREAT_CP)
+    });
+    let v1 = most_valuable(ab, created)
+        .first()
+        .map_or(0, |&s| see::see(ab, s, mover).max(0));
+    let v_sq = see::see(ab, sq, opponent).max(0);
+    // `saved_pieces(n, v_sq)`: the move took a piece out of a strong threat worth at least as much.
+    let saved = before.board().by_color(mover).into_iter().any(|s| {
+        let threat = see::see(before.board(), s, opponent);
+        threat >= STRONG_THREAT_CP
+            && threat >= v_sq
+            && !(ab.piece_at(s) == before.board().piece_at(s)
+                && see::see(ab, s, opponent) >= STRONG_THREAT_CP)
+    });
+    if saved {
+        return false;
+    }
+    if from_ignored {
+        let trapped = !has_reference_safe_square(after, sq);
+        if trapped || crate::coach::facts::is_absolutely_pinned(ab, sq) {
+            return false;
+        }
+    }
+    let moved_from = if m.is_castle() {
+        // The rook stood on the castling square's corner.
+        m.to()
+    } else {
+        m.from().unwrap_or(m.to())
+    };
+    let moved_value = ab.role_at(moved_to).map_or(0, see::value);
+    if see::see(before.board(), moved_from, opponent) >= STRONG_THREAT_CP && value <= moved_value {
+        return false;
+    }
+    if see::see(ab, moved_to, opponent) >= STRONG_THREAT_CP && value < moved_value {
+        return false;
+    }
+    if v_sq <= cap_val + v1 {
+        return false;
+    }
+    // The moved piece's own threats: hitting something at least as valuable is a counter-attack,
+    // unless that piece is the one attacking `sq`.
+    let targets = (ab.attacks_from(moved_to) & ab.by_color(opponent))
+        .into_iter()
+        .filter(|&s| {
+            ab.role_at(s).is_some_and(|r| r != Role::King) && see::see(ab, s, mover) >= THREAT_CP
+        });
+    let Some(&target) = most_valuable(ab, targets).first() else {
+        return true;
+    };
+    let target_value = ab.role_at(target).map_or(0, see::value);
+    target_value < value || ab.attacks_from(target).contains(sq)
+}
+
+/// `piece_value_of_greatest_discovered_attack` (decompile report 3 §3): the most valuable opponent
+/// piece (not the king) that one of the mover's sliders, uncovered by the move, now strongly
+/// threatens (SEE ≥ 200) and did not before.
+fn reference_discovered_attack_value(before: &Chess, after: &Chess, m: Move) -> i32 {
+    let mover = before.turn();
+    let ab = after.board();
+    let bb = before.board();
+    let moved_to = moved_square(before, m);
+    let sliders = ab.by_color(mover) & (ab.bishops() | ab.rooks() | ab.queens());
+    let mut best = 0;
+    for from in sliders {
+        if from == moved_to || bb.piece_at(from) != ab.piece_at(from) {
+            continue;
+        }
+        let newly = ab.attacks_from(from) & !bb.attacks_from(from) & ab.by_color(mover.other());
+        for target in newly {
+            let Some(role) = ab.role_at(target).filter(|r| *r != Role::King) else {
+                continue;
+            };
+            let strong_now = see::see(ab, target, mover) >= STRONG_THREAT_CP;
+            let strong_before = bb.piece_at(target) == ab.piece_at(target)
+                && see::see(bb, target, mover) >= STRONG_THREAT_CP;
+            if strong_now && !strong_before {
+                best = best.max(see::value(role));
+            }
+        }
+    }
+    best
+}
+
+/// `saved_pieces(n, loss)` for the moved piece (decompile report 3 §2): the mover's pieces other than
+/// the moved one that were strongly threatened before the move by at least `loss`, and no longer
+/// are.
+fn reference_saved_pieces(before: &Chess, after: &Chess, from: Square, loss: i32) -> usize {
+    let opponent = before.turn().other();
+    let (bb, ab) = (before.board(), after.board());
+    bb.by_color(before.turn())
+        .without(from)
+        .into_iter()
+        .filter(|&s| {
+            let threat = see::see(bb, s, opponent);
+            threat >= STRONG_THREAT_CP
+                && threat >= loss
+                && !(ab.piece_at(s) == bb.piece_at(s)
+                    && see::see(ab, s, opponent) >= STRONG_THREAT_CP)
+        })
+        .count()
 }
 
 /// Great exclusion (`is_easy_to_find`): a threatened piece (not a pawn) goes to the only square
@@ -459,7 +763,7 @@ mod tests {
     fn sac(fen: &str, uci: &str, cfg: &BrilliantConfig) -> Option<Sacrifice> {
         let p = pos(fen);
         let m = board::parse_uci(&p, uci).expect("legal move");
-        sacrifice(&p, m, cfg, true, None)
+        sacrifice(&p, m, cfg, true, None, &[])
     }
 
     #[test]
@@ -531,10 +835,10 @@ mod tests {
         };
         let (p, m) = mv(fen, "f3e5");
         assert_eq!(
-            sacrifice(&p, m, &cfg, false, None).map(|s| s.role),
+            sacrifice(&p, m, &cfg, false, None, &[]).map(|s| s.role),
             Some(Role::Knight)
         );
-        assert_eq!(sacrifice(&p, m, &cfg, true, None), None);
+        assert_eq!(sacrifice(&p, m, &cfg, true, None, &[]), None);
     }
 
     #[test]
@@ -545,7 +849,7 @@ mod tests {
         let fen = "r1b1k2r/pppp1Npp/2n5/4p3/2B1n2q/6P1/PPPP3P/RNBQK2R b kq - 0 8";
         let (p, m) = mv(fen, "e4g3");
         assert_eq!(
-            sacrifice(&p, m, &BrilliantConfig::default(), false, None),
+            sacrifice(&p, m, &BrilliantConfig::default(), false, None, &[]),
             Some(Sacrifice {
                 square: Square::G3,
                 role: Role::Knight,
@@ -554,39 +858,42 @@ mod tests {
             })
         );
         assert_eq!(
-            sacrifice(&p, m, &BrilliantConfig::default(), true, None),
+            sacrifice(&p, m, &BrilliantConfig::default(), true, None, &[]),
             None
         );
-        // The rook on h8, en prise since 5.Nxf7 and already left there, is not given up again.
-        let fen = "r1b1k2r/pppp1Npp/8/4p3/2Bn3q/8/PPPP2K1/RNBQ4 b kq - 7 15";
-        let (p, m) = mv(fen, "d7d5");
-        let cfg = BrilliantConfig::default();
-        assert_eq!(sacrifice(&p, m, &cfg, false, Some(Square::H8)), None);
     }
 
     #[test]
-    fn pawn_sacrifices_count_only_when_asked() {
-        // 15...d5 (same game, both players below 1000: Brilliant): Bxd5 wins the pawn. The rook
-        // on h8 was already left en prise by the previous move.
+    fn ignored_threat_walks_back_over_earlier_moves() {
+        // 15...d5 (same game; Chess.com: Brilliant, tagged IgnoresThreat on the rook). The rook on
+        // h8 has been en prise since 5.Nxf7, but no earlier move of Black ignored it as a sacrifice,
+        // so leaving it again now counts. A pawn can never be strongly threatened (SEE ≥ 200).
         let fen = "r1b1k2r/pppp1Npp/8/4p3/2Bn3q/8/PPPP2K1/RNBQ4 b kq - 7 15";
         let (p, m) = mv(fen, "d7d5");
-        let pawns = BrilliantConfig {
-            pawns: true,
-            ..Default::default()
+        let cfg = BrilliantConfig::default();
+        let ignored_rook = Some(Sacrifice {
+            square: Square::H8,
+            role: Role::Rook,
+            see_gain: 500,
+            kind: SacrificeKind::IgnoredThreat,
+        });
+        assert_eq!(sacrifice(&p, m, &cfg, false, None, &[]), ignored_rook);
+        // Had Black's previous move already ignored the rook while it stood threatened, this one
+        // would not.
+        let earlier = EarlierOwnMove {
+            board_after: p.board().clone(),
+            ignored: Some(Square::H8),
         };
         assert_eq!(
-            sacrifice(&p, m, &pawns, false, Some(Square::H8)),
-            Some(Sacrifice {
-                square: Square::D5,
-                role: Role::Pawn,
-                see_gain: 100,
-                kind: SacrificeKind::Moved,
-            })
-        );
-        assert_eq!(
-            sacrifice(&p, m, &BrilliantConfig::default(), false, Some(Square::H8)),
+            sacrifice(&p, m, &cfg, false, None, std::slice::from_ref(&earlier)),
             None
         );
+        // An earlier move that ignored something else does not stop it.
+        let other = EarlierOwnMove {
+            ignored: Some(Square::A8),
+            ..earlier
+        };
+        assert_eq!(sacrifice(&p, m, &cfg, false, None, &[other]), ignored_rook);
     }
 
     #[test]
@@ -688,7 +995,8 @@ mod tests {
             let parsed = &game.moves[ply - 1];
             (
                 parsed.san.as_str(),
-                sacrifice(&game.positions[ply - 1], parsed.mv, &cfg, true, None).map(|s| s.role),
+                sacrifice(&game.positions[ply - 1], parsed.mv, &cfg, true, None, &[])
+                    .map(|s| s.role),
             )
         };
         assert_eq!(at(19), ("Nxb5", Some(Role::Knight)));

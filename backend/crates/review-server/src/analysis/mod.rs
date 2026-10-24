@@ -543,6 +543,16 @@ fn build_review(
         let lines = &analysis.lines;
         let best_line = &lines[0];
         let previous_move = i.checked_sub(1).map(|p| game.moves[p].mv);
+        // The same side's earlier moves, nearest first, for the ignored-threat walk-back.
+        let own_history: Vec<detectors::EarlierOwnMove> = (0..i)
+            .rev()
+            .skip(1)
+            .step_by(2)
+            .map(|k| detectors::EarlierOwnMove {
+                board_after: game.positions[k + 1].board().clone(),
+                ignored: carried[k].ignored_threat,
+            })
+            .collect();
         let phase_after = phases[i + 1];
         let input = facts::MoveInput {
             before,
@@ -579,6 +589,7 @@ fn build_review(
             },
             rating,
             highest_elo,
+            own_history: &own_history,
         };
         let judged = facts::judge_move(&input, cfg);
         carried.push(CarriedFacts {

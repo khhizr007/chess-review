@@ -57,10 +57,10 @@ pub struct ReviewConfig {
 pub struct BrilliantConfig {
     pub enabled: bool,
     /// What the opponent must win by capturing the piece (static exchange, cp) for it to count
-    /// as given up (the reference's "strongly threatened"). Calibrated: 100.
+    /// as given up: the reference's "strongly SEE-threatened" set (collect_eval_terms, SEE ≥ 200).
     pub min_threat_cp: i32,
-    /// A moved pawn can be the piece given up. The decompile allows it, but off: none of 84 pawn
-    /// hits across two runs was a Chess.com Brilliant.
+    /// A moved pawn can be the piece given up. The reference allows it, but a pawn can never be
+    /// strongly threatened (its SEE is at most 100), so this only matters below min_threat_cp 200.
     pub pawns: bool,
     /// A threatened piece left where it stands counts (`IGNORES_THREAT`). Recovered: yes.
     pub ignored_threats: bool,
@@ -82,12 +82,26 @@ pub struct BrilliantConfig {
     /// A moved piece counts only when the move's own exchange loses material (`is_safe`), so a
     /// plain trade is no sacrifice at any rating.
     pub moved_net_loss: bool,
-    /// A piece left standing does not count when the move threatens an opponent piece worth at
-    /// least as much (a counter-attack, not a sacrifice).
+    /// Legacy (`reference_standing` off): a piece left standing does not count when the move
+    /// threatens an opponent piece worth at least as much.
     pub counter_threat_excludes: bool,
-    /// A piece left standing does not count when the move captured a piece worth at least as
-    /// much, at any rating (calibrated: 0 of 22 such hits were Chess.com Brilliants).
+    /// Legacy (`reference_standing` off): a piece left standing does not count when the move
+    /// captured a piece worth at least as much.
     pub standing_trade_excludes: bool,
+    /// "Had a safe square" uses the reference's `Piece::safe_squares`: a move of the piece whose own
+    /// exchange does not lose (an even trade is safe), over the squares it attacks. Recovered: on.
+    pub reference_safe_squares: bool,
+    /// Legacy (`reference_standing` off): an ignored threat counts only if the piece had a safe
+    /// square. The reference has no such test.
+    pub ignored_needs_safe_square: bool,
+    /// Pieces left standing follow the reference's `ignored_threats` (with its walk-back over earlier
+    /// moves), `is_indirect_sacrifice` and `is_sacrifice_of_not_moved` instead of the approximation
+    /// above. Recovered: on (docs/calibration/brilliant-analysis.md §8).
+    pub reference_standing: bool,
+    /// The moved piece's tests follow the reference exactly: strong threats (SEE ≥ 200) in the
+    /// mutual-threat and saved-pieces tests, and a discovered attack is a new strong threat by an
+    /// uncovered slider (`piece_value_of_greatest_discovered_attack`). Recovered: on.
+    pub reference_moved: bool,
 }
 
 /// Great detection (`is_candidate<15>` and its tags, recovered; see
@@ -190,7 +204,7 @@ impl Default for BrilliantConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_threat_cp: 100,
+            min_threat_cp: 200,
             pawns: false,
             ignored_threats: true,
             left_en_prise: true,
@@ -201,6 +215,10 @@ impl Default for BrilliantConfig {
             moved_net_loss: true,
             counter_threat_excludes: true,
             standing_trade_excludes: true,
+            reference_safe_squares: true,
+            ignored_needs_safe_square: true,
+            reference_standing: true,
+            reference_moved: true,
         }
     }
 }

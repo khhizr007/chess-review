@@ -10,9 +10,10 @@ use review_core::{Eval, MissKind, Phase, Precision, ReviewConfig, Side, Value};
 use shakmaty::{Chess, Move, Position, Role, Square};
 
 use super::detectors::{
-    LineMaterial, Sacrifice, SacrificeKind, captures_free_piece, captures_promotion_threat,
-    is_only_safe_square, is_passed_pawn_push, is_recapture, is_safe_promotion, lands_safely,
-    material_gate, removes_attacker, sacrifice, takes_free_piece, threatens_promotion, walk_line,
+    EarlierOwnMove, LineMaterial, Sacrifice, SacrificeKind, captures_free_piece,
+    captures_promotion_threat, is_only_safe_square, is_passed_pawn_push, is_recapture,
+    is_safe_promotion, lands_safely, material_gate, reference_ignored_threat, removes_attacker,
+    sacrifice, takes_free_piece, threatens_promotion, walk_line,
 };
 use super::see;
 use super::{eval_after_first_move, line_input};
@@ -50,6 +51,8 @@ pub(crate) struct MoveInput<'a> {
     /// Rating for the expected-points curve, and the higher of the two players' Elo (0 if unknown).
     pub rating: i32,
     pub highest_elo: u32,
+    /// The same side's earlier moves, nearest first (`ignored_threats`' walk-back).
+    pub own_history: &'a [EarlierOwnMove],
 }
 
 /// What the two moves before this one did: Great's key moments answer the opponent's error, and its
@@ -263,7 +266,14 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
                 .mate_moves()
                 .is_some_and(|n| n < 0)
         });
-    let any_sacrifice = sacrifice(before, m, bc, high_rated, prev.own_ignored_threat);
+    let any_sacrifice = sacrifice(
+        before,
+        m,
+        bc,
+        high_rated,
+        prev.own_ignored_threat,
+        input.own_history,
+    );
     let given_up = any_sacrifice.filter(|_| qualifies);
     let opponent_lost = node_expected_points(opponent_value_before, input.before_is_draw, 2000)
         < bc.opponent_lost_ep;
@@ -363,7 +373,15 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
             && oc(best_value) >= ExpectedOutcome::Equal
             && oc(played_value) <= ExpectedOutcome::Worse,
         brilliant: best_move.is_some_and(|bm| {
-            sacrifice(before, bm, bc, high_rated, prev.own_ignored_threat).is_some()
+            sacrifice(
+                before,
+                bm,
+                bc,
+                high_rated,
+                prev.own_ignored_threat,
+                input.own_history,
+            )
+            .is_some()
         }) && ep_best >= cfg.miss.brilliant_min_best_ep,
         opportunity: input
             .opponent_previous_ep_lost
@@ -389,9 +407,17 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         material_lost,
         best_gain,
         sacrifice: given_up,
-        ignored_threat: any_sacrifice
-            .filter(|s| s.kind == SacrificeKind::IgnoredThreat)
-            .map(|s| s.square),
+        // The reference's IGNORES_THREAT base event, whatever the move's grade: the walk-back of
+        // the same side's later moves reads it.
+        ignored_threat: if bc.reference_standing {
+            (!after.is_check() && !before.is_check() && !m.is_promotion())
+                .then(|| reference_ignored_threat(before, after, m, input.own_history))
+                .flatten()
+        } else {
+            any_sacrifice
+                .filter(|s| s.kind == SacrificeKind::IgnoredThreat)
+                .map(|s| s.square)
+        },
         high_rated,
         good_grade,
         great_tag,
@@ -469,7 +495,16 @@ pub(crate) fn coach_note(
         best_sacrifice: judged
             .best_move
             .filter(|_| !judged.played_is_best)
-            .and_then(|bm| sacrifice(input.before, bm, &cfg.brilliant, judged.high_rated, None))
+            .and_then(|bm| {
+                sacrifice(
+                    input.before,
+                    bm,
+                    &cfg.brilliant,
+                    judged.high_rated,
+                    None,
+                    &[],
+                )
+            })
             .map(|s| s.square),
         swing: Some((oc(judged.mover_value_before), oc(judged.played_value))),
         classification: judged.outcome.classification,

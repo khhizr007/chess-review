@@ -9,12 +9,12 @@
 export type BrilliantConfig = { enabled: boolean, 
 /**
  * What the opponent must win by capturing the piece (static exchange, cp) for it to count
- * as given up (the reference's "strongly threatened"). Calibrated: 100.
+ * as given up: the reference's "strongly SEE-threatened" set (collect_eval_terms, SEE ≥ 200).
  */
 min_threat_cp: number, 
 /**
- * A moved pawn can be the piece given up. The decompile allows it, but off: none of 84 pawn
- * hits across two runs was a Chess.com Brilliant.
+ * A moved pawn can be the piece given up. The reference allows it, but a pawn can never be
+ * strongly threatened (its SEE is at most 100), so this only matters below min_threat_cp 200.
  */
 pawns: boolean, 
 /**
@@ -52,12 +52,34 @@ opponent_lost_ep: number,
  */
 moved_net_loss: boolean, 
 /**
- * A piece left standing does not count when the move threatens an opponent piece worth at
- * least as much (a counter-attack, not a sacrifice).
+ * Legacy (`reference_standing` off): a piece left standing does not count when the move
+ * threatens an opponent piece worth at least as much.
  */
 counter_threat_excludes: boolean, 
 /**
- * A piece left standing does not count when the move captured a piece worth at least as
- * much, at any rating (calibrated: 0 of 22 such hits were Chess.com Brilliants).
+ * Legacy (`reference_standing` off): a piece left standing does not count when the move
+ * captured a piece worth at least as much.
  */
-standing_trade_excludes: boolean, };
+standing_trade_excludes: boolean, 
+/**
+ * "Had a safe square" uses the reference's `Piece::safe_squares`: a move of the piece whose own
+ * exchange does not lose (an even trade is safe), over the squares it attacks. Recovered: on.
+ */
+reference_safe_squares: boolean, 
+/**
+ * Legacy (`reference_standing` off): an ignored threat counts only if the piece had a safe
+ * square. The reference has no such test.
+ */
+ignored_needs_safe_square: boolean, 
+/**
+ * Pieces left standing follow the reference's `ignored_threats` (with its walk-back over earlier
+ * moves), `is_indirect_sacrifice` and `is_sacrifice_of_not_moved` instead of the approximation
+ * above. Recovered: on (docs/calibration/brilliant-analysis.md §8).
+ */
+reference_standing: boolean, 
+/**
+ * The moved piece's tests follow the reference exactly: strong threats (SEE ≥ 200) in the
+ * mutual-threat and saved-pieces tests, and a discovered attack is a new strong threat by an
+ * uncovered slider (`piece_value_of_greatest_discovered_attack`). Recovered: on.
+ */
+reference_moved: boolean, };
