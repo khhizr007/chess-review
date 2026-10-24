@@ -314,3 +314,56 @@ On khhizr7's own moves:
 
 The rest: 12 Chess.com Blunders are our Miss, and 14 Chess.com Misses are our Blunder. Both are the
 Miss detectors' heuristics.
+
+### Batch 5 check of the Great and Blunder rules (2026-10-24)
+
+The rules above were tuned on the 142 older games and are checked here on batch 5 without any change:
+435 new reviews (`batch5-tuning.txt` / `batch5-holdout.txt`).
+- 2 games were skipped (engine timeouts in both runs), so 433 games and 33,411 plies are compared.
+- Both runs turned the coach's threat searches off (`coach.threat_search_depth` 0); they do not
+  affect labels.
+- `b5-base` is `main` at `daf2d0d`; `b5-current` is this branch.
+- "strat" games are a random sample by rating band. "sac" games were chosen for sacrifices and are
+  kept apart.
+
+Precision / recall (Chess.com's count):
+
+| split | run | exact | Great | Blunder | Miss | Mistake | Brilliant |
+|---|---|---:|---|---|---|---|---|
+| tuning strat | base | 65.2% | 0.75 / 0.10 (527) | 0.75 / 0.71 (337) | 0.71 / 0.66 (559) | 0.68 / 0.57 | 0.46 / 0.48 (25) |
+| | current | 67.7% | **0.83 / 0.73** | 0.75 / **0.80** | **0.79** / 0.65 | 0.68 / 0.62 | 0.48 / 0.48 |
+| holdout strat | base | 65.0% | 0.81 / 0.09 (242) | 0.73 / 0.67 (155) | 0.71 / 0.63 (292) | 0.68 / 0.58 | 0.36 / 0.50 (8) |
+| | current | 67.6% | **0.85 / 0.74** | 0.70 / **0.72** | **0.75** / 0.60 | 0.68 / 0.61 | 0.42 / 0.63 |
+| tuning sac | base | 64.6% | 0.76 / 0.08 (389) | 0.77 / 0.68 (229) | 0.69 / 0.64 (321) | 0.71 / 0.59 | 0.62 / 0.58 (31) |
+| | current | 68.8% | **0.86 / 0.81** | 0.78 / **0.78** | **0.81** / 0.61 | 0.70 / 0.70 | 0.64 / 0.58 |
+| holdout sac | base | 65.7% | 0.81 / 0.09 (139) | 0.81 / 0.71 (93) | 0.64 / 0.70 (147) | 0.71 / 0.55 | 0.47 / 0.78 (9) |
+| | current | 69.5% | **0.87 / 0.80** | 0.78 / **0.77** | **0.72** / 0.64 | 0.71 / 0.64 | 0.47 / 0.78 |
+
+Random sample by rating band (max Elo of the game), current rules:
+
+| band (max Elo) | exact (base → current) | Great P / R (base → current) | Blunder P / R (base → current) |
+|---|---|---|---|
+| 0 (≤ 851) | 64.3% → 69.6% | 0.00 / 0.00 → 0.87 / 0.84 | 0.80 / 0.64 → 0.80 / 0.79 |
+| 1 (702–1081) | 64.8% → 67.9% | 0.00 / 0.00 → 0.82 / 0.75 | 0.85 / 0.71 → 0.79 / 0.80 |
+| 2 (1010–1356) | 68.5% → 70.0% | 0.73 / 0.11 → 0.81 / 0.71 | 0.80 / 0.73 → 0.78 / 0.77 |
+| 3 (1316–1611) | 66.9% → 68.8% | 0.77 / 0.17 → 0.90 / 0.73 | 0.73 / 0.74 → 0.73 / 0.77 |
+| 4 (1607–1941) | 65.3% → 67.1% | 0.81 / 0.12 → 0.85 / 0.70 | 0.64 / 0.74 → 0.65 / 0.79 |
+| 5 (1913–3103) | 63.7% → 65.2% | 0.72 / 0.14 → 0.74 / 0.65 | 0.66 / 0.63 → 0.66 / 0.63 |
+| 6 (2260–3299) | 61.5% → 64.0% | 0.79 / 0.18 → 0.86 / 0.72 | 0.56 / 0.68 → 0.58 / 0.75 |
+
+**Findings.**
+- **Great generalises.** Precision is 0.83–0.87 and recall 0.73–0.81 on every split, with holdout as
+  good as tuning, against recall about 0.10 before. It is strong in every rating band, including
+  2000+ games, which the 142 old games barely had. Below 1000 the old gate gave no Great at all.
+- **Blunder recall rises on every split** (strat 0.70 → 0.77). Precision is flat (strat 0.74) and
+  lower than on the 142 games, above all from 1600 up.
+  - Of the 136 extra Blunders in the random sample, 61 are moves Chess.com labels Mistake although
+    its own score grades them Blunder. Chess.com softens them because they do not lose material by
+    its definition; our line walk says they do.
+  - 42 are Chess.com Misses that our Miss detectors did not catch.
+  - Only 31 are engine noise.
+  - The material fact (`is_losing_material_or_getting_mated` from the coach's board events, plan
+    Phase 2 step 4) was skipped on the 142 games, where it touched at most 17 moves. On batch 5 it
+    is the largest Blunder error and worth building.
+- **Miss precision rises on every split** (strat 0.71 → 0.77) for about 2 points of recall.
+- **Exact agreement** rises 2.5–3.8 points on every split, and Brilliant is unchanged.
