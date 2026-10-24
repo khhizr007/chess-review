@@ -488,6 +488,13 @@ struct MoveOutcome {
     ep_lost: f64,
 }
 
+/// Facts about a move that the same side's next move reads (`facts::PreviousMoves`).
+struct CarriedFacts {
+    great_tag: bool,
+    wins_material: bool,
+    ignored_threat: Option<shakmaty::Square>,
+}
+
 fn build_review(
     request: &ReviewRequest,
     infos: &[PositionInfo],
@@ -521,8 +528,8 @@ fn build_review(
     let mut caps = Caps2State::default();
     let mut outcomes: Vec<MoveOutcome> = Vec::with_capacity(game.moves.len());
     let mut opponent_previous_ep_lost: Option<f64> = None;
-    // Per move: (it carried a Great tag, its line wins material), read by the mover's next move.
-    let mut great_tags: Vec<(bool, bool)> = Vec::with_capacity(game.moves.len());
+    // Per move, what the same side's next move reads.
+    let mut carried: Vec<CarriedFacts> = Vec::with_capacity(game.moves.len());
 
     for (i, parsed) in game.moves.iter().enumerate() {
         let before = &game.positions[i];
@@ -566,14 +573,19 @@ fn build_review(
                     .then(|| Value::after_move(infos[i - 1].eval, side(mover_color))),
                 opponent_earlier_value: (i >= 3)
                     .then(|| Value::after_move(infos[i - 2].eval, side(mover_color.other()))),
-                own_great_tag: i >= 2 && great_tags[i - 2].0,
-                own_wins_material: i >= 2 && great_tags[i - 2].1,
+                own_great_tag: i >= 2 && carried[i - 2].great_tag,
+                own_wins_material: i >= 2 && carried[i - 2].wins_material,
+                own_ignored_threat: i.checked_sub(2).and_then(|k| carried[k].ignored_threat),
             },
             rating,
             highest_elo,
         };
         let judged = facts::judge_move(&input, cfg);
-        great_tags.push((judged.great_tag, judged.line_wins_material));
+        carried.push(CarriedFacts {
+            great_tag: judged.great_tag,
+            wins_material: judged.line_wins_material,
+            ignored_threat: judged.ignored_threat,
+        });
         let coach = facts::coach_note(
             &input,
             &judged,

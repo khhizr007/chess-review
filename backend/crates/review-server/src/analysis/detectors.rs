@@ -105,6 +105,18 @@ pub fn walk_line(start: &Chess, mover: Color, pv: &[String], horizon: u32) -> Li
     walk
 }
 
+/// How a move gives a piece up (the reference's base tags).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SacrificeKind {
+    /// The moved piece goes where it can be won (`DIRECT_SACRIFICE_*`, `is_sacrifice`).
+    Moved,
+    /// A threatened piece is left where it stands (`IGNORES_THREAT`).
+    IgnoredThreat,
+    /// The move leaves another piece newly en prise (`INDIRECT_SACRIFICE`), such as a piece
+    /// left behind by castling or uncovered by the moved piece.
+    LeftEnPrise,
+}
+
 /// A piece the mover gives up with a move.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sacrifice {
@@ -112,103 +124,123 @@ pub struct Sacrifice {
     pub role: Role,
     /// Material the opponent wins by capturing it (static exchange, cp).
     pub see_gain: i32,
+    pub kind: SacrificeKind,
 }
 
-/// Static sacrifice test (functional spec §5.5, after the reference
-/// `node_lib::is_sacrifice`). The moved piece (knight, bishop, rook or queen,
-/// or a pawn when `pawns` is set) is given up when, on its destination square:
+/// The sacrifice behind a Brilliant move (functional spec §5.5, after the reference's base tags
+/// 20–23 and `node_lib::is_sacrifice`). The most valuable piece given up is returned.
 ///
-/// - the opponent wins material by capturing it (SEE), and that gain minus
-///   what the move captured is at least `min_sacrifice_cp` (so an even trade
-///   is not a sacrifice), and the gain is at least `min_exchange_gain_cp` or
-///   the piece's whole value, whichever is smaller;
-/// - if it was already threatened before the move, it had a safe square, and
-///   no other own piece and no opponent piece of at least its value was
-///   threatened (a doomed piece or a mutual threat is not a sacrifice).
+/// A piece is given up when the opponent wins at least `min_threat_cp` by capturing it (static
+/// exchange). Pawns count only with `pawns` (moved pawns; a pawn left standing never does).
+/// - **Moved piece:** it had a safe square it could have gone to. If it was already threatened,
+///   no other piece of at least its value (the mover's or the opponent's) was threatened, and
+///   the move does not save more than one other piece worth as much.
+/// - **Ignored threat** (`ignored_threats`): a piece threatened before the move, which had a safe
+///   square to go to, is still threatened after it, and the mover's previous move did not already
+///   ignore it (`ignored_before`).
+/// - **Left en prise** (`left_en_prise`): a piece threatened after the move and not before.
 ///
-/// With `count_pieces_left_hanging`, a knight, bishop, rook or queen that the
-/// move leaves newly en prise without moving it also counts, under the same
-/// net-material test (this includes a piece left behind by castling).
-/// Promotions are never sacrifices. The most valuable piece given up is
-/// returned.
-pub fn static_sacrifice(
+/// The last two need a move that neither gives check, nor answers one, nor promotes, and a piece
+/// that is not pinned to its king. In high-rated games (`high_rated`) the piece must also be worth
+/// more than what the move captured plus the most valuable piece it newly attacks by discovery
+/// (no disguised trade); for newer players there is no such test. Castling and promotions never
+/// sacrifice the moved piece.
+pub fn sacrifice(
     before: &Chess,
     m: Move,
     cfg: &BrilliantConfig,
-    pawns: bool,
+    high_rated: bool,
+    ignored_before: Option<Square>,
 ) -> Option<Sacrifice> {
-    if m.is_promotion() {
-        return None;
-    }
     let mover = before.turn();
     let opponent = mover.other();
     let mut after = before.clone();
     after.play_unchecked(m);
-    let given_up = |role: Role| see::value(role) >= cfg.min_piece_value_cp && role != Role::King;
+    if after.legal_moves().is_empty() {
+        return None;
+    }
     let captured = m.capture().map_or(0, see::value);
-    let gives_up = |gain: i32, role: Role| {
-        gain - captured >= cfg.min_sacrifice_cp
-            && gain >= cfg.min_exchange_gain_cp.min(see::value(role))
-            && gain > 0
-    };
-
-    let to = m.to();
-    let moved = (!m.is_castle())
-        .then(|| after.board().role_at(to))
-        .flatten()
-        .filter(|r| given_up(*r) || (pawns && *r == Role::Pawn));
-    let mut best = moved.and_then(|role| {
-        let gain = see::capture_gain(&after, to);
-        (gives_up(gain, role) && not_doomed_or_mutual(before, m, role)).then_some(Sacrifice {
-            square: to,
+    let discovered = discovered_attack_value(before, &after, m);
+    // A disguised trade: the piece is worth no more than what the move wins at once.
+    let worth_giving = |role: Role| !high_rated || captured + discovered < see::value(role);
+    let threatened_before =
+        |sq: Square| see::see(before.board(), sq, opponent) >= cfg.min_threat_cp;
+    let threat_after = |sq: Square| see::capture_gain(&after, sq);
+    let given_up = |sq: Square, role: Role, kind: SacrificeKind| {
+        let gain = threat_after(sq);
+        (gain >= cfg.min_threat_cp).then_some(Sacrifice {
+            square: sq,
             role,
             see_gain: gain,
+            kind,
         })
-    });
-    if !cfg.count_pieces_left_hanging {
-        return best;
-    }
-    for sq in after.board().by_color(mover) {
-        if sq == to && !m.is_castle() {
-            continue;
-        }
-        let Some(role) = after.board().role_at(sq).filter(|r| given_up(*r)) else {
-            continue;
-        };
-        let gain = see::capture_gain(&after, sq);
-        let was_threatened = before.board().role_at(sq) == Some(role)
-            && before.board().color_at(sq) == Some(mover)
-            && see::see(before.board(), sq, opponent) > 0;
-        if gives_up(gain, role)
-            && !was_threatened
-            && best.is_none_or(|b| see::value(role) > see::value(b.role))
-        {
-            best = Some(Sacrifice {
-                square: sq,
-                role,
-                see_gain: gain,
+    };
+    let mut found: Vec<Sacrifice> = Vec::new();
+
+    // The moved piece.
+    if let Some(from) = m.from().filter(|_| !m.is_castle() && !m.is_promotion()) {
+        let role = m.role();
+        let moved = (role != Role::King && (role != Role::Pawn || cfg.pawns))
+            .then(|| given_up(m.to(), role, SacrificeKind::Moved))
+            .flatten()
+            .filter(|s| {
+                // `is_safe(n)`: the move's own exchange must lose material, so a trade is none.
+                (!cfg.moved_net_loss || s.see_gain > captured)
+                    && !safe_squares(before, from).is_empty()
+                    && (!threatened_before(from) || !mutual_or_bigger_threat(before, from, role))
+                    && saved_pieces(before, &after, from, s.see_gain) <= 1
+                    && worth_giving(role)
             });
+        found.extend(moved);
+    }
+
+    // Pieces the move leaves standing.
+    let quiet_context = !after.is_check() && !before.is_check() && !m.is_promotion();
+    if quiet_context && (cfg.ignored_threats || cfg.left_en_prise) {
+        let moved_to = (!m.is_castle()).then(|| m.to());
+        for sq in after.board().by_color(mover) {
+            let Some(role) = after.board().role_at(sq) else {
+                continue;
+            };
+            if Some(sq) == moved_to || matches!(role, Role::King | Role::Pawn) {
+                continue;
+            }
+            // Castling moves the rook and king; any other piece stands where it stood.
+            let stood = before.board().piece_at(sq) == after.board().piece_at(sq);
+            let kind = if stood && threatened_before(sq) {
+                // Ignoring a threat gives the piece up only if it could have been saved.
+                if !cfg.ignored_threats
+                    || ignored_before == Some(sq)
+                    || safe_squares(before, sq).is_empty()
+                {
+                    continue;
+                }
+                SacrificeKind::IgnoredThreat
+            } else if cfg.left_en_prise {
+                SacrificeKind::LeftEnPrise
+            } else {
+                continue;
+            };
+            let pinned = crate::coach::facts::is_absolutely_pinned(after.board(), sq);
+            // The move hits back at a piece worth as much: an exchange of threats, not a sacrifice.
+            let counter = cfg.counter_threat_excludes && counter_threat(&after, see::value(role));
+            // Leaving a piece for one at least as big that the move just took is a trade.
+            let trade = cfg.standing_trade_excludes && captured >= see::value(role);
+            found.extend(
+                given_up(sq, role, kind)
+                    .filter(|_| !pinned && !counter && !trade && worth_giving(role)),
+            );
         }
     }
-    best
+    found.into_iter().max_by_key(|s| see::value(s.role))
 }
 
-/// For a moved piece that was already threatened on its origin square: it had
-/// a safe square to go to, and no other piece of at least its value (own or
-/// the opponent's) was threatened.
-fn not_doomed_or_mutual(before: &Chess, m: Move, role: Role) -> bool {
-    let Some(from) = m.from() else {
-        return true;
-    };
+/// For a moved piece that was already threatened: another piece of at least its value (the
+/// mover's or the opponent's) was threatened too, so moving it is no sacrifice.
+fn mutual_or_bigger_threat(before: &Chess, from: Square, role: Role) -> bool {
     let mover = before.turn();
     let opponent = mover.other();
     let board = before.board();
-    if see::see(board, from, opponent) <= 0 {
-        return true;
-    }
-    if safe_squares(before, from).is_empty() {
-        return false;
-    }
     let value = see::value(role);
     let threatened = |sq: Square, by: Color| {
         board
@@ -216,16 +248,67 @@ fn not_doomed_or_mutual(before: &Chess, m: Move, role: Role) -> bool {
             .is_some_and(|r| r != Role::King && see::value(r) >= value)
             && see::see(board, sq, by) > 0
     };
-    let own_threatened = board
+    board
         .by_color(mover)
         .without(from)
         .into_iter()
-        .any(|sq| threatened(sq, opponent));
-    let theirs_threatened = board
-        .by_color(opponent)
+        .any(|sq| threatened(sq, opponent))
+        || board
+            .by_color(opponent)
+            .into_iter()
+            .any(|sq| threatened(sq, mover))
+}
+
+/// After the move, the mover (now not to move in `after`) threatens to win an opponent piece (not
+/// the king) worth at least `value` by exchange.
+fn counter_threat(after: &Chess, value: i32) -> bool {
+    let mover = after.turn().other();
+    let board = after.board();
+    board.by_color(mover.other()).into_iter().any(|sq| {
+        board
+            .role_at(sq)
+            .is_some_and(|r| r != Role::King && see::value(r) >= value)
+            && see::see(board, sq, mover) > 0
+    })
+}
+
+/// Other pieces of the mover that the move saves: threatened by at least `loss` before it and
+/// no longer threatened after it (`saved_pieces`).
+fn saved_pieces(before: &Chess, after: &Chess, from: Square, loss: i32) -> usize {
+    let mover = before.turn();
+    let opponent = mover.other();
+    before
+        .board()
+        .by_color(mover)
+        .without(from)
         .into_iter()
-        .any(|sq| threatened(sq, mover));
-    !own_threatened && !theirs_threatened
+        .filter(|&sq| {
+            see::see(before.board(), sq, opponent) >= loss
+                && after.board().piece_at(sq) == before.board().piece_at(sq)
+                && see::capture_gain(after, sq) <= 0
+        })
+        .count()
+}
+
+/// The most valuable opponent piece (not the king) that one of the mover's other pieces attacks
+/// after the move and did not attack before it: the move uncovered the attack.
+fn discovered_attack_value(before: &Chess, after: &Chess, m: Move) -> i32 {
+    let mover = before.turn();
+    let theirs = after.board().by_color(mover.other());
+    after
+        .board()
+        .by_color(mover)
+        .without(m.to())
+        .into_iter()
+        .filter(|&sq| before.board().piece_at(sq) == after.board().piece_at(sq))
+        .flat_map(|sq| {
+            let newly = after.board().attacks_from(sq) & !before.board().attacks_from(sq) & theirs;
+            newly.into_iter().collect::<Vec<_>>()
+        })
+        .filter_map(|target| after.board().role_at(target).filter(|r| *r != Role::King))
+        .map(see::value)
+        .max()
+        .unwrap_or(0)
 }
 
 /// Legal destinations of the piece on `from` where the opponent cannot win it
@@ -287,6 +370,26 @@ pub fn captures_free_piece(before: &Chess, m: Move, min_value: i32) -> bool {
     let mut after = before.clone();
     after.play_unchecked(m);
     captured >= min_value && see::capture_gain(&after, m.to()) <= 0
+}
+
+/// Brilliant exclusion (`threatens_to_promote`): a pawn move that promotes or reaches the seventh
+/// rank.
+pub fn threatens_promotion(before: &Chess, m: Move) -> bool {
+    let seventh = match before.turn() {
+        Color::White => shakmaty::Rank::Seventh,
+        Color::Black => shakmaty::Rank::Second,
+    };
+    m.role() == Role::Pawn && (m.is_promotion() || m.to().rank() == seventh)
+}
+
+/// Brilliant exclusion (`captures_promotion_threat`): the move takes a pawn one step from
+/// promoting.
+pub fn captures_promotion_threat(before: &Chess, m: Move) -> bool {
+    let their_seventh = match before.turn() {
+        Color::White => shakmaty::Rank::Second,
+        Color::Black => shakmaty::Rank::Seventh,
+    };
+    m.capture() == Some(Role::Pawn) && m.to().rank() == their_seventh
 }
 
 /// Great exclusion (`is_easy_to_find`): a promotion the opponent cannot win back by exchange.
@@ -353,10 +456,10 @@ mod tests {
         moves.iter().map(|m| (*m).to_owned()).collect()
     }
 
-    fn sacrifice(fen: &str, uci: &str, cfg: &BrilliantConfig) -> Option<Sacrifice> {
+    fn sac(fen: &str, uci: &str, cfg: &BrilliantConfig) -> Option<Sacrifice> {
         let p = pos(fen);
         let m = board::parse_uci(&p, uci).expect("legal move");
-        static_sacrifice(&p, m, cfg, false)
+        sacrifice(&p, m, cfg, true, None)
     }
 
     #[test]
@@ -366,30 +469,25 @@ mod tests {
         let walk = walk_line(&pos(fen), Color::White, &line(&["c4f7", "e8f7"]), 6);
         assert_eq!(walk.net(), -200);
         assert_eq!(
-            sacrifice(fen, "c4f7", &BrilliantConfig::default()),
+            sac(fen, "c4f7", &BrilliantConfig::default()),
             Some(Sacrifice {
                 square: Square::F7,
                 role: Role::Bishop,
-                see_gain: 300
+                see_gain: 300,
+                kind: SacrificeKind::Moved,
             })
         );
     }
 
     #[test]
     fn quiet_moves_are_never_sacrifices() {
-        let cfg = BrilliantConfig {
-            count_pieces_left_hanging: true,
-            ..Default::default()
-        };
+        let cfg = BrilliantConfig::default();
         // Be2, castling, and a king move.
         let fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 2";
-        assert_eq!(sacrifice(fen, "f1e2", &cfg), None);
+        assert_eq!(sac(fen, "f1e2", &cfg), None);
         let fen = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4";
-        assert_eq!(sacrifice(fen, "e1g1", &cfg), None);
-        assert_eq!(
-            sacrifice("8/8/4k3/8/8/8/5P1P/6K1 w - - 0 1", "g1g2", &cfg),
-            None
-        );
+        assert_eq!(sac(fen, "e1g1", &cfg), None);
+        assert_eq!(sac("8/8/4k3/8/8/8/5P1P/6K1 w - - 0 1", "g1g2", &cfg), None);
     }
 
     #[test]
@@ -404,10 +502,10 @@ mod tests {
             6,
         );
         assert_eq!(walk.net(), 0);
-        assert_eq!(sacrifice(fen, "f3e5", &BrilliantConfig::default()), None);
+        assert_eq!(sac(fen, "f3e5", &BrilliantConfig::default()), None);
         // a3 attacks the bishop; the line a3 Bxc3+ bxc3 gives up nothing.
         let fen = "r1bqk2r/pppp1ppp/2n2n2/4p3/1b2P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 4 4";
-        assert_eq!(sacrifice(fen, "a2a3", &BrilliantConfig::default()), None);
+        assert_eq!(sac(fen, "a2a3", &BrilliantConfig::default()), None);
     }
 
     #[test]
@@ -416,59 +514,79 @@ mod tests {
         // prise; it is worth more than the knight, so it is the piece given up.
         let fen = "rn1qkbnr/ppp2p1p/3p2p1/4p3/2B1P1b1/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5";
         assert_eq!(
-            sacrifice(fen, "f3e5", &BrilliantConfig::default()),
+            sac(fen, "f3e5", &BrilliantConfig::default()),
             Some(Sacrifice {
                 square: Square::D1,
                 role: Role::Queen,
-                see_gain: 600
+                see_gain: 600,
+                kind: SacrificeKind::LeftEnPrise,
             })
         );
-        // Counting only the moved piece, the knight is given up for a pawn.
+        // Counting only the moved piece: for newer players the knight is given up for a pawn, but
+        // in a high-rated game it is a disguised trade, since leaving f3 uncovers Qxg4.
         let cfg = BrilliantConfig {
-            count_pieces_left_hanging: false,
+            left_en_prise: false,
+            ignored_threats: false,
             ..Default::default()
         };
+        let (p, m) = mv(fen, "f3e5");
         assert_eq!(
-            sacrifice(fen, "f3e5", &cfg).map(|s| s.role),
+            sacrifice(&p, m, &cfg, false, None).map(|s| s.role),
             Some(Role::Knight)
         );
+        assert_eq!(sacrifice(&p, m, &cfg, true, None), None);
     }
 
     #[test]
     fn traxler_knight_sacrifice_with_a_discovered_attack() {
-        // 8...Nxg3 (Chess.com game 185058622904: Brilliant). Leaving e4 opens the
-        // queen's line to c4, which no longer makes it a "disguised trade": hxg3
-        // still wins the knight for a pawn.
+        // 8...Nxg3 (Chess.com game 185058622904, both players below 1000: Brilliant). hxg3 wins
+        // the knight for a pawn. Newer players get no disguised-trade test; in a high-rated game
+        // the discovered attack on c4 would make it one.
         let fen = "r1b1k2r/pppp1Npp/2n5/4p3/2B1n2q/6P1/PPPP3P/RNBQK2R b kq - 0 8";
+        let (p, m) = mv(fen, "e4g3");
         assert_eq!(
-            sacrifice(fen, "e4g3", &BrilliantConfig::default()),
+            sacrifice(&p, m, &BrilliantConfig::default(), false, None),
             Some(Sacrifice {
                 square: Square::G3,
                 role: Role::Knight,
-                see_gain: 200
+                see_gain: 200,
+                kind: SacrificeKind::Moved,
             })
         );
-        // The rook on h8, en prise since 5.Nxf7, is not something this move gives up.
+        assert_eq!(
+            sacrifice(&p, m, &BrilliantConfig::default(), true, None),
+            None
+        );
+        // The rook on h8, en prise since 5.Nxf7 and already left there, is not given up again.
         let fen = "r1b1k2r/pppp1Npp/8/4p3/2Bn3q/8/PPPP2K1/RNBQ4 b kq - 7 15";
-        assert_eq!(sacrifice(fen, "d7d5", &BrilliantConfig::default()), None);
+        let (p, m) = mv(fen, "d7d5");
+        let cfg = BrilliantConfig::default();
+        assert_eq!(sacrifice(&p, m, &cfg, false, Some(Square::H8)), None);
     }
 
     #[test]
     fn pawn_sacrifices_count_only_when_asked() {
-        // 15...d5 (same game, both players below 1000: Brilliant): Bxd5 wins the pawn.
+        // 15...d5 (same game, both players below 1000: Brilliant): Bxd5 wins the pawn. The rook
+        // on h8 was already left en prise by the previous move.
         let fen = "r1b1k2r/pppp1Npp/8/4p3/2Bn3q/8/PPPP2K1/RNBQ4 b kq - 7 15";
-        let p = pos(fen);
-        let m = board::parse_uci(&p, "d7d5").unwrap();
-        let cfg = BrilliantConfig::default();
+        let (p, m) = mv(fen, "d7d5");
+        let pawns = BrilliantConfig {
+            pawns: true,
+            ..Default::default()
+        };
         assert_eq!(
-            static_sacrifice(&p, m, &cfg, true),
+            sacrifice(&p, m, &pawns, false, Some(Square::H8)),
             Some(Sacrifice {
                 square: Square::D5,
                 role: Role::Pawn,
-                see_gain: 100
+                see_gain: 100,
+                kind: SacrificeKind::Moved,
             })
         );
-        assert_eq!(static_sacrifice(&p, m, &cfg, false), None);
+        assert_eq!(
+            sacrifice(&p, m, &BrilliantConfig::default(), false, Some(Square::H8)),
+            None
+        );
     }
 
     #[test]
@@ -477,7 +595,7 @@ mod tests {
         // guards e2, so the queen on e3 can take the bishop.
         let fen = "r3k2r/p2b1pp1/8/1pp4p/2p5/Q1P1q1PP/PP1NB1P1/R3KR2 w Qkq - 0 19";
         assert_eq!(
-            sacrifice(fen, "e1c1", &BrilliantConfig::default()).map(|s| (s.square, s.role)),
+            sac(fen, "e1c1", &BrilliantConfig::default()).map(|s| (s.square, s.role)),
             Some((Square::E2, Role::Bishop))
         );
     }
@@ -486,7 +604,7 @@ mod tests {
     fn promotions_are_not_sacrifices() {
         // g8=Q+ Kxg8: the new queen is captured, but nothing was given up.
         let fen = "8/6Pk/8/4Q3/8/2P5/PP6/2K1R3 w - - 1 51";
-        assert_eq!(sacrifice(fen, "g7g8q", &BrilliantConfig::default()), None);
+        assert_eq!(sac(fen, "g7g8q", &BrilliantConfig::default()), None);
     }
 
     fn mv(fen: &str, uci: &str) -> (Chess, Move) {
@@ -558,7 +676,7 @@ mod tests {
     fn doomed_piece_is_not_a_sacrifice() {
         // The bishop on a7 is lost wherever it goes, so Bxb6 gives nothing up.
         let fen = "r3k3/B1p5/1p6/8/8/8/8/4K3 w - - 0 1";
-        assert_eq!(sacrifice(fen, "a7b6", &BrilliantConfig::default()), None);
+        assert_eq!(sac(fen, "a7b6", &BrilliantConfig::default()), None);
     }
 
     #[test]
@@ -570,7 +688,7 @@ mod tests {
             let parsed = &game.moves[ply - 1];
             (
                 parsed.san.as_str(),
-                static_sacrifice(&game.positions[ply - 1], parsed.mv, &cfg, false).map(|s| s.role),
+                sacrifice(&game.positions[ply - 1], parsed.mv, &cfg, true, None).map(|s| s.role),
             )
         };
         assert_eq!(at(19), ("Nxb5", Some(Role::Knight)));

@@ -58,13 +58,15 @@ async fn hanging_piece_sacrifice_rated_best_is_brilliant() {
 }
 
 #[tokio::test]
-async fn sacrifice_that_is_not_the_best_move_is_not_brilliant() {
+async fn near_best_sacrifice_is_brilliant() {
+    // `is_candidate<13>`: a move graded Good or better qualifies when the best move does not force
+    // mate, so the sacrifice need not be the engine's first choice.
     let engine = ScriptedEngine::default().script(
         GREEK_GIFT,
         &[(150, &["c1d2"]), (140, &["d3h7", "g8h7"]), (-40, &["e1g1"])],
     );
     let r = review("8. Bxh7+ Kxh7", engine).await;
-    assert_eq!(first_move(&r), Some(Classification::Excellent));
+    assert_eq!(first_move(&r), Some(Classification::Brilliant));
 }
 
 #[tokio::test]

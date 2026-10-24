@@ -300,3 +300,49 @@ with the rules unchanged:
   0.74: Chess.com softens many more Blunders that do not lose material by its definition than the
   142 games showed.
 - **Next step:** the coach-event material fact (§4 Phase 2 step 4), now that it has enough examples.
+
+
+## 8. Brilliant rebuilt (2026-10-24)
+
+### 8.1 What Chess.com's code does (libcee 4.10.15, circumstance 13)
+
+- Brilliant is checked before Tricky and Great, so it always wins.
+- Eligible base tags are 15–25: a direct sacrifice (capture or en prise), an ignored threat, an
+  indirect sacrifice, their `_MATE` forms, fork-if-captured and underpromotion.
+- `is_candidate<13>`: not book; EP after the move ≥ 0.47; no capture of a pawn about to promote and
+  no promotion threat; when answering check, the second line must not get mated; and the move is
+  Best, or graded Good or better while the best move does not force mate.
+- Gates: in the endgame the position must be critical (as for Great) or the line must win ≥ 200; the
+  move is rejected when the mover is already ahead by the sacrificed piece's value and the opponent's
+  EP before it, at rating 2000, is below 0.10.
+- `is_sacrifice` concerns the moved piece: its square is not safe, it is strongly threatened after
+  the move, it had a safe square, and in high-rated games (max Elo ≥ 1000) it is worth more than what
+  the move captured plus the best piece it newly attacks by discovery. Pieces left standing go through
+  `is_sacrifice_of_not_moved`, only partly decoded.
+
+### 8.2 Departures from the decompile (data-driven)
+
+Each was found by tallying our hits against Chess.com's labels on all 575 games.
+
+| Change | Config | Why |
+|---|---|---|
+| A moved piece must lose material in its own exchange (SEE gain > captured) | `moved_net_loss` | `is_safe(n)` rejects trades; without it trades fired at every rating |
+| A piece left standing does not count when the move threatens an opponent piece worth as much | `counter_threat_excludes` | an exchange of threats, not a sacrifice |
+| A piece left standing does not count when the move captured a piece worth as much | `standing_trade_excludes` | 0 of 22 such hits were Chess.com Brilliants |
+| Moved pawns do not count | `pawns` off | 0 of 84 pawn hits across two runs were Chess.com Brilliants |
+
+The last three are probably parts of `is_sacrifice_of_not_moved` and `strong_see_threats_against`
+that the decompile did not reach.
+
+### 8.3 Results (all 575 games, 98 Chess.com Brilliants)
+
+| Run | Rule | Brilliant P / R | Tuning P / R | Holdout P / R | Exact |
+|---|---|---|---|---|---|
+| br-base | old rule | 0.53 / 0.55 | 0.56 / 0.53 | 0.47 / 0.62 | 68.9% |
+| br-v1 | decompile as read | 0.14 / 0.79 | 0.15 / 0.82 | 0.10 / 0.69 | 68.1% |
+| br-v2 | + net loss, counter-threat | 0.41 / 0.78 | | | 68.8% |
+| br-v3 | + standing trade, no pawns | 0.51 / 0.79 | 0.53 / 0.81 | 0.45 / 0.73 | 68.9% |
+
+Great is unchanged (P 0.84, R 0.76). The remaining extras are mostly pieces left en prise (19 right,
+44 wrong in br-v3) and Excellent or Good moves (14 right, 30 wrong); moved-piece sacrifices by the best
+move are right 3 times in 4.

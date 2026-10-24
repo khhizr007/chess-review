@@ -7,12 +7,12 @@ use review_core::classification::{
 };
 use review_core::expected_points::{ExpectedOutcome, expected_outcome, node_expected_points};
 use review_core::{Eval, MissKind, Phase, Precision, ReviewConfig, Side, Value};
-use shakmaty::{Chess, Move, Position, Role};
+use shakmaty::{Chess, Move, Position, Role, Square};
 
 use super::detectors::{
-    LineMaterial, Sacrifice, captures_free_piece, is_only_safe_square, is_passed_pawn_push,
-    is_recapture, is_safe_promotion, lands_safely, material_gate, removes_attacker,
-    static_sacrifice, takes_free_piece, walk_line,
+    LineMaterial, Sacrifice, SacrificeKind, captures_free_piece, captures_promotion_threat,
+    is_only_safe_square, is_passed_pawn_push, is_recapture, is_safe_promotion, lands_safely,
+    material_gate, removes_attacker, sacrifice, takes_free_piece, threatens_promotion, walk_line,
 };
 use super::see;
 use super::{eval_after_first_move, line_input};
@@ -70,6 +70,9 @@ pub(crate) struct PreviousMoves {
     /// The mover's own previous move already won material along its line (the reference's
     /// `is_any_previous_move_in_sequence_wins_material`): taking it now is no new key moment.
     pub own_wins_material: bool,
+    /// The threatened piece the mover's own previous move left standing, if any: leaving it again
+    /// is not a new sacrifice.
+    pub own_ignored_threat: Option<Square>,
 }
 
 impl PreviousMoves {
@@ -102,9 +105,13 @@ pub(crate) struct MoveJudgement {
     pub played_walk: LineMaterial,
     pub material_lost: i32,
     pub best_gain: i32,
+    /// The piece the move gives up, when the move is good enough for a Brilliant.
     pub sacrifice: Option<Sacrifice>,
-    /// Pawns count as sacrifices (low-rated games).
-    pub pawns: bool,
+    /// The square of a threatened piece the move leaves standing (an ignored threat, whatever the
+    /// move's grade): the mover's next move does not ignore it again.
+    pub ignored_threat: Option<Square>,
+    /// `max(WhiteElo, BlackElo)` reaches `great_find.high_rated_min` (`TEP::is_high_rated`).
+    pub high_rated: bool,
     pub good_grade: bool,
     /// The move carried a Great tag (before Brilliant takes precedence), and its line wins
     /// material: the next move by the same side reads both.
@@ -159,8 +166,6 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
     let mover_value_before = Value::after_move(input.eval_before, mover);
     let ep_before = node_expected_points(mover_value_before, input.before_is_draw, rating);
     let opponent_value_before = Value::after_move(input.eval_before, opponent);
-    let opponent_ep_before =
-        node_expected_points(opponent_value_before, input.before_is_draw, rating);
 
     let is_forced = before.legal_moves().len() == 1;
     let is_book = input.is_book;
@@ -217,53 +222,66 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
     let mover_completely_winning_before =
         oc(mover_value_before) == ExpectedOutcome::CompletelyWinning;
 
-    // Brilliant (Chess.com: "a good piece sacrifice"): the engine's best move
-    // gives up material (static exchange), the mover is not in a bad position
-    // after it and would not be completely winning without it, and the
-    // recovered gates hold.
-    let bc = &cfg.brilliant;
-    let second_value = lines
-        .get(1)
-        .map(|l| Value::after_move(eval_after_first_move(l, mover), mover));
-    let second_drops_bucket = second_value.is_some_and(|v| oc(v) < oc(played_value));
-    let second_clearly_worse = bc.min_gap_to_second_best <= 0.0
-        || second_drops_bucket
-        || second_value.is_some_and(|v| {
-            ep_played - node_expected_points(v, false, rating) >= bc.min_gap_to_second_best
-        });
-    // A forced mate on the second line is not "winning anyway": Chess.com rates
-    // mating sacrifices Brilliant even when other moves mate too.
-    let winning_without_it = second_value.is_some_and(|v| {
-        !v.mate_moves().is_some_and(|n| n > 0)
-            && node_expected_points(v, false, rating) >= bc.max_alternative_ep
-    });
+    let gf = &cfg.great_find;
+    let prev = &input.previous_moves;
+    // `TEP::is_high_rated`: below it Brilliant and Great take their more generous branches.
+    let high_rated = input.highest_elo as i32 >= gf.high_rated_min;
+    let is_best = grade == Some(Precision::Best);
     let played_mate = played_value.mate_moves();
-    let pawns =
-        bc.pawn_sacrifice_below_elo > 0 && (input.highest_elo as i32) < bc.pawn_sacrifice_below_elo;
-    let sacrifice = played_is_best
-        .then(|| static_sacrifice(before, m, bc, pawns))
-        .flatten();
+    // The position is critical (base tag 210, shared by Brilliant and Great): the best move keeps a
+    // playable position and the second line loses at least a tenth of a point without staying
+    // clearly better.
+    let position_critical = is_best
+        && lines.get(1).is_some_and(|alt| {
+            let alt_value = Value::after_move(eval_after_first_move(alt, mover), mover);
+            let alt_ep = node_expected_points(alt_value, false, rating);
+            // Interposing a piece that is lost there does not count as an alternative.
+            let unsafe_block = before.is_check()
+                && board::parse_uci(before, &alt.pv[0]).is_some_and(|a| {
+                    a.role() != Role::King && !a.is_capture() && !lands_safely(before, a)
+                });
+            !unsafe_block
+                && ep_best >= gf.critical_min_best_ep
+                && alt_ep < gf.critical_max_alternative_ep
+                && ep_best - alt_ep >= gf.critical_min_alternative_loss
+        });
+
+    // Brilliant (`is_candidate<13>`, `compute_board_event<13>`; great-blunder-analysis.md §8): a
+    // sacrifice by the best move, or by a Good one when the best move does not force mate, that
+    // leaves the mover in a playable position; not when answering check into a mated second line,
+    // nor around a promotion; in the endgame only in a critical position or for a material gain;
+    // and not when the mover is already a piece up against a lost opponent.
+    let bc = &cfg.brilliant;
+    let best_forces_mate = best_value.mate_moves().is_some_and(|n| n >= 0);
+    let qualifies = is_best
+        || (bc.near_best
+            && matches!(grade, Some(Precision::Excellent | Precision::Good))
+            && !best_forces_mate);
+    let answers_check_ok = !before.is_check()
+        || lines.get(1).is_some_and(|l| {
+            !Value::after_move(eval_after_first_move(l, mover), mover)
+                .mate_moves()
+                .is_some_and(|n| n < 0)
+        });
+    let any_sacrifice = sacrifice(before, m, bc, high_rated, prev.own_ignored_threat);
+    let given_up = any_sacrifice.filter(|_| qualifies);
+    let opponent_lost = node_expected_points(opponent_value_before, input.before_is_draw, 2000)
+        < bc.opponent_lost_ep;
     let balance_after = board::balance(after.board(), mover_color);
     facts.events.brilliant = bc.enabled
-        && played_is_best
-        && second_clearly_worse
-        && !winning_without_it
-        && !played_mate.is_some_and(|n| n < 0)
-        && !(bc.exclude_mating_moves && played_mate.is_some_and(|n| n >= 0))
+        && qualifies
+        && answers_check_ok
+        && !threatens_promotion(before, m)
+        && !captures_promotion_threat(before, m)
         && ep_played >= bc.min_ep_after
-        && sacrifice.is_some_and(|s| {
-            material_gate(balance_after, see::value(s.role)) || opponent_ep_before >= 0.10
-        })
-        && (endgame_gain_ok(&played_walk, bc.endgame_min_gain_cp) || second_drops_bucket);
+        && given_up
+            .is_some_and(|s| material_gate(balance_after, see::value(s.role)) || !opponent_lost)
+        && (position_critical || endgame_gain_ok(&played_walk, bc.endgame_min_gain_cp));
 
     // Great (`is_candidate<15>` and its tags; docs/calibration/great-blunder-analysis.md §2.1): a
     // Best or Excellent move that is not easy to find and is a key moment after the opponent's
     // error, the only good move in a critical position, or a move that makes the mover winning or
     // brings them back to equal. Low-rated games (`!high_rated`) get the more generous branch.
-    let gf = &cfg.great_find;
-    let prev = &input.previous_moves;
-    let high_rated = input.highest_elo as i32 >= gf.high_rated_min;
-    let is_best = grade == Some(Precision::Best);
     // Our line's reply to the move, if it captures.
     let reply_captures = played_pv
         .get(1)
@@ -316,23 +334,8 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
     let line_wins_material = played_walk.net() > gf.wins_material_min_gain_cp;
     let wins_material = !free_piece && line_wins_material && !prev.own_wins_material;
     let key_tag = key_moment && (forces_mate || wins_material || (!high_rated && free_piece));
-    // The only good move: the best move keeps a playable position and the second line loses at
-    // least a tenth of a point without staying clearly better.
-    let critical = is_best
-        && !obvious_recapture
-        && lines.get(1).is_some_and(|alt| {
-            let alt_value = Value::after_move(eval_after_first_move(alt, mover), mover);
-            let alt_ep = node_expected_points(alt_value, false, rating);
-            // Interposing a piece that is lost there does not count as an alternative.
-            let unsafe_block = before.is_check()
-                && board::parse_uci(before, &alt.pv[0]).is_some_and(|a| {
-                    a.role() != Role::King && !a.is_capture() && !lands_safely(before, a)
-                });
-            !unsafe_block
-                && ep_best >= gf.critical_min_best_ep
-                && alt_ep < gf.critical_max_alternative_ep
-                && ep_best - alt_ep >= gf.critical_min_alternative_loss
-        });
+    // The only good move, unless it is an obvious recapture.
+    let critical = position_critical && !obvious_recapture;
     // The outcome changed since before the mover's own previous move: from the opponent's equal or
     // better to the mover's winning, or from the opponent's winning back to the mover's equal.
     let earlier = prev.opponent_earlier_value.map(oc);
@@ -359,8 +362,9 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         comeback: oc(mover_value_before) <= ExpectedOutcome::Worse
             && oc(best_value) >= ExpectedOutcome::Equal
             && oc(played_value) <= ExpectedOutcome::Worse,
-        brilliant: best_move.is_some_and(|bm| static_sacrifice(before, bm, bc, pawns).is_some())
-            && ep_best >= cfg.miss.brilliant_min_best_ep,
+        brilliant: best_move.is_some_and(|bm| {
+            sacrifice(before, bm, bc, high_rated, prev.own_ignored_threat).is_some()
+        }) && ep_best >= cfg.miss.brilliant_min_best_ep,
         opportunity: input
             .opponent_previous_ep_lost
             .is_some_and(|l| l >= cfg.miss.opportunity_min_opponent_ep_lost),
@@ -384,8 +388,11 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         played_walk,
         material_lost,
         best_gain,
-        sacrifice,
-        pawns,
+        sacrifice: given_up,
+        ignored_threat: any_sacrifice
+            .filter(|s| s.kind == SacrificeKind::IgnoredThreat)
+            .map(|s| s.square),
+        high_rated,
         good_grade,
         great_tag,
         line_wins_material,
@@ -462,7 +469,7 @@ pub(crate) fn coach_note(
         best_sacrifice: judged
             .best_move
             .filter(|_| !judged.played_is_best)
-            .and_then(|bm| static_sacrifice(input.before, bm, &cfg.brilliant, judged.pawns))
+            .and_then(|bm| sacrifice(input.before, bm, &cfg.brilliant, judged.high_rated, None))
             .map(|s| s.square),
         swing: Some((oc(judged.mover_value_before), oc(judged.played_value))),
         classification: judged.outcome.classification,

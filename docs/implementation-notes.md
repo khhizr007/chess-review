@@ -96,43 +96,28 @@ softened Blunders that lose material through a later tactic, such as a fork. See
 
 ### Event detectors
 
-- **Brilliant** follows Chess.com's published definition (help article "How are moves classified?":
-  a Brilliant move is "a good piece sacrifice"; the mover must not be in a bad position after it,
-  must not be completely winning even without it, and newer players get a more generous sacrifice
-  test). It requires all of (`brilliant.*` in the config):
-  - the played move is the engine's best move (line 1);
-  - **no** gap to the second-best move is required (`min_gap_to_second_best`, 0 = off). Chess.com
-    requires the opposite (a sacrifice that is the only good move is a Great move): 4 of its 7
-    Brilliants in the 59-game dataset had a second-best move within 0.06 EP;
-  - not completely winning anyway: the second-best line's EP is below `max_alternative_ep` (0.90,
-    where Completely Winning starts). A forced mate on the second line does not count: Chess.com rated
-    a mating bishop sacrifice Brilliant although other moves mated too;
-  - the mover is not mated after the move and its EP after it is at least `min_ep_after` (0.50);
-    mating moves are allowed (`exclude_mating_moves`, off);
-  - a **static sacrifice** (`static_sacrifice`): the net material given up, what the opponent wins by
-    exchange (SEE) on the piece's square minus what the move captured, is at least
-    `min_sacrifice_cp` (100), so an even trade is not a sacrifice, and the exchange itself wins at
-    least `min_exchange_gain_cp` (200), or the whole pawn when a pawn is given up. (The 200 drops
-    rook "sacrifices" that lose only an exchange's worth; every Chess.com Brilliant in the dataset
-    gives up at least a minor piece for a pawn.) The piece is
-    - the moved knight, bishop, rook or queen. If it was already threatened before the move, it had a
-      safe square, and no other own piece and no opponent piece of at least its value was threatened;
-    - or a knight, bishop, rook or queen the move leaves newly en prise without moving it
-      (`count_pieces_left_hanging`, on): the queen in Legal's trap (5.Nxe5), a bishop left behind by
-      castling. A piece that was already en prise before the move does not count;
-    - or, when both players are below `pawn_sacrifice_below_elo` (1000), the moved pawn
-      (Chess.com: 15...d5 in game 185058622904, both players rated about 950);
-    - never a promotion.
-    The earlier "disguised trade" test (capture plus discovered attack) is gone: it rejected the
-    Traxler sacrifice 8...Nxg3, whose discovered attack on c4 wins nothing;
-  - the recovered gates: the mover's balance after the move is below the sacrificed piece's value,
-    **or** the opponent's EP before the move is ≥ 0.10; in the endgame a gain of at least 200 along
-    the line, unless the second-best move drops an outcome bucket.
-  - Calibration (`docs/calibration/log.md`): the rule finds 7 of the 9 Chess.com Brilliants in 60
-    games and gives 5 others. The misses: 21...gxf3 is not our engine's best move, and 20...Bxh2+
-    fails the recovered material gate by equality. One identical position (the Traxler
-    8...Nxg3 in games 185058622904 and 185438343298, same score) is Brilliant in one review and Best in
-    the other, so part of Chess.com's decision is not visible in the review data.
+- **Brilliant** follows Chess.com's own rule, recovered from libcee 4.10.15 (circumstance 13; details
+  and results in `docs/calibration/great-blunder-analysis.md` §8). It requires all of
+  (`brilliant.*` in the config):
+  - the move is Best, or graded Excellent or Good while the best move does not force mate
+    (`near_best`);
+  - the mover's EP after the move is at least `min_ep_after` (0.47); when answering check, the
+    second line is not mated; the move neither threatens to promote nor takes a pawn about to;
+  - a **sacrifice** (`detectors::sacrifice`): a piece the opponent wins at least `min_threat_cp`
+    (100) by exchange on. The piece is
+    - the moved piece, which had a safe square, loses material in its own exchange
+      (`moved_net_loss`), and is not a doomed or mutual-threat piece; pawns only with `pawns` (off);
+    - or a piece left standing: one already threatened that could have been saved
+      (`ignored_threats`, not if the previous move already left it), or one newly en prise
+      (`left_en_prise`), e.g. the queen in Legal's trap or a piece left behind by castling. Not when
+      the move gives or answers check or promotes, nor when the move captured a piece worth as much
+      (`standing_trade_excludes`) or threatens one (`counter_threat_excludes`);
+    - in high-rated games (max Elo ≥ `great_find.high_rated_min`) worth more than what the move
+      captured plus the best piece it newly attacks by discovery (no disguised trade). Newer players
+      get no such test;
+  - the recovered gates: not when the mover is already ahead by the piece's value against an
+    opponent whose EP before the move (at rating 2000) is below `opponent_lost_ep` (0.10); in the
+    endgame the position is critical or the line wins at least `endgame_min_gain_cp` (200).
 - **Great Find** (`facts::judge_move`, rebuilt 2026-10-23 on the recovered structure;
   `docs/calibration/great-blunder-analysis.md` §2.1 and §5) is a candidate with a tag.
   - `high_rated` is `max(Elo) ≥ great_find.high_rated_min` (1000). It picks a branch, and is not a

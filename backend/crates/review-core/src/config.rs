@@ -47,51 +47,47 @@ pub struct ReviewConfig {
     pub coach: CoachConfig,
 }
 
-/// Brilliant detection after Chess.com's published definition ("a good piece
-/// sacrifice": the best move, not in a bad position after it, not completely
-/// winning without it), with a static sacrifice test (SEE) and the recovered
-/// gates. Thresholds are calibrated on Chess.com reviews (`docs/calibration/log.md`).
+/// Brilliant detection (`is_candidate<13>`, `compute_board_event<13>` and the sacrifice base tags,
+/// recovered; see `docs/calibration/great-blunder-analysis.md` §8): a Best move, or a Good one when
+/// the best move does not force mate, that sacrifices a piece and leaves the mover in a playable
+/// position. Newer players (below `great_find.high_rated_min`) get the more generous sacrifice test.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(default)]
 #[ts(export)]
 pub struct BrilliantConfig {
     pub enabled: bool,
-    /// Minimum net material (cp) given up: what the opponent wins by static
-    /// exchange on the sacrificed piece's square, minus what the move captured.
-    pub min_sacrifice_cp: i32,
-    /// The opponent's exchange must also win at least this much (cp) in total, or
-    /// the whole piece when it is worth less (a pawn). Calibrated: 200; every
-    /// Chess.com Brilliant in the dataset gives up at least a minor piece for a pawn.
-    pub min_exchange_gain_cp: i32,
-    /// Minimum value (cp) of the piece given up (excludes pawns, but see
-    /// `pawn_sacrifice_below_elo`).
-    pub min_piece_value_cp: i32,
-    /// Chess.com is "more generous in defining a piece sacrifice for newer
-    /// players": below this `max(WhiteElo, BlackElo)` a pawn the move puts en
-    /// prise also counts. 0 turns it off. Calibrated: 1000.
-    pub pawn_sacrifice_below_elo: i32,
-    /// The second-best move must lose at least this much EP against the played
-    /// move, or fall into a lower outcome bucket. 0 turns the test off (the
-    /// default): Chess.com requires the opposite, that a non-sacrificing move
-    /// was available, and most of its Brilliants have a near-equal second best.
-    pub min_gap_to_second_best: f64,
-    /// No Brilliant for a move that forces mate itself. Off: Chess.com rates
-    /// mating sacrifices Brilliant.
-    pub exclude_mating_moves: bool,
-    /// "You should not be completely winning even if you hadn't found the move":
-    /// the second-best move's EP must be below this (Completely Winning starts
-    /// at 0.90). A forced mate on the second-best line does not count.
-    pub max_alternative_ep: f64,
-    /// Also count a piece the move leaves newly en prise without moving it (the
-    /// queen in Legal's trap, a bishop left behind by castling), not only the
-    /// moved piece.
-    pub count_pieces_left_hanging: bool,
-    /// In the endgame a sacrifice also needs this much material gain along the
-    /// line, unless the second-best move drops an outcome bucket. Recovered: 200.
-    pub endgame_min_gain_cp: i32,
-    /// "You should not be in a bad position after a Brilliant move": the mover's
-    /// EP after the move must be at least this.
+    /// What the opponent must win by capturing the piece (static exchange, cp) for it to count
+    /// as given up (the reference's "strongly threatened"). Calibrated: 100.
+    pub min_threat_cp: i32,
+    /// A moved pawn can be the piece given up. The decompile allows it, but off: none of 84 pawn
+    /// hits across two runs was a Chess.com Brilliant.
+    pub pawns: bool,
+    /// A threatened piece left where it stands counts (`IGNORES_THREAT`). Recovered: yes.
+    pub ignored_threats: bool,
+    /// A piece the move leaves newly en prise counts (`INDIRECT_SACRIFICE`): a piece left behind by
+    /// castling, or one the moved piece stopped guarding. Recovered: yes.
+    pub left_en_prise: bool,
+    /// A move graded Good or better qualifies when the best move does not force mate; otherwise
+    /// only the best move does. Recovered: yes.
+    pub near_best: bool,
+    /// "You should not be in a bad position after a Brilliant move": the mover's EP after the
+    /// move must be at least this (`is_bad_position`). Recovered: 0.47.
     pub min_ep_after: f64,
+    /// In the endgame a sacrifice also needs this much material gain along the line, unless the
+    /// position is critical (the Great tag's test). Recovered: 200.
+    pub endgame_min_gain_cp: i32,
+    /// No Brilliant for a mover already ahead by the sacrificed piece's value when the opponent's
+    /// EP before the move, at rating 2000, was below this. Recovered: 0.10.
+    pub opponent_lost_ep: f64,
+    /// A moved piece counts only when the move's own exchange loses material (`is_safe`), so a
+    /// plain trade is no sacrifice at any rating.
+    pub moved_net_loss: bool,
+    /// A piece left standing does not count when the move threatens an opponent piece worth at
+    /// least as much (a counter-attack, not a sacrifice).
+    pub counter_threat_excludes: bool,
+    /// A piece left standing does not count when the move captured a piece worth at least as
+    /// much, at any rating (calibrated: 0 of 22 such hits were Chess.com Brilliants).
+    pub standing_trade_excludes: bool,
 }
 
 /// Great detection (`is_candidate<15>` and its tags, recovered; see
@@ -194,16 +190,17 @@ impl Default for BrilliantConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_sacrifice_cp: 100,
-            min_exchange_gain_cp: 200,
-            min_piece_value_cp: 300,
-            pawn_sacrifice_below_elo: 1000,
-            min_gap_to_second_best: 0.0,
-            exclude_mating_moves: false,
-            max_alternative_ep: 0.90,
-            count_pieces_left_hanging: true,
+            min_threat_cp: 100,
+            pawns: false,
+            ignored_threats: true,
+            left_en_prise: true,
+            near_best: true,
+            min_ep_after: 0.47,
             endgame_min_gain_cp: 200,
-            min_ep_after: 0.50,
+            opponent_lost_ep: 0.10,
+            moved_net_loss: true,
+            counter_threat_excludes: true,
+            standing_trade_excludes: true,
         }
     }
 }

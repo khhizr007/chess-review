@@ -231,8 +231,10 @@ pub fn judge_sideline(
             .checked_sub(2)
             .and_then(game_ply)
             .is_some_and(|p| p.classification == Some(Classification::GreatFind)),
-        // Not kept in the review; only the wins-material key moment reads it.
+        // Not kept in the review: only the wins-material key moment and the ignored-threat
+        // sacrifice read these.
         own_wins_material: false,
+        own_ignored_threat: None,
     };
 
     let input = MoveInput {
