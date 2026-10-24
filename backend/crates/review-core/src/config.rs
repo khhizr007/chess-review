@@ -119,6 +119,9 @@ pub struct BrilliantConfig {
     /// Report 4 §5: an ignored piece that is relatively pinned counts only if another Good-or-better
     /// move loses no material (`defensible_by_alternative`).
     pub ref_relative_pin_defensible: bool,
+    /// Report §12.3: in `is_sacrifice_of_not_moved`, the threats the move created exclude only the
+    /// SEE-threateners of the sacrificed square (`see_threats_to`), not every geometric attacker.
+    pub ref_created_see_threats: bool,
 }
 
 /// Great detection (`is_candidate<15>` and its tags, recovered; see
@@ -244,6 +247,7 @@ impl Default for BrilliantConfig {
             ref_decoded_pins: true,
             ref_decoded_trapped: false,
             ref_relative_pin_defensible: false,
+            ref_created_see_threats: true,
         }
     }
 }

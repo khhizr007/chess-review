@@ -115,4 +115,9 @@ ref_decoded_trapped: boolean,
  * Report 4 §5: an ignored piece that is relatively pinned counts only if another Good-or-better
  * move loses no material (`defensible_by_alternative`).
  */
-ref_relative_pin_defensible: boolean, };
+ref_relative_pin_defensible: boolean, 
+/**
+ * Report §12.3: in `is_sacrifice_of_not_moved`, the threats the move created exclude only the
+ * SEE-threateners of the sacrificed square (`see_threats_to`), not every geometric attacker.
+ */
+ref_created_see_threats: boolean, };
