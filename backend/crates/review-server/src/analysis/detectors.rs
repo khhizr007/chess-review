@@ -539,7 +539,14 @@ fn sacrifice_of_not_moved(
     let value = see::value(role);
     let cap_val = m.capture().map_or(0, see::value);
     let occupied = ab.occupied();
-    let attackers_of_sq = ab.attacks_to(sq, opponent, occupied) & ab.by_color(opponent);
+    let attackers_of_sq = if cfg.ref_created_see_threats {
+        // Chess.com excludes only SEE-threateners of `sq` (`see_threats_to`), not every piece that
+        // geometrically attacks it: a piece that attacks `sq` but cannot capture it without losing
+        // material still counts as a threat the move created (report, §12.3).
+        see_threateners(ab, sq)
+    } else {
+        ab.attacks_to(sq, opponent, occupied) & ab.by_color(opponent)
+    };
     // The most valuable opponent piece the move newly strongly threatens, other than the king and
     // the pieces attacking `sq`, and what taking it wins.
     let created = ab.by_color(opponent).into_iter().filter(|&s| {

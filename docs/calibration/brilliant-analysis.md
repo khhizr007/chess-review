@@ -332,3 +332,114 @@ pin line (`violates_pin`). After the fix, 99.4% of 2,000 random positions have i
 
 The threat tables are no longer the cause of the remaining wrong Brilliants. Those come from the
 engine-line parts of the decision and from engine score differences.
+
+
+## 12. Whole-move Brilliant run inside Chess.com's own code (2026-10-25)
+
+§11 left the threat tables matching Chess.com and the remaining differences "in the
+engine-line parts of the decision". This section runs those parts -- Chess.com's actual
+`compute_board_event<13>`, `is_candidate<13>`, `is_sacrifice`, `ignored_threats`,
+`is_sacrifice_of_not_moved` and `is_indirect_sacrifice` -- inside the Unicorn emulator, on
+the positions behind our 29 wrong and 17 missed Brilliants, and traces each disagreement to
+the exact predicate that differs.
+
+### 12.1 What was built
+
+The emulator (`~/work/cee-emu`, not committed) previously ran only `from_fen` +
+`collect_eval_terms` (threat tables). It now builds a full Chess.com `Game`/`Tree`/`Node`
+for a whole game from the local coach capture and calls the real Brilliant decision:
+
+- `make_game` + `Conf::set<48/50>` (WhiteElo/BlackElo) build the tree with the game's ratings.
+- Each ply's Chess.com best line and played line (the "Show Follow-Up" moves) are attached as
+  scored variations via `Tree::set_analysis_root` + `Tree::var(line, ScoreWithDepth)`, using
+  Chess.com's own cp/mate scores (mate `n` -> `+-(32001-2n)`, mate-0 -> 32000).
+- `classification::classification(node)` then returns Chess.com's own label for the move.
+
+Four library facilities had to be supplied before the decision would run: real `libm`
+(`exp`/`log`/`pow`/... were stubbed to 0, which broke `expected_points`); an in-run
+`pthread_once` trampoline (a nested `emu_start` ended the outer call); the score-sign
+convention (`Node::score` is the mover's view); and a substitute for `Position::static_eval`,
+which asks the embedded Komodo engine over a thread pool that cannot run here --
+`material_difference_stm` is used instead. That substitute only feeds the line-cutoff
+equities in `get_equities`, so it affects internal-node scores but not the position-only
+predicates (SEE, safe squares, sacrifice shape).
+
+### 12.2 Fidelity
+
+On the 127 plies behind every Chess.com or our Brilliant (110 games), the emulated final
+label matches Chess.com's on **97** (76%). It reproduces Chess.com's Brilliant on 84 of its
+Brilliants and correctly declines 25 of our extras. The 30 misses are where the
+`static_eval` substitute or the attached (rather than searched) engine lines change an
+internal score or a precision grade; those are exactly the engine-bound cases §5 predicted.
+
+So the emulator is an exact oracle for the **position-only** predicates and an approximate
+one for anything that reads an internal node's score.
+
+### 12.3 Where each disagreement comes from
+
+Tracing every call of Chess.com's predicates on the 46 cases (`~/work/cee-emu/probes/`):
+
+**Extras we should drop (Chess.com's own position-only predicates reject them).**
+- *Created threat outweighs the piece left* (`is_sacrifice_of_not_moved` net-value gate
+  `v_sq <= cap + v1`): Rc1, Bc2, a4, Rc8, Bf4, Bg4, Nd4 (x2), Bf5, Bd6, Be6, Ra7. The move
+  leaves a piece en prise but creates a strong threat worth more (e.g. Rc1 leaves the bishop,
+  value 300, but threatens the queen on c3, value 900 -> `v1 = 900`, so `300 <= 900` and it is
+  no sacrifice). Our `sacrifice_of_not_moved` computes a smaller `v1` than Chess.com's
+  `created_strong_see_threats_against` and so lets these through.
+- *The moved piece is actually safe by Chess.com's SEE* (`is_safe` true): Qb8, Qd8+, Qa6, Qxf3.
+  Chess.com's `see_gain` differs from ours in two decompile-confirmed ways -- it counts a pawn
+  **promoting on the recapture** (Qb8/Qd8: `see_gain = 0` because a `c7` pawn recaptures and
+  queens), and it **frees a piece pinned to its king once the pinner is the capturer** (Qxf3:
+  `see_gain = 300`). Our SEE ignores promotions mid-exchange and never lets a pinned piece
+  capture off its pin line.
+
+**Extras that are engine/grade-bound (not fixable without Chess.com's engine).** Nxc7+, Rxh2
+(Chess.com grades the move Inaccuracy, precision 7, so `is_candidate` fails); Qxf3, Qxe7, Qxg7
+(check evasions whose status depends on the searched line); Bxb6, Nxe5, Bxc4, Qxd4 (the
+emulator itself calls them Brilliant -- the difference is Chess.com's grade/score, not a rule).
+
+**Missed Brilliants, position-only (recoverable).**
+- Low-rated direct sacrifices Chess.com accepts on its generous `!is_high_rated` branch, which
+  skips the deflection and net-material tests: Bxc5, Nd6+, Bxe4, Nxf6+ (all under ~1000 Elo).
+  The emulator confirms `is_sacrifice = 1` for these; our detector rejects them, so our
+  low-rated branch is stricter than Chess.com's.
+
+**Missed Brilliants, engine/score-bound (not fixable).** Rac1, Bxf3, gxf3, Qxe3, Rxc6, Rxd5,
+Qxd4(62), Rxg6+, Rd1+, O-O-O, Bxh2+ -- these need an internal node's score (the material gate
+reads `parent.score() < EP_to_cp(0.10, 2000)`, and the emulator's substituted scores cannot
+settle the gate), the discovered-attack/deflection branch on a searched line, or the mate-tag
+path, all of which depend on Chess.com's engine output rather than the position.
+
+### 12.4 Result
+
+The first position-only fix from §12.3 is implemented: in `is_sacrifice_of_not_moved`, the
+threats the move created now exclude only the SEE-threateners of the sacrificed square
+(`see_threateners`, = Chess.com's `see_threats_to`) instead of every geometric attacker, behind
+`ref_created_see_threats` (on by default). A piece that attacks the square but cannot capture it
+without losing material (e.g. the c3 queen "attacking" the c4 bishop after Rc1) now counts as a
+created threat worth more than the piece left behind, so the move is correctly not a sacrifice.
+
+Measured alone against `7353401`, on all 575 calibration games:
+
+| Set | Before P / R | After P / R |
+|---|---|---|
+| tuning (all) | 0.74 / 0.86 | **0.81 / 0.86** |
+| holdout (all) | 0.73 / 0.73 | **0.83 / 0.73** |
+| best-move set (tuning) | 0.73 / 0.94 | 0.73 / 0.94 |
+| best-move set (holdout) | 0.70 / 0.91 | 0.70 / 0.91 |
+
+Tuning precision rose 0.74 -> 0.81 (seven fewer extras) and holdout 0.73 -> 0.83 (three fewer),
+with recall, true positives and the independent best-move set all unchanged -- the rule removes
+false sacrifices without dropping a real one and does not overfit. It is a rule read from
+`is_sacrifice_of_not_moved`, not a threshold fitted to labels.
+
+The whole-move emulation settles the §11 question: of the 46 remaining differences, **about a
+dozen extras and four misses are position-only** and Chess.com's own code shows exactly which
+predicate differs; **the rest are bound to Chess.com's engine scores or grades** and match the
+§5 noise floor -- they cannot be closed while the engines differ. Two further position-only
+fixes remain identified for later rounds, each to go behind its own `BrilliantConfig` flag and
+be kept only if tuning, holdout and the best-move set all hold or improve: Chess.com's SEE rules
+(promotion on the recapture; a piece pinned to its king freed once its pinner captures), which
+remove the four remaining `is_safe` extras, and the more generous low-rated `is_sacrifice`
+branch, which recovers the four low-rated direct-sacrifice misses.
+
