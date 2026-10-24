@@ -411,7 +411,7 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
         // the same side's later moves reads it.
         ignored_threat: if bc.reference_standing {
             (!after.is_check() && !before.is_check() && !m.is_promotion())
-                .then(|| reference_ignored_threat(before, after, m, input.own_history))
+                .then(|| reference_ignored_threat(before, after, m, input.own_history, bc))
                 .flatten()
         } else {
             any_sacrifice

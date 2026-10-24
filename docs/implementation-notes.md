@@ -116,9 +116,13 @@ softened Blunders that lose material through a later tactic, such as a fork. See
       strongly threatened (`left_en_prise`). Either way not when the move gives or answers check or
       promotes, saves a piece worth as much, captures plus newly threatens at least what is lost, or
       hits back at a bigger piece; an ignored piece must not be trapped or pinned to its king;
+      and no attacker of the piece may be pinned (`ref_pinned_attacker`) or overloaded, i.e. its only
+      capturer also guards another piece (`ref_overloaded`), nor may the move take away the
+      opponent's safe promotion squares (`ref_promotion`);
     - in high-rated games (max Elo ≥ `great_find.high_rated_min`) the moved piece must be worth more
       than what the move captured plus the best piece an uncovered slider now strongly threatens (no
-      disguised trade). Newer players get no such test;
+      disguised trade), have a capturer that is not relatively pinned, and not be a deflection whose
+      single capturer is overloaded (`ref_deflection`). Newer players get no such test;
   - the recovered gates: not when the mover is already ahead by the piece's value against an
     opponent whose EP before the move (at rating 2000) is below `opponent_lost_ep` (0.10); in the
     endgame the position is critical or the line wins at least `endgame_min_gain_cp` (200).

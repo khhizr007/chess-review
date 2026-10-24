@@ -82,4 +82,24 @@ reference_standing: boolean,
  * mutual-threat and saved-pieces tests, and a discovered attack is a new strong threat by an
  * uncovered slider (`piece_value_of_greatest_discovered_attack`). Recovered: on.
  */
-reference_moved: boolean, };
+reference_moved: boolean, 
+/**
+ * Report 4 checks in `is_sacrifice_of_not_moved`: no pinned attacker (`has_pinned_attacker`).
+ */
+ref_pinned_attacker: boolean, 
+/**
+ * Report 4: no overloaded attacker (`has_overloaded_attacker`).
+ */
+ref_overloaded: boolean, 
+/**
+ * Report 4: the opponent keeps its safe promotion squares (`safe_promotion_squares`).
+ */
+ref_promotion: boolean, 
+/**
+ * Report 4: trapped means threatened with no safe square (`is_trapped`, theme 31).
+ */
+ref_trapped: boolean, 
+/**
+ * Report 4, high-rated moved piece: a non-pinned capturer and no deflection.
+ */
+ref_deflection: boolean, };

@@ -102,6 +102,16 @@ pub struct BrilliantConfig {
     /// mutual-threat and saved-pieces tests, and a discovered attack is a new strong threat by an
     /// uncovered slider (`piece_value_of_greatest_discovered_attack`). Recovered: on.
     pub reference_moved: bool,
+    /// Report 4 checks in `is_sacrifice_of_not_moved`: no pinned attacker (`has_pinned_attacker`).
+    pub ref_pinned_attacker: bool,
+    /// Report 4: no overloaded attacker (`has_overloaded_attacker`).
+    pub ref_overloaded: bool,
+    /// Report 4: the opponent keeps its safe promotion squares (`safe_promotion_squares`).
+    pub ref_promotion: bool,
+    /// Report 4: trapped means threatened with no safe square (`is_trapped`, theme 31).
+    pub ref_trapped: bool,
+    /// Report 4, high-rated moved piece: a non-pinned capturer and no deflection.
+    pub ref_deflection: bool,
 }
 
 /// Great detection (`is_candidate<15>` and its tags, recovered; see
@@ -219,6 +229,11 @@ impl Default for BrilliantConfig {
             ignored_needs_safe_square: true,
             reference_standing: true,
             reference_moved: true,
+            ref_pinned_attacker: true,
+            ref_overloaded: true,
+            ref_promotion: true,
+            ref_trapped: true,
+            ref_deflection: true,
         }
     }
 }

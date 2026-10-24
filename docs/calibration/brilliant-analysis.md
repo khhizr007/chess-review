@@ -248,3 +248,33 @@ Extras: Chess.com called 20 of them Best, 13 Great, 12 Excellent; it saw no sacr
 parts still not modelled are `has_pinned_attacker`, `has_overloaded_attacker` (deflection),
 `defensible_by_alternative`, the safe-promotion test, `ForkIfCaptured` and the endgame gate's
 `max_material_gain` (`moves_better_than(n, 6)`).
+
+
+## 9. Attacker checks (2026-10-24, second round)
+
+Decompile report 4 (WSL `~/work/claude-scratchpad/brilliant-decompile-report-4.md`) decoded the
+attacker checks of `is_sacrifice_of_not_moved` and the high-rated branch of `is_sacrifice`. One claim
+was corrected against the code: `overloaded_attacker_profile` requires exactly one SEE-threatener
+(`popcount == 1`), not "the first".
+
+| Check | Config | All P / R | Tuning P / R | Holdout P / R | Best-move set, tuning / holdout P |
+|---|---|---|---|---|---|
+| before (`028eff4`) | | 0.61 / 0.85 | 0.62 / 0.88 | 0.56 / 0.77 | 0.65 / 0.59 |
+| attacker pinned (relative or absolute) | `ref_pinned_attacker` | 0.64 / 0.85 | 0.65 / 0.88 | 0.61 / 0.77 | 0.66 / 0.62 |
+| attacker overloaded | `ref_overloaded` | 0.62 / 0.85 | 0.64 / 0.88 | 0.57 / 0.77 | 0.66 / 0.59 |
+| safe promotion lost | `ref_promotion` | no change | | | no change |
+| trapped (threatened, no safe square) | `ref_trapped` | no change | | | no change |
+| high rated: non-pinned capturer, no deflection | `ref_deflection` | 0.66 / 0.82 | 0.67 / 0.85 | 0.61 / 0.73 | 0.70 / 0.63 |
+| **all five** | | **0.71 / 0.83** | 0.72 / 0.86 | 0.68 / 0.73 | 0.71 / 0.66 |
+
+Best-move set recall stays at 0.94 (tuning) and 0.91 (holdout). Exact agreement 69.0%, Great unchanged.
+
+**Inferred, not decoded:** the pin themes (8, 9) and the trapped theme (31) are built inside
+`get_profiles<N>`, which was not decompiled. We use the standard definitions: a pin is an enemy slider
+on a line through the piece with a piece of the same side behind it that is the king, worth more than
+the pinner, or undefended. A pin by the threatened piece itself does not stop its capture. Trapped
+means threatened with no safe square.
+
+**Not modelled yet:** `defensible_by_alternative` (needs the sibling moves' material loss; a relatively
+pinned piece always passes), `ForkIfCaptured` (tag 19) and the endgame gate's
+`moves_better_than(n, 6)`.

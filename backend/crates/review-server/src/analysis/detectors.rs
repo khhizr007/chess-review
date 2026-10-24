@@ -213,6 +213,14 @@ pub fn sacrifice(
                         saved_pieces(before, &after, from, s.see_gain) <= 1
                     }
                     && worth_giving(role)
+                    // High-rated only (`is_sacrifice`, report 4 §3 and §7): a capturer that is not
+                    // relatively pinned exists, and the move is no deflection.
+                    && (!high_rated
+                        || !cfg.ref_deflection
+                        || (!(see_threateners(after.board(), m.to())
+                            & !pinned_attackers(after.board(), m.to(), true))
+                        .is_empty()
+                            && !has_overloaded_attacker(after.board(), m.to(), captured)))
             });
         found.extend(moved);
     }
@@ -231,13 +239,13 @@ pub fn sacrifice(
         };
         if cfg.ignored_threats {
             found.extend(
-                reference_ignored_threat(before, &after, m, history)
+                reference_ignored_threat(before, &after, m, history, cfg)
                     .and_then(|sq| standing(sq, SacrificeKind::IgnoredThreat)),
             );
         }
         if cfg.left_en_prise {
             found.extend(
-                reference_indirect_sacrifice(before, &after, m)
+                reference_indirect_sacrifice(before, &after, m, cfg)
                     .and_then(|sq| standing(sq, SacrificeKind::LeftEnPrise)),
             );
         }
@@ -456,6 +464,7 @@ pub fn reference_ignored_threat(
     after: &Chess,
     m: Move,
     history: &[EarlierOwnMove],
+    cfg: &BrilliantConfig,
 ) -> Option<Square> {
     let mover = before.turn();
     let opponent = mover.other();
@@ -479,12 +488,17 @@ pub fn reference_ignored_threat(
             return None;
         }
     }
-    sacrifice_of_not_moved(before, after, m, sq, true).then_some(sq)
+    sacrifice_of_not_moved(before, after, m, sq, true, cfg).then_some(sq)
 }
 
 /// `node_lib::is_indirect_sacrifice`: of the mover's pieces strongly threatened after the move and
 /// not threatened before it, the most valuable one that is given up (`is_sacrifice_of_not_moved`).
-pub fn reference_indirect_sacrifice(before: &Chess, after: &Chess, m: Move) -> Option<Square> {
+pub fn reference_indirect_sacrifice(
+    before: &Chess,
+    after: &Chess,
+    m: Move,
+    cfg: &BrilliantConfig,
+) -> Option<Square> {
     let mover = before.turn();
     let opponent = mover.other();
     let candidates = after.board().by_color(mover).into_iter().filter(|&sq| {
@@ -495,7 +509,7 @@ pub fn reference_indirect_sacrifice(before: &Chess, after: &Chess, m: Move) -> O
     });
     most_valuable(after.board(), candidates)
         .into_iter()
-        .find(|&sq| sacrifice_of_not_moved(before, after, m, sq, false))
+        .find(|&sq| sacrifice_of_not_moved(before, after, m, sq, false, cfg))
 }
 
 /// `node_lib::is_sacrifice_of_not_moved(n, sq, from_ignored)` (decompile report 2 §1). Parts not
@@ -507,6 +521,7 @@ fn sacrifice_of_not_moved(
     m: Move,
     sq: Square,
     from_ignored: bool,
+    cfg: &BrilliantConfig,
 ) -> bool {
     let mover = before.turn();
     let opponent = mover.other();
@@ -547,7 +562,11 @@ fn sacrifice_of_not_moved(
         return false;
     }
     if from_ignored {
-        let trapped = !has_reference_safe_square(after, sq);
+        let trapped = if cfg.ref_trapped {
+            is_trapped_piece(after, sq)
+        } else {
+            !has_reference_safe_square(after, sq)
+        };
         if trapped || crate::coach::facts::is_absolutely_pinned(ab, sq) {
             return false;
         }
@@ -566,6 +585,21 @@ fn sacrifice_of_not_moved(
         return false;
     }
     if v_sq <= cap_val + v1 {
+        return false;
+    }
+    // The piece's attacker is pinned, or busy guarding something else (report 4 §1, §3).
+    if cfg.ref_pinned_attacker && !pinned_attackers(ab, sq, false).is_empty() {
+        return false;
+    }
+    if cfg.ref_overloaded && has_overloaded_attacker(ab, sq, cap_val) {
+        return false;
+    }
+    // The move took away a square where the opponent could promote safely (report 4 §6).
+    if cfg.ref_promotion
+        && !(safe_promotion_squares(before.board(), opponent)
+            & !safe_promotion_squares(ab, opponent))
+        .is_empty()
+    {
         return false;
     }
     // The moved piece's own threats: hitting something at least as valuable is a counter-attack,
@@ -629,6 +663,194 @@ fn reference_saved_pieces(before: &Chess, after: &Chess, from: Square, loss: i32
                     && see::see(ab, s, opponent) >= STRONG_THREAT_CP)
         })
         .count()
+}
+
+/// Material `by` wins when the piece on `from` captures first on `sq` and the exchange is then played
+/// out (the reference's per-capture `see_gain`).
+fn capture_see(board: &shakmaty::Board, from: Square, sq: Square) -> i32 {
+    let (Some(mover), Some(target)) = (board.piece_at(from), board.piece_at(sq)) else {
+        return 0;
+    };
+    let mut b = board.clone();
+    b.discard_piece_at(from);
+    b.set_piece_at(sq, mover);
+    see::value(target.role) - see::see(&b, sq, mover.color.other()).max(0)
+}
+
+/// `see_threats_to(sq)`: pieces of the other side whose own capture on `sq` wins at least
+/// [`THREAT_CP`].
+fn see_threateners(board: &shakmaty::Board, sq: Square) -> shakmaty::Bitboard {
+    let Some(target) = board.piece_at(sq) else {
+        return shakmaty::Bitboard::EMPTY;
+    };
+    let by = target.color.other();
+    (board.attacks_to(sq, by, board.occupied()) & board.by_color(by))
+        .into_iter()
+        .filter(|&from| capture_see(board, from, sq) >= THREAT_CP)
+        .collect()
+}
+
+/// The piece the pin on `s` holds in place: an enemy slider attacks `s` along a line, and the first
+/// piece behind `s` on that line belongs to the same side. Inferred (the reference reads its pin
+/// themes 8 and 9, whose builders were not decoded): the standard definition.
+fn pinned_behind(board: &shakmaty::Board, s: Square) -> Vec<(Square, Square)> {
+    use shakmaty::attacks;
+    let Some(piece) = board.piece_at(s) else {
+        return Vec::new();
+    };
+    let enemy = board.by_color(piece.color.other());
+    let occupied = board.occupied();
+    let mut behind = Vec::new();
+    for pinner in enemy & (board.bishops() | board.rooks() | board.queens()) {
+        let line = attacks::ray(pinner, s);
+        if line.is_empty() || !(attacks::between(pinner, s) & occupied).is_empty() {
+            continue;
+        }
+        let orthogonal = pinner.file() == s.file() || pinner.rank() == s.rank();
+        let fits = match board.role_at(pinner) {
+            Some(Role::Queen) => true,
+            Some(Role::Rook) => orthogonal,
+            Some(Role::Bishop) => !orthogonal,
+            _ => false,
+        };
+        if !fits {
+            continue;
+        }
+        // The first piece behind `s`, seen from the pinner.
+        let back = (line & occupied).into_iter().find(|&b| {
+            b != s
+                && attacks::between(pinner, b).contains(s)
+                && (attacks::between(s, b) & occupied).is_empty()
+        });
+        // A pin holds only if moving `s` would lose: the piece behind is the king, is worth more
+        // than the pinner, or is undefended (inferred: the usual meaning of a pin).
+        let pinner_value = board.role_at(pinner).map_or(0, see::value);
+        if let Some(b) = back.filter(|&b| board.color_at(b) == Some(piece.color)) {
+            let back_role = board.role_at(b);
+            let mut without = board.clone();
+            without.discard_piece_at(s);
+            let defended = !(without.attacks_to(b, piece.color, without.occupied())
+                & without.by_color(piece.color))
+            .is_empty();
+            if back_role == Some(Role::King)
+                || back_role.is_some_and(|r| see::value(r) > pinner_value)
+                || !defended
+            {
+                behind.push((pinner, b));
+            }
+        }
+    }
+    behind
+}
+
+/// `Piece::relatively_pinned_attackers` / `absolutely_pinned_attackers` (report 4 §1): attackers of
+/// the piece on `sq` that are pinned to a more valuable piece other than their king (relative,
+/// SEE-threateners only) or to their king (absolute, any attacker), not to `sq` itself.
+fn pinned_attackers(
+    board: &shakmaty::Board,
+    sq: Square,
+    relative_only: bool,
+) -> shakmaty::Bitboard {
+    let Some(target) = board.piece_at(sq) else {
+        return shakmaty::Bitboard::EMPTY;
+    };
+    let by = target.color.other();
+    let threateners = see_threateners(board, sq);
+    let all = board.attacks_to(sq, by, board.occupied()) & board.by_color(by);
+    let mut out = shakmaty::Bitboard::EMPTY;
+    for a in all {
+        let value = board.role_at(a).map_or(0, see::value);
+        for (pinner, b) in pinned_behind(board, a) {
+            // A pin by the threatened piece itself does not stop the capture (report 4 §1).
+            if pinner == sq || b == sq {
+                continue;
+            }
+            let back_role = board.role_at(b);
+            let relative = threateners.contains(a)
+                && back_role.is_some_and(|r| r != Role::King && see::value(r) > value);
+            let absolute = back_role == Some(Role::King);
+            if relative || (!relative_only && absolute) {
+                out.add(a);
+            }
+        }
+    }
+    out
+}
+
+/// `Piece::has_overloaded_attacker(v)` (report 4 §3, re-read: the reference requires exactly one
+/// SEE-threatener and compares with the threatened piece's value). The single attacker of the piece
+/// on `sq` also guards one of its own pieces that it would stop guarding after capturing on `sq`,
+/// and winning that piece then pays back the threatened piece's value up to `v`.
+fn has_overloaded_attacker(board: &shakmaty::Board, sq: Square, v: i32) -> bool {
+    let threateners = see_threateners(board, sq);
+    let mut it = threateners.into_iter();
+    let (Some(a), None) = (it.next(), it.next()) else {
+        return false;
+    };
+    let (Some(target), Some(attacker)) = (board.piece_at(sq), board.piece_at(a)) else {
+        return false;
+    };
+    let their = target.color.other();
+    let occupied = board.occupied();
+    // What the attacker would attack from `sq` after capturing there.
+    let from_sq = shakmaty::attacks::attacks(sq, attacker, occupied.without(a));
+    let guards_now = shakmaty::attacks::attacks(a, attacker, occupied);
+    let king = board.king_of(their);
+    let duties =
+        board.by_color(their) & guards_now & !from_sq & !shakmaty::Bitboard::from_square(sq);
+    let value = see::value(target.role);
+    duties.into_iter().filter(|&d| Some(d) != king).any(|d| {
+        let mut b = board.clone();
+        b.discard_piece_at(sq);
+        b.discard_piece_at(a);
+        let best = see::see(&b, d, target.color);
+        value - best <= v
+    })
+}
+
+/// `Piece::is_trapped` (theme 31). Inferred (the theme builder was not decoded): the piece is
+/// SEE-threatened and has no square it attacks where its own exchange does not lose.
+fn is_trapped_piece(pos: &Chess, sq: Square) -> bool {
+    !see_threateners(pos.board(), sq).is_empty() && !has_reference_safe_square(pos, sq)
+}
+
+/// `StaticAnalysis::safe_promotion_squares(c)` (report 4 §6): last-rank squares a pawn of `c` can
+/// push to (empty) or capture onto (not the king), where the other side cannot win the new piece.
+fn safe_promotion_squares(board: &shakmaty::Board, c: Color) -> shakmaty::Bitboard {
+    let pawns = board.by_color(c) & board.pawns();
+    let last = match c {
+        Color::White => shakmaty::Bitboard::from(shakmaty::Rank::Eighth),
+        Color::Black => shakmaty::Bitboard::from(shakmaty::Rank::First),
+    };
+    let mut out = shakmaty::Bitboard::EMPTY;
+    for p in pawns {
+        let Some(push) = p.offset(if c == Color::White { 8 } else { -8 }) else {
+            continue;
+        };
+        let mut targets = shakmaty::Bitboard::EMPTY;
+        if !board.occupied().contains(push) {
+            targets.add(push);
+        }
+        let king = board.king_of(c.other());
+        targets |= shakmaty::attacks::pawn_attacks(c, p)
+            & board.by_color(c.other())
+            & !king.map_or(shakmaty::Bitboard::EMPTY, shakmaty::Bitboard::from_square);
+        for t in targets & last {
+            let mut b = board.clone();
+            b.discard_piece_at(p);
+            b.set_piece_at(
+                t,
+                shakmaty::Piece {
+                    color: c,
+                    role: Role::Queen,
+                },
+            );
+            if see::see(&b, t, c.other()) <= 0 {
+                out.add(t);
+            }
+        }
+    }
+    out
 }
 
 /// Great exclusion (`is_easy_to_find`): a threatened piece (not a pawn) goes to the only square
@@ -894,6 +1116,27 @@ mod tests {
             ..earlier
         };
         assert_eq!(sacrifice(&p, m, &cfg, false, None, &[other]), ignored_rook);
+    }
+
+    #[test]
+    fn pinned_attacker_of_a_threatened_piece() {
+        // The black knight on d6 attacks the rook on e4 but is pinned by the bishop on b4 to the
+        // queen on f8, worth more than the bishop.
+        let p = pos("5qk1/8/3n4/8/1B2R3/8/8/6K1 w - - 0 1");
+        assert!(pinned_attackers(p.board(), Square::E4, false).contains(Square::D6));
+        // Without the bishop nothing pins it.
+        let p = pos("5qk1/8/3n4/8/4R3/8/8/6K1 w - - 0 1");
+        assert!(pinned_attackers(p.board(), Square::E4, false).is_empty());
+    }
+
+    #[test]
+    fn safe_promotion_squares_of_a_pawn() {
+        let p = pos("7k/1P6/8/8/8/8/8/K7 w - - 0 1");
+        assert!(safe_promotion_squares(p.board(), Color::White).contains(Square::B8));
+        // A rook on a8 guards b8, but taking it promotes safely.
+        let p = pos("r6k/1P6/8/8/8/8/8/K7 w - - 0 1");
+        let safe = safe_promotion_squares(p.board(), Color::White);
+        assert!(safe.contains(Square::A8) && !safe.contains(Square::B8));
     }
 
     #[test]
