@@ -133,6 +133,53 @@ async function chessComGames(name: string, max: number, get: Get): Promise<Onlin
   return out.slice(0, max);
 }
 
+/** Most monthly archives searched for one game (a year of games). */
+const FIND_MAX_ARCHIVES = 12;
+
+/**
+ * One Chess.com game by its id ("live" or "daily", from the game's URL), searched in `username`'s
+ * monthly archives from the newest back. Null when that player has no such game in the last year.
+ */
+export async function findChessComGame(
+  username: string,
+  type: "live" | "daily",
+  id: string,
+  options: Omit<Options, "max"> = {},
+): Promise<OnlineGame | null> {
+  const name = username.trim();
+  if (!USERNAME.test(name)) throw new OnlineGamesError("invalid", `"${name}" is not a valid Chess.com username.`);
+  if (!/^\d+$/.test(id)) throw new OnlineGamesError("invalid", `"${id}" is not a Chess.com game id.`);
+  const get = async (url: string, missing: "player" | "error"): Promise<Response> => {
+    let res: Response;
+    try {
+      res = await (options.fetch ?? fetch)(url, { signal: options.signal });
+    } catch (err) {
+      if (options.signal?.aborted) throw err;
+      throw new OnlineGamesError("network", "Could not reach Chess.com. Check the connection and try again.");
+    }
+    if (res.status === 404 && missing === "player") throw new OnlineGamesError("not_found", `No Chess.com player is called "${name}".`);
+    if (res.status === 429) throw new OnlineGamesError("rate_limited", "Chess.com asks to wait a minute before trying again.");
+    if (!res.ok) throw new OnlineGamesError("network", `Chess.com answered with an error (${res.status}).`);
+    return res;
+  };
+  const base = `https://api.chess.com/pub/player/${encodeURIComponent(name.toLowerCase())}`;
+  const { archives = [] } = (await (await get(`${base}/games/archives`, "player")).json()) as { archives?: string[] };
+  const suffix = `/game/${type}/${id}`;
+  for (const archive of archives.slice(-FIND_MAX_ARCHIVES).reverse()) {
+    let games: ChessComGame[];
+    try {
+      ({ games = [] } = (await (await get(archive, "error")).json()) as { games?: ChessComGame[] });
+    } catch (err) {
+      // A month Chess.com fails to return is skipped, as in the game list.
+      if (err instanceof OnlineGamesError && err.kind === "network") continue;
+      throw err;
+    }
+    const game = games.find((g) => g.url.endsWith(suffix));
+    if (game) return game.pgn && (game.rules === "chess" || game.rules === "chess960") ? fromChessCom(game, name) : null;
+  }
+  return null;
+}
+
 function fromChessCom(g: ChessComGame, name: string): OnlineGame {
   const result = g.white.result === "win" ? "1-0" : g.black.result === "win" ? "0-1" : CHESSCOM_DRAWS.has(g.white.result) ? "½-½" : "*";
   const me = name.toLowerCase();

@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Chess Review opener",
+  "version": "0.1.0",
+  "description": "Opens your finished Chess.com games in your own Chess Review app. Not affiliated with Chess.com.",
+  "minimum_chrome_version": "118",
+  "permissions": ["declarativeNetRequestWithHostAccess", "storage"],
+  "host_permissions": ["https://*.chess.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://*.chess.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [{ "resources": ["redirect.html"], "matches": ["https://*.chess.com/*"] }],
+  "options_page": "options.html"
+}

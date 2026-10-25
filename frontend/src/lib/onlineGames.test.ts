@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { OnlineGamesError, chessComTimeControl, fetchRecentGames, outcomeFor } from "./onlineGames";
+import { OnlineGamesError, chessComTimeControl, fetchRecentGames, findChessComGame, outcomeFor } from "./onlineGames";
 
 /** A fake fetch answering from a table of URL → [status, body]. */
 function fakeFetch(routes: Record<string, [number, string]>) {
@@ -145,5 +145,41 @@ describe("chessComTimeControl", () => {
     expect(chessComTimeControl("60+1")).toBe("1+1");
     expect(chessComTimeControl("1/259200")).toBe("3 days");
     expect(chessComTimeControl("-")).toBe("");
+  });
+});
+
+describe("findChessComGame", () => {
+  it("finds a game by id in an older archive and reports the player's side", async () => {
+    const fetch = fakeFetch({
+      [ARCHIVES]: [200, JSON.stringify({ archives: [SEP, OCT] })],
+      [OCT]: [200, JSON.stringify({ games: [ccGame(5, "khhizr7", "a")] })],
+      [SEP]: [200, JSON.stringify({ games: [ccGame(4, "bob", "khhizr7"), ccGame(41, "khhizr7", "c")] })],
+    });
+    const game = await findChessComGame("KHHIZR7", "live", "4", { fetch });
+    expect(game).toMatchObject({ url: "https://www.chess.com/game/live/4", userSide: "black" });
+    // "41" ends in "1" but not in "/4": ids are matched whole.
+    expect(await findChessComGame("khhizr7", "live", "1", { fetch })).toBeNull();
+  });
+
+  it("does not take a daily game for a live one", async () => {
+    const fetch = fakeFetch({
+      [ARCHIVES]: [200, JSON.stringify({ archives: [OCT] })],
+      [OCT]: [200, JSON.stringify({ games: [ccGame(7, "khhizr7", "a")] })],
+    });
+    expect(await findChessComGame("khhizr7", "daily", "7", { fetch })).toBeNull();
+  });
+
+  it("returns null for a variant game, which cannot be reviewed", async () => {
+    const fetch = fakeFetch({
+      [ARCHIVES]: [200, JSON.stringify({ archives: [OCT] })],
+      [OCT]: [200, JSON.stringify({ games: [ccGame(8, "khhizr7", "a", { rules: "crazyhouse" })] })],
+    });
+    expect(await findChessComGame("khhizr7", "live", "8", { fetch })).toBeNull();
+  });
+
+  it("rejects ids that are not numbers before asking Chess.com", async () => {
+    const fetch = fakeFetch({});
+    await expect(findChessComGame("khhizr7", "live", "../x", { fetch })).rejects.toMatchObject({ kind: "invalid" });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

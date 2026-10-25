@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chess Review opener: settings</title>
+    <script type="module" src="options.js"></script>
+    <style>
+      body { font: 14px system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; }
+      label { display: block; margin: 1rem 0 0.25rem; font-weight: 600; }
+      input[type="text"], input[type="url"] { width: 100%; box-sizing: border-box; padding: 0.4rem; font: inherit; }
+      .check { display: flex; gap: 0.5rem; align-items: center; font-weight: 400; }
+      .hint { color: #666; margin: 0.25rem 0 0; }
+      button { margin-top: 1.25rem; padding: 0.45rem 1.2rem; font: inherit; }
+      #status { margin-left: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Chess Review opener</h1>
+    <p class="hint">Opens your Chess.com reviews in your own Chess Review app. Not affiliated with Chess.com.</p>
+    <form id="form">
+      <label class="check"><input type="checkbox" id="enabled" /> Open Chess.com reviews in my app</label>
+
+      <label for="appUrl">App address</label>
+      <input type="url" id="appUrl" required />
+      <p class="hint">Where the app runs, e.g. <code>http://localhost:5173/</code> while developing.</p>
+
+      <label for="username">Your Chess.com username (optional)</label>
+      <input type="text" id="username" pattern="[A-Za-z0-9_\-]{2,30}" autocomplete="off" spellcheck="false" />
+      <p class="hint">The app finds the game in this player's public games. Without it, the app uses the name you last entered there.</p>
+
+      <button type="submit">Save</button><span id="status" role="status"></span>
+    </form>
+  </body>
+</html>
