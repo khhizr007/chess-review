@@ -43,7 +43,8 @@ export function ReportView({ review, current, onSelect, onReviewAt, onStart, onN
   const { white, black } = review;
   const takeaways = useMemo(() => gameTakeaways(review), [review]);
   const notes = useMemo(() => reportNotes(review), [review]);
-  const [expanded, setExpanded] = useState(false);
+  // Every class shows at first; the chevron folds the rarer rows away.
+  const [expanded, setExpanded] = useState(true);
 
   const count = (side: Side, c: Classification) =>
     (side === "white" ? white : black).tally.find((t) => t.classification === c)?.count ?? 0;

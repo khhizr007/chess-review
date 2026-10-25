@@ -50,19 +50,16 @@ describe("ReportView", () => {
   it("keeps the reference's order: one coach line, then players, accuracy and tallies", () => {
     show();
     expect(screen.getByText("khhizr7 won. Let's review!")).toBeTruthy();
-    expect(rowNames().slice(0, 8)).toEqual(["Players", "Accuracy", "Best", "Excellent", "Good", "Mistake", "Miss", "Blunder"]);
+    expect(rowNames().slice(0, 4)).toEqual(["Players", "Accuracy", "Brilliant", "Great find"]);
     expect(screen.getByText("78.7").className).toContain("acc-box--white");
     // The opening name moved below the tallies.
     const notes = screen.getByText("Opening: King's Pawn Game.");
     expect(screen.getByText("Accuracy").compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("folds Brilliant, Great, Book and Inaccuracy behind the chevron, earned or not", () => {
+  it("shows every class in Chess.com's order, and folds Brilliant, Great, Book and Inaccuracy behind the chevron", () => {
     show();
-    const chevron = screen.getByRole("button", { name: "Show all move classes" });
-    expect(chevron.getAttribute("aria-expanded")).toBe("false");
-    expect(rowNames()).not.toContain("Book");
-    fireEvent.click(chevron);
+    const chevron = screen.getByRole("button", { name: "Show fewer move classes" });
     expect(chevron.getAttribute("aria-expanded")).toBe("true");
     expect(rowNames().slice(2, 12)).toEqual([
       "Brilliant",
@@ -76,6 +73,9 @@ describe("ReportView", () => {
       "Miss",
       "Blunder",
     ]);
+    fireEvent.click(chevron);
+    expect(chevron.getAttribute("aria-expanded")).toBe("false");
+    expect(rowNames()).not.toContain("Book");
   });
 
   it("colours every count by its class, zeros included", () => {
