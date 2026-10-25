@@ -586,8 +586,8 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
     layers.current!.reorient(flipped);
   }, [flipped]);
 
-  // The king in check wiggles once the move has landed (Chess.com's `vfx-king-check`). Chessground
-  // owns the piece's transform, so the wiggle uses the separate `scale` and `rotate` properties.
+  // The king in check jitters once the move has landed. Chessground owns the piece's transform, so
+  // the jitter uses the separate `translate` property (see .cg-check-wiggle in styles.css).
   useLayoutEffect(() => {
     if (!check) return;
     const king = Array.from(wrapRef.current!.querySelectorAll<HTMLElement & { cgKey?: string }>("piece")).find(
@@ -598,7 +598,7 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
     void king.offsetWidth; // restart the animation on a new check of the same king
     king.classList.add("cg-check-wiggle");
     const done = (e: AnimationEvent) => {
-      if (e.animationName === "king-check-shrink") king.classList.remove("cg-check-wiggle");
+      if (e.animationName === "king-check-jitter") king.classList.remove("cg-check-wiggle");
     };
     king.addEventListener("animationend", done);
     return () => {

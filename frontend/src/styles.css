@@ -1753,47 +1753,23 @@ select option {
   }
 }
 
-/* The king in check (`vfx-king-check`): lifts 10 %, wiggles ±4° five times, settles. Chessground
-   owns `transform`, so this uses `scale` and `rotate`. */
+/* The king in check: two tiny side-to-side jitters inside its square. Chessground places pieces with
+   `transform: translate(…)`, and the separate `scale`/`rotate` properties would turn and scale that
+   offset too, throwing the king off its square. `translate` only adds a shift, so it stays put. */
 .cg-wrap piece.cg-check-wiggle {
-  animation:
-    king-check-grow 50ms linear 0.18s forwards,
-    king-check-wiggle 0.2s linear 0.23s 5 forwards,
-    king-check-shrink 0.25s cubic-bezier(0.16, 1, 0.3, 1) 1.23s forwards;
+  animation: king-check-jitter 0.14s ease-in-out 0.23s 2;
 }
 
-@keyframes king-check-grow {
-  from {
-    scale: 1;
-  }
-  to {
-    scale: 1.1;
-  }
-}
-
-@keyframes king-check-wiggle {
+@keyframes king-check-jitter {
   0%,
-  50%,
   100% {
-    scale: 1.1;
-    rotate: 0deg;
+    translate: 0 0;
   }
   25% {
-    scale: 1.1;
-    rotate: -4deg;
+    translate: -2.5% 0;
   }
   75% {
-    scale: 1.1;
-    rotate: 4deg;
-  }
-}
-
-@keyframes king-check-shrink {
-  from {
-    scale: 1.1;
-  }
-  to {
-    scale: 1;
+    translate: 2.5% 0;
   }
 }
 
