@@ -65,7 +65,7 @@ All settings are environment variables (see [Configuration](#configuration)).
 |---|---|---|
 | `STOCKFISH_PATH` | `stockfish` found on `PATH` | UCI engine executable. Without one the server starts in "degraded" mode: import and parsing work, reviews return 503. |
 | `BIND_ADDR` | `127.0.0.1:8080` | Listen address |
-| `ENGINE_POOL_SIZE` | half the CPUs, 1–4 | Engine processes, which is also the maximum number of parallel searches |
+| `ENGINE_POOL_SIZE` | half the CPUs, 1–8 | Engine processes, which is also the maximum number of parallel searches. Each Stockfish process uses about 370 MB of RAM. |
 | `ENGINE_THREADS` | `1` | `Threads` per engine process |
 | `ENGINE_HASH_MB` | `64` | `Hash` per engine process |
 | `ENGINE_SEARCH_TIMEOUT_SECS` | `60` | Hard limit per position |

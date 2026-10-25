@@ -81,7 +81,9 @@ impl AppConfig {
         let cpus = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(2);
-        let default_pool = (cpus / 2).clamp(1, 4);
+        // One single-threaded engine per physical core (assumed half the logical
+        // CPUs), up to 8. Each Stockfish process holds about 370 MB (NNUE + hash).
+        let default_pool = (cpus / 2).clamp(1, 8);
         Ok(Self {
             bind: parse_var("BIND_ADDR", SocketAddr::from(([127, 0, 0, 1], 8080)))?,
             engine_path: optional_path("STOCKFISH_PATH").or_else(|| find_on_path("stockfish")),
