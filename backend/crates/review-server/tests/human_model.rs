@@ -134,8 +134,7 @@ async fn the_first_ten_moves_are_not_asked() {
 }
 
 fn fake_sidecar() -> String {
-    let script =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/fake_maia.sh");
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_maia.sh");
     format!("sh {}", script.display())
 }
 

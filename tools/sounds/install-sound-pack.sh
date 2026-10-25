@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs a local sound pack into frontend/public/sounds/ (gitignored; docs/sound.md).
+# Installs a local sound pack into frontend/public/sounds/ (gitignored, never committed).
 #
 # The source is a folder of the reference web client's captured sounds, laid out as
 #   <src>/default/{move-self,capture,castle,move-check,promote}.mp3   (the board's sound theme)
