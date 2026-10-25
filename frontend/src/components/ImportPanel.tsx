@@ -268,7 +268,7 @@ export function ImportPanel({ onStart, busy }: Props) {
                 disabled={!canStart}
                 onClick={() => {
                   if (selectedGame) rememberChoice(selectedGame, side);
-                  // Depth 18 and the server's default engine lines, as Chess.com's review offers no choice.
+                  // The Standard preset and the server's default engine lines, as Chess.com's review offers no choice.
                   onStart({ pgn, game_index: selected, strength: "standard", ...(side ? { player_side: side } : {}) }, selectedGame);
                 }}
               >

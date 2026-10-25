@@ -98,7 +98,7 @@ pub struct Defaults {
 #[ts(export)]
 pub struct StrengthPreset {
     pub strength: Strength,
-    pub depth: u32,
+    pub limit: SearchLimit,
 }
 
 async fn defaults() -> Json<Defaults> {
@@ -113,7 +113,7 @@ async fn defaults() -> Json<Defaults> {
         .into_iter()
         .map(|strength| StrengthPreset {
             strength,
-            depth: strength.depth(),
+            limit: strength.limit(),
         })
         .collect(),
         default_strength: Strength::Standard,
@@ -282,9 +282,7 @@ fn search_limit(
             "invalid_settings",
             "movetime_ms must be between 50 and 60000",
         )),
-        (None, None, None) => Ok(SearchLimit::Depth {
-            depth: strength.unwrap_or(Strength::Standard).depth(),
-        }),
+        (None, None, None) => Ok(strength.unwrap_or(Strength::Standard).limit()),
     }
 }
 

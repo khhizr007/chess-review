@@ -40,8 +40,8 @@ npm run dev
 ```
 
 Open http://localhost:5173. Then type your Chess.com or Lichess username under **Your games** and pick a game, or click **Load sample**, or paste or open a PGN. Then click **Start review**.
-At the Standard preset (depth 18) a 40-move game takes about a minute on a 4-core machine. **Fast** is
-much quicker.
+At the Standard preset (600,000 nodes per position, Chess.com's Game Review budget) a 40-move game
+takes about 15 seconds on an 8-core machine. **Fast** is much quicker.
 
 **Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
 Moves and brilliant moves have sounds; the **Sound** switch turns them off.

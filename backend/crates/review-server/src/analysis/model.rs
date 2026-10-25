@@ -167,14 +167,17 @@ pub enum Strength {
 }
 
 impl Strength {
-    /// Depth presets (Unknown in the reference; see open question 1).
-    pub fn depth(self) -> u32 {
-        match self {
-            Strength::Fast => 12,
-            Strength::Standard => 18,
-            Strength::Deep => 22,
-            Strength::Maximum => 26,
-        }
+    /// Search budget per position: Chess.com's Game Review node budgets
+    /// (libcee 4.10.15 `get_nodes_for_strength`). On the 577 calibration games
+    /// STANDARD's depths are the closest to the ones Chess.com reports.
+    pub fn limit(self) -> SearchLimit {
+        let nodes = match self {
+            Strength::Fast => 150_000,
+            Strength::Standard => 600_000,
+            Strength::Deep => 1_600_000,
+            Strength::Maximum => 6_250_000,
+        };
+        SearchLimit::Nodes { nodes }
     }
 }
 

@@ -132,7 +132,7 @@ async fn full_review_flow() {
     assert_eq!(result["plies"].as_array().unwrap().len(), 7);
     assert_eq!(
         result["settings"]["limit"],
-        json!({ "kind": "depth", "depth": 12 })
+        json!({ "kind": "nodes", "nodes": 150000 })
     );
     assert_eq!(result["game"]["white"], "Alice");
 
