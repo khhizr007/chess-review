@@ -109,7 +109,7 @@ describe("coachMessage", () => {
 describe("coachMood", () => {
   it("follows the classification", () => {
     expect(coachMood("brilliant")).toBe("impressed");
-    expect(coachMood("great_find")).toBe("impressed");
+    expect(coachMood("great_find")).toBe("great");
     expect(coachMood("best")).toBe("happy");
     expect(coachMood("mistake")).toBe("concerned");
     expect(coachMood("miss")).toBe("concerned");

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { CoachMessage } from "../lib/coach";
-import { CoachActions, MoveVerdict, ShowLineMoves, type FragmentMarking } from "./Coach";
+import { CoachActions, CoachBubble, MoveVerdict, ShowLineMoves, type FragmentMarking } from "./Coach";
 
 afterEach(cleanup);
 
@@ -119,5 +119,15 @@ describe("CoachActions", () => {
     expect(screen.getByRole("button", { name: "Resume" }).textContent).toBe("Resume");
     fireEvent.click(best);
     expect(onClick).toHaveBeenCalled();
+  });
+});
+
+describe("CoachBubble", () => {
+  it("lights up for Brilliant and Great in their own colours, not for other moves", () => {
+    const bubble = (flash: "brilliant" | "great_find" | "best") =>
+      render(<CoachBubble flash={flash}>text</CoachBubble>).container.querySelector(".coach__bubble")!.className;
+    expect(bubble("brilliant")).toContain("coach__bubble--brilliant");
+    expect(bubble("great_find")).toContain("coach__bubble--great");
+    expect(bubble("best")).not.toMatch(/--brilliant|--great/);
   });
 });

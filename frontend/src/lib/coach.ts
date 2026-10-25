@@ -172,14 +172,16 @@ export function moveArrows(move: ArrowSource, withBest = true): CoachArrow[] {
 }
 
 /** The coach avatar's expression. */
-export type CoachMood = "impressed" | "happy" | "neutral" | "concerned" | "sad";
+export type CoachMood = "impressed" | "great" | "happy" | "neutral" | "concerned" | "sad";
 
 /** Avatar expression for a move, from its classification (the API has no emotion yet). */
 export function coachMood(c: Classification | null | undefined): CoachMood {
   switch (c) {
     case "brilliant":
-    case "great_find":
       return "impressed";
+    // Great keeps its own colour (blue), as Chess.com's Great is not Brilliant's teal.
+    case "great_find":
+      return "great";
     case "best":
       return "happy";
     case "mistake":
