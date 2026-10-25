@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Chess Review opener",
-  "version": "0.1.0",
-  "description": "Opens your finished Chess.com games in your own Chess Review app. Not affiliated with Chess.com.",
+  "name": "Game Review opener",
+  "version": "0.2.0",
+  "description": "Opens your finished Chess.com games in your own Game Review app. Not affiliated with Chess.com.",
   "minimum_chrome_version": "118",
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
+  "action": {
+    "default_title": "Game Review opener: settings",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }
+  },
   "permissions": ["declarativeNetRequestWithHostAccess", "storage"],
   "host_permissions": ["https://*.chess.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },

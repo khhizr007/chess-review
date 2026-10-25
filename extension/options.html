@@ -2,33 +2,56 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Chess Review opener: settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Opener settings · Game Review</title>
+    <link rel="icon" href="icons/icon-32.png" />
+    <link rel="stylesheet" href="ui.css" />
     <script type="module" src="options.js"></script>
-    <style>
-      body { font: 14px system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; }
-      label { display: block; margin: 1rem 0 0.25rem; font-weight: 600; }
-      input[type="text"], input[type="url"] { width: 100%; box-sizing: border-box; padding: 0.4rem; font: inherit; }
-      .check { display: flex; gap: 0.5rem; align-items: center; font-weight: 400; }
-      .hint { color: #666; margin: 0.25rem 0 0; }
-      button { margin-top: 1.25rem; padding: 0.45rem 1.2rem; font: inherit; }
-      #status { margin-left: 0.75rem; }
-    </style>
   </head>
   <body>
-    <h1>Chess Review opener</h1>
-    <p class="hint">Opens your Chess.com reviews in your own Chess Review app. Not affiliated with Chess.com.</p>
-    <form id="form">
-      <label class="check"><input type="checkbox" id="enabled" /> Open Chess.com reviews in my app</label>
+    <header class="topbar">
+      <span class="logo">
+        <img src="icons/icon-128.png" alt="" />
+        <span class="logo__word">Game<span class="logo__accent">Review</span></span>
+      </span>
+    </header>
+    <main class="main">
+      <form id="form" class="card" novalidate>
+        <h1>Open reviews in your app</h1>
+        <p class="lede">When you click Review on Chess.com, the game opens here in a new tab instead.</p>
 
-      <label for="appUrl">App address</label>
-      <input type="url" id="appUrl" required />
-      <p class="hint">Where the app runs, e.g. <code>http://localhost:5173/</code> while developing.</p>
+        <label class="toggle">
+          <span>Open Chess.com reviews in my app</span>
+          <input type="checkbox" id="enabled" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
 
-      <label for="username">Your Chess.com username (optional)</label>
-      <input type="text" id="username" pattern="[A-Za-z0-9_\-]{2,30}" autocomplete="off" spellcheck="false" />
-      <p class="hint">The app finds the game in this player's public games. Without it, the app uses the name you last entered there.</p>
+        <div class="field">
+          <label class="card__title" for="appUrl">App address</label>
+          <input class="input" type="url" id="appUrl" required spellcheck="false" placeholder="http://localhost:5173/" />
+          <p class="hint" id="appStatus" aria-live="polite">Where the app runs, e.g. <code>http://localhost:5173/</code> while developing.</p>
+        </div>
 
-      <button type="submit">Save</button><span id="status" role="status"></span>
-    </form>
+        <div class="field">
+          <label class="card__title" for="username">Your Chess.com username</label>
+          <input
+            class="input"
+            type="text"
+            id="username"
+            pattern="[A-Za-z0-9_\-]{2,30}"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Optional"
+          />
+          <p class="hint">The app looks the game up in this player's public games. Bot games stay on Chess.com.</p>
+        </div>
+
+        <div class="actions">
+          <button class="button" type="submit">Save</button>
+          <span id="status" class="status" role="status"></span>
+        </div>
+      </form>
+      <p class="footnote">Not affiliated with Chess.com.</p>
+    </main>
   </body>
 </html>

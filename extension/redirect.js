@@ -16,5 +16,9 @@ try {
     location.replace(url);
   }
 } catch (err) {
-  document.getElementById("status").textContent = `Could not open the review: ${err instanceof Error ? err.message : err}`;
+  document.getElementById("spinner").hidden = true;
+  document.getElementById("status").textContent = "Could not open the review";
+  const box = document.getElementById("error");
+  box.textContent = err instanceof Error ? err.message : String(err);
+  box.hidden = false;
 }

@@ -24,8 +24,12 @@ tab instead. Chrome or Edge (Manifest V3, version 118 or later). Not affiliated 
   archives (`api.chess.com/pub`, the documented API). See `frontend/src/lib/handoff.ts`.
 
 The URL patterns come from Chess.com's own client (routes `web_analysis_ceac` and
-`web_analysis_ceac_tab`, play package 2026.10.8). If Chess.com changes them, update `REVIEW_URL` in
-`shared.js` and `content.js` together.
+`web_analysis_ceac_tab`, play package 2026.10.8; the archive's Review button uses `web_analysis_ceac`
+with no tab). If Chess.com changes them, update `REVIEW_URL` and `OTHER_TAB` in `shared.js` and
+`content.js` together.
+
+Games against bots and coach games still open on Chess.com: its public API does not list them, so the
+app cannot load them.
 
 ## Test
 

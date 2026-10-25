@@ -5,9 +5,11 @@
 (() => {
   // Same pattern as REVIEW_URL in shared.js (test.mjs checks they agree).
   const REVIEW_URL = new RegExp(
-    "^https://(?:[a-z0-9-]+\\.)?chess\\.com/(?:[a-z]{2}(?:[-_][a-z]{2})?/)?analysis/game/(live|daily)/([0-9]+)(?:/review/?(?:[?#].*)?|\\?(?:[^#]*&)?tab=review(?:[&#].*)?)$",
+    "^https://(?:[a-z0-9-]+\\.)?chess\\.com/(?:[a-z]{2}(?:[-_][a-z]{2})?/)?analysis/game/(live|daily)/([0-9]+)(?:/review)?/?(?:[?#].*)?$",
     "i",
   );
+  // Same pattern as OTHER_TAB in shared.js.
+  const OTHER_TAB = new RegExp("[?&]tab=(?:analysis|games|explorer|tablebase|collection-settings)(?:[&#]|$)", "i");
   // A finished game's own page, `/game/{live|daily}/{id}` (optionally behind a language prefix).
   const GAME_PAGE = /^\/(?:[a-z]{2}(?:[-_][a-z]{2})?\/)?game\/(live|daily)\/([0-9]+)\/?$/i;
 
@@ -23,7 +25,7 @@
       if (!(node instanceof Element)) continue;
       if (node instanceof HTMLAnchorElement && node.href) {
         const m = REVIEW_URL.exec(node.href);
-        if (m) return { type: m[1].toLowerCase(), id: m[2] };
+        if (m && !OTHER_TAB.test(node.href)) return { type: m[1].toLowerCase(), id: m[2] };
       }
       // Buttons without a link (the sidebar's "Game Review" on a finished game's page).
       if (node.matches("button, [role=button], a")) {
