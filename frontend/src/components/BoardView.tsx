@@ -6,6 +6,7 @@ import { memo, useLayoutEffect, useRef, useState, type CSSProperties } from "rea
 import type { Classification } from "../api/generated/Classification";
 import type { Side } from "../api/generated/Side";
 import type { MoveTarget, PromotionPiece } from "../lib/chess";
+import { CLASSIFICATIONS } from "../lib/format";
 import { ClassificationIcon, EndMarkIcon, type EndMark } from "./ClassificationIcon";
 import { Piece } from "./pieces";
 import { installBoardPieces } from "../lib/boardPieces";
@@ -22,6 +23,8 @@ export interface Arrow {
 export interface BoardBadge {
   square: string;
   classification: Classification;
+  /** Chess.com's lit-square entrance (Brilliant, Great, Tricky): see `AnimatedBadge`. */
+  animated?: boolean;
 }
 
 /** A king's badge at the end of the game. */
@@ -56,6 +59,8 @@ interface Props {
   badge?: BoardBadge | null;
   /** The kings' badges when the position shown ends the game. */
   endMarks?: BoardEndMark[];
+  /** The square of a king in check: it turns red and the king wiggles, as on Chess.com. */
+  check?: string | null;
   moves?: BoardMoves | null;
   promotion?: BoardPromotion | null;
 }
@@ -123,6 +128,47 @@ function PromotionPicker({ promotion, flipped }: { promotion: BoardPromotion; fl
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Chess.com's entrance for a Brilliant, Great or Tricky move (`.animated-effect` in its analysis
+ * bundle): the square lights up in the class colour while the icon grows in its middle under a pill
+ * naming the class; after 0.7 s the icon flies to the corner and shrinks, the pill folds away and the
+ * square fades. The ordinary corner badge then takes over.
+ */
+function AnimatedBadge({ badge, flipped, part }: { badge: BoardBadge; flipped: boolean; part: "square" | "icon" }) {
+  const { col, row } = topLeft(badge.square, flipped);
+  const meta = CLASSIFICATIONS[badge.classification];
+  const style = { left: `${col * 12.5}%`, top: `${row * 12.5}%`, "--effect-color": meta.color } as CSSProperties;
+  // The lit square goes under the pieces, the icon and its pill over them.
+  if (part === "square") {
+    return (
+      <span className="board-effect" style={style} aria-hidden="true">
+        <span className="board-effect__square" />
+      </span>
+    );
+  }
+  return (
+    <div className="board-effect board-effect--over" style={style} aria-hidden="true">
+      <span className="board-effect__icon">
+        <ClassificationIcon value={badge.classification} size={64} />
+      </span>
+      <span className="board-effect__pill">{meta.label}</span>
+    </div>
+  );
+}
+
+/**
+ * Chess.com's check effect (`vfx-king-check-square` and `vfx-king-check`): the king's square grows
+ * a little and turns red, its red pulses, and the king wiggles. The square sits under the pieces.
+ */
+function CheckSquare({ square, flipped }: { square: string; flipped: boolean }) {
+  const { col, row } = topLeft(square, flipped);
+  return (
+    <span className="board-check" style={{ left: `${col * 12.5}%`, top: `${row * 12.5}%` }} aria-hidden="true">
+      <span className="board-check__overlay" />
+    </span>
   );
 }
 
@@ -322,7 +368,7 @@ function eventPosition(e: MouseEvent | TouchEvent): [number, number] | undefined
  * The pieces are chessground's (Lichess's board, docs/explore-mode.md §5.2): it moves them in the DOM
  * itself, so picking a piece up renders nothing in React.
  */
-export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks, moves, promotion }: Props) {
+export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks, check = null, moves, promotion }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const cg = useRef<Api | null>(null);
@@ -540,6 +586,27 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
     layers.current!.reorient(flipped);
   }, [flipped]);
 
+  // The king in check wiggles once the move has landed (Chess.com's `vfx-king-check`). Chessground
+  // owns the piece's transform, so the wiggle uses the separate `scale` and `rotate` properties.
+  useLayoutEffect(() => {
+    if (!check) return;
+    const king = Array.from(wrapRef.current!.querySelectorAll<HTMLElement & { cgKey?: string }>("piece")).find(
+      (p) => p.cgKey === check && !p.classList.contains("ghost"),
+    );
+    if (!king) return;
+    king.classList.remove("cg-check-wiggle");
+    void king.offsetWidth; // restart the animation on a new check of the same king
+    king.classList.add("cg-check-wiggle");
+    const done = (e: AnimationEvent) => {
+      if (e.animationName === "king-check-shrink") king.classList.remove("cg-check-wiggle");
+    };
+    king.addEventListener("animationend", done);
+    return () => {
+      king.removeEventListener("animationend", done);
+      king.classList.remove("cg-check-wiggle");
+    };
+  }, [fen, check, flipped]);
+
   useLayoutEffect(() => {
     const api = cg.current!;
     if (!movable) {
@@ -558,11 +625,18 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
     <div className="board-wrap">
       <div className={`board ${movable ? "board--movable" : ""}`} ref={boardRef}>
         <Squares flipped={flipped} squareStyles={squareStyles} marks={marks} />
+        {check && <CheckSquare key={`${check}-${fen}`} square={check} flipped={flipped} />}
+        {badge?.animated && <AnimatedBadge key={`fx-${badge.square}-${badge.classification}-${fen}`} badge={badge} flipped={flipped} part="square" />}
         <div className="cg-wrap" ref={wrapRef} />
         <Arrows arrows={shownArrows} flipped={flipped} drawing={drawing} />
       </div>
+      {badge?.animated && <AnimatedBadge key={`fx-${badge.square}-${badge.classification}-${fen}`} badge={badge} flipped={flipped} part="icon" />}
       {badge && (
-        <div className="board-badge" style={corner(badge.square, flipped)} key={`${badge.square}-${badge.classification}-${fen}`}>
+        <div
+          className={`board-badge ${badge.animated ? "board-badge--after-effect" : ""}`}
+          style={corner(badge.square, flipped)}
+          key={`${badge.square}-${badge.classification}-${fen}`}
+        >
           <ClassificationIcon value={badge.classification} size={64} />
         </div>
       )}

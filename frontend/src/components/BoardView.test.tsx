@@ -200,3 +200,32 @@ describe("BoardView with a mouse acts on the press", () => {
     expect(arrows()).toBe(0);
   });
 });
+
+describe("BoardView effects, as on Chess.com", () => {
+  // After 1. e4 f6 2. Qh5+: Black's king on e8 is in check.
+  const CHECK = "rnbqkbnr/ppppp1pp/5p2/7Q/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 2";
+
+  it("reddens the checked king's square and wiggles the king", () => {
+    const view = render(<BoardView fen={CHECK} flipped={false} arrows={[]} squareStyles={{}} check="e8" />);
+    const square = view.container.querySelector<HTMLElement>(".board-check")!;
+    expect(square.style.left).toBe("50%");
+    expect(square.style.top).toBe("0%");
+    const king = [...view.container.querySelectorAll<HTMLElement & { cgKey?: string }>("piece")].find((p) => p.cgKey === "e8");
+    expect(king?.classList.contains("cg-check-wiggle")).toBe(true);
+  });
+
+  it("lights a Brilliant move's square and names it, then keeps the corner badge", () => {
+    const badge = { square: "h5", classification: "brilliant" as const, animated: true };
+    const view = render(<BoardView fen={CHECK} flipped={false} arrows={[]} squareStyles={{}} badge={badge} />);
+    expect(view.container.querySelector(".board-effect__square")).not.toBeNull();
+    expect(view.container.querySelector(".board-effect__pill")?.textContent).toBe("Brilliant");
+    expect(view.container.querySelector(".board-badge--after-effect")).not.toBeNull();
+  });
+
+  it("gives an ordinary badge no entrance", () => {
+    const badge = { square: "h5", classification: "best" as const };
+    const view = render(<BoardView fen={CHECK} flipped={false} arrows={[]} squareStyles={{}} badge={badge} />);
+    expect(view.container.querySelector(".board-effect")).toBeNull();
+    expect(view.container.querySelector(".board-badge")).not.toBeNull();
+  });
+});

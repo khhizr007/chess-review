@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import type { Classification } from "../api/generated/Classification";
 import type { Eval } from "../api/generated/Eval";
 import type { Line } from "../api/generated/Line";
 import type { PlyReview } from "../api/generated/PlyReview";
@@ -33,12 +34,16 @@ export function EvalPill({ value }: { value: Eval }) {
   );
 }
 
-/** Avatar plus white speech bubble, as in the reference coach. */
-export function CoachBubble({ children, mood }: { children: ReactNode; mood?: CoachMood }) {
+/**
+ * Avatar plus white speech bubble, as in the reference coach. A Brilliant or Great move lights the
+ * bubble up in its class colour, which then fades to white (Chess.com's `bot-speech-content-*-animate`).
+ */
+export function CoachBubble({ children, mood, flash }: { children: ReactNode; mood?: CoachMood; flash?: Classification | null }) {
+  const lit = flash === "brilliant" ? "coach__bubble--brilliant" : flash === "great_find" ? "coach__bubble--great" : "";
   return (
     <div className="coach">
       <CoachAvatar mood={mood} />
-      <div className="coach__bubble">
+      <div className={`coach__bubble ${lit}`}>
         {children}
       </div>
     </div>
@@ -102,12 +107,15 @@ export function MoveVerdict({
   message,
   marking,
   onShowLine,
+  skipLines = 0,
 }: {
   ply: PlyReview;
   message: CoachMessage;
   marking?: FragmentMarking;
   /** Starts replaying one of the coach's show-lines; omitted where lines cannot be shown. */
   onShowLine?: (index: number) => void;
+  /** Lines offered elsewhere (the first is the Explain button), so not listed here. */
+  skipLines?: number;
 }) {
   const lines = onShowLine ? (ply.coach?.show_lines ?? []) : [];
   return (
@@ -130,14 +138,16 @@ export function MoveVerdict({
           {message.swing && <WinChance side={ply.mover} before={message.swing.before} after={message.swing.after} />}
         </div>
       )}
-      {lines.length > 0 && (
+      {lines.length > skipLines && (
         <div className="coach__lines">
-          {lines.map((l, i) => (
-            <button key={`${l.label}-${i}`} type="button" className="coach__line-btn" onClick={() => onShowLine?.(i)}>
-              {Icons.eye}
-              {l.label}
-            </button>
-          ))}
+          {lines.map((l, i) =>
+            i < skipLines ? null : (
+              <button key={`${l.label}-${i}`} type="button" className="coach__line-btn" onClick={() => onShowLine?.(i)}>
+                {Icons.eye}
+                {l.label}
+              </button>
+            ),
+          )}
         </div>
       )}
       {ply.pgn_comment && <blockquote className="coach__comment">“{ply.pgn_comment}”</blockquote>}

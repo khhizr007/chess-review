@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ArrowKind } from "../api/generated/ArrowKind";
+import type { Classification } from "../api/generated/Classification";
 import type { Eval } from "../api/generated/Eval";
 import type { MoveRef } from "../api/generated/MoveRef";
 import type { ReviewResult } from "../api/generated/ReviewResult";
@@ -26,7 +27,6 @@ import {
   CoachSentence,
   EvalPill,
   LiveLines,
-  MoveDetails,
   MoveVerdict,
   ShowLineMoves,
   type CoachAction,
@@ -75,8 +75,12 @@ const PREVIEW_TINT = "rgba(255, 196, 64, 0.5)";
 const HINT_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(255, 196, 64, 0.95)", background: "rgba(255, 196, 64, 0.25)" };
 const MARK_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(250, 65, 45, 0.8)", background: "rgba(250, 65, 45, 0.2)" };
 const NO_SENTENCES: Sentence[] = [];
-/** A king in check: Chess.com's solid square (read from its board, 2026-10-22). */
-const CHECK_SQUARE: CSSProperties = { background: "rgba(248, 85, 63, 0.8)" };
+/**
+ * Moves whose badge plays Chess.com's lit-square entrance in its review: the square lights up in the
+ * class colour, the icon grows in its middle with the class name over it, then flies to the corner
+ * (its `rxt` marks these three as `animated` on the Review tab; bundle of 2026-10-25).
+ */
+const ANIMATED_BADGES = new Set<Classification>(["brilliant", "great_find", "tricky"]);
 const ENDINGS: Record<Ending, string> = {
   checkmate: "Checkmate.",
   stalemate: "Stalemate: a draw.",
@@ -145,12 +149,17 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
   const winner: Side | null = review.game.result === "1-0" ? "white" : review.game.result === "0-1" ? "black" : null;
   const [mode, setMode] = useState<Mode>(initialPly === null ? "report" : "review");
   const [ply, setPly] = useState(() => Math.max(0, Math.min(total, initialPly ?? 0)));
+  // The reader's own side is at the bottom, as on Chess.com (White when no side was chosen); the
+  // flip button turns the board from there.
+  const home: Side = review.settings.player_side ?? "white";
   const [flipped, setFlipped] = useState(false);
+  const bottom: Side = flipped === (home === "white") ? "black" : "white";
+  const boardFlipped = bottom === "black";
   const [filter, setFilter] = useState<MoveFilter>("all");
   const [preview, setPreview] = useState<LinePreview | null>(null);
   const [retry, setRetry] = useState<Retry | null>(null);
-  const [showSuggestion, setShowSuggestion] = useState(() => loadFlag("review.engineArrow", false));
-  const [explain, setExplain] = useState(() => loadFlag("review.explain", false));
+  // On by default, as Chess.com's review arrows are.
+  const [showSuggestion, setShowSuggestion] = useState(() => loadFlag("review.engineArrow", true));
   // The live engine's lines while exploring. Chess.com keeps them out of Game Review (they are on
   // its Analysis tab), so they are off until the reader asks for them.
   const [engineLines, setEngineLines] = useState(() => loadFlag("review.engineLines", false));
@@ -542,15 +551,15 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
     return exploreMove(from, to);
   };
 
-  const { arrows, squareStyles, badge, endMarks } = useMemo(() => {
+  const { arrows, squareStyles, badge, endMarks, checkSquare } = useMemo(() => {
     const arrows: Arrow[] = [];
     const styles: Record<string, CSSProperties> = {};
     let badge: BoardBadge | null = null;
     let endMarks: BoardEndMark[] = [];
-    const out = () => ({ arrows, squareStyles: styles, badge, endMarks });
+    let checkSquare: string | null = null;
+    const out = () => ({ arrows, squareStyles: styles, badge, endMarks, checkSquare });
     const check = (fen: string) => {
-      const king = kingSquareToMove(fen);
-      if (king) styles[king] = { ...styles[king], ...CHECK_SQUARE };
+      checkSquare = kingSquareToMove(fen);
     };
 
     if (activeRetry) {
@@ -575,7 +584,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
       const color = shownClass ? CLASSIFICATIONS[shownClass].color : PREVIEW_TINT;
       styles[shownMove.from] = tint(color, shownClass ? 42 : 45);
       styles[shownMove.to] = tint(color, shownClass ? 58 : 65);
-      if (shownClass) badge = { square: shownMove.to, classification: shownClass };
+      if (shownClass) badge = { square: shownMove.to, classification: shownClass, animated: ANIMATED_BADGES.has(shownClass) };
       if (shownMove.flags.check) check(shownMove.fen);
       if (shownEnd === "checkmate") endMarks = mateMarks(shownMove.fen);
       // The engine arrow shows the live engine's top move.
@@ -609,7 +618,9 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
       const color = current.classification ? CLASSIFICATIONS[current.classification].color : "var(--c-best)";
       if (current.from) styles[current.from] = tint(color, 42);
       styles[current.to] = tint(color, 58);
-      if (current.classification) badge = { square: current.to, classification: current.classification };
+      if (current.classification) {
+        badge = { square: current.to, classification: current.classification, animated: ANIMATED_BADGES.has(current.classification) };
+      }
       if (current.flags.check) check(current.fen_after);
       // The final position marks the kings: the mated one, and the winner's.
       if (current.ply === total) {
@@ -686,8 +697,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
       : null;
 
   const material = materialFromFen(displayFen);
-  const bottom: Side = flipped ? "black" : "white";
-  const top: Side = flipped ? "white" : "black";
+  const top: Side = bottom === "white" ? "black" : "white";
   const point = review.graph[ply];
   const clocks = clocksAt(review, ply);
   const strip = (side: Side) => (
@@ -816,7 +826,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
               },
             },
         { label: "Next", icon: Icons.forward, onClick: () => (setLinePlaying(false), stepPreview(1)), hint: "Next move (→)" },
-        { label: "Hide", icon: Icons.close, onClick: closePreview, primary: true, hint: shownMove ? "Back to your move (Esc)" : "Back to the game (Esc)" },
+        { label: "Got it", icon: Icons.close, onClick: closePreview, primary: true, hint: shownMove ? "Back to your move (Esc)" : "Back to the game (Esc)" },
       ];
       return (
         <>
@@ -862,7 +872,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
       if (explanation) extra.push({ label: "Explain", icon: Icons.bulb, iconOnly: true, onClick: () => openShowLine(0), hint: explanation.label });
       return (
         <>
-          <CoachBubble mood={coachMood(shownClass)}>
+          <CoachBubble mood={coachMood(shownClass)} flash={shownClass} key={`line-${path.join(".")}-${shownClass ?? ""}`}>
             <div className="coach__head">
               {shownClass && <ClassificationIcon value={shownClass} size={26} />}
               <h2 className="coach__title">
@@ -956,9 +966,11 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
     // The played move.
     if (!msg) return null;
     const atEnd = ply >= total;
-    const actions: CoachAction[] = [
-      { label: "Explain", icon: Icons.bulb, onClick: () => setExplain((v) => (saveFlag("review.explain", !v), !v)), pressed: explain },
-    ];
+    // Chess.com's Explain plays the coach's line on the board; it is offered only when there is one.
+    const explanation = current.coach?.show_lines?.[0];
+    const actions: CoachAction[] = explanation
+      ? [{ label: "Explain", icon: Icons.bulb, onClick: () => openShowLine(0), hint: explanation.label }]
+      : [];
     if (canRetry) {
       actions.push({ label: "Best", icon: Icons.star, onClick: showBest, hint: "Show the best move" });
       // Retry is offered where there is something to learn, not for near-best moves.
@@ -981,8 +993,8 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
     );
     return (
       <>
-        <CoachBubble mood={coachMood(current.classification)}>
-          <MoveVerdict ply={current} message={msg} marking={marking} onShowLine={openShowLine} />
+        <CoachBubble mood={coachMood(current.classification)} flash={current.classification} key={`ply-${current.ply}`}>
+          <MoveVerdict ply={current} message={msg} marking={marking} onShowLine={openShowLine} skipLines={explanation ? 1 : 0} />
           {atEnd && (
             <div className="coach__body">
               <p className="coach__end">
@@ -1005,17 +1017,18 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
         {strip(top)}
         <div className="board-row">
           {shownMove || bar ? (
-            <EvalBar whiteExpectedPoints={bar?.ep ?? null} evaluation={bar?.eval ?? null} flipped={flipped} />
+            <EvalBar whiteExpectedPoints={bar?.ep ?? null} evaluation={bar?.eval ?? null} flipped={boardFlipped} />
           ) : (
-            point && <EvalBar whiteExpectedPoints={point.white_expected_points} evaluation={point.eval} flipped={flipped} />
+            point && <EvalBar whiteExpectedPoints={point.white_expected_points} evaluation={point.eval} flipped={boardFlipped} />
           )}
           <BoardView
             fen={displayFen}
-            flipped={flipped}
+            flipped={boardFlipped}
             arrows={arrows}
             squareStyles={squareStyles}
             badge={badge}
             endMarks={endMarks}
+            check={checkSquare}
             moves={boardMoves}
             promotion={boardPromotion}
           />
@@ -1025,13 +1038,26 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
 
       <aside className="panel" aria-label="Game review">
         <header className="panel__header">
-          {mode === "review" ? (
-            <button type="button" className="icon-btn" onClick={() => setMode("report")} aria-label="Back to report" title="Back to report">
-              {Icons.back}
+          {/* Flip sits on the board's side of the header, beside Back. */}
+          <div className="panel__header-start">
+            {mode === "review" && (
+              <button type="button" className="icon-btn" onClick={() => setMode("report")} aria-label="Back to report" title="Back to report">
+                {Icons.back}
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setFlipped((f) => !f)}
+              aria-pressed={flipped}
+              aria-label="Flip board"
+              title="Flip board (F)"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="M7 4v15M3.5 15.5L7 19l3.5-3.5M17 20V5M13.5 8.5L17 5l3.5 3.5" />
+              </svg>
             </button>
-          ) : (
-            <span className="icon-btn-spacer" />
-          )}
+          </div>
           <h1 className="panel__title">
             <LogoMark size={26} />
             Game Review
@@ -1061,18 +1087,6 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
             >
               {soundOn ? Icons.sound : Icons.muted}
             </button>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => setFlipped((f) => !f)}
-              aria-pressed={flipped}
-              aria-label="Flip board"
-              title="Flip board (F)"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-                <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="M7 4v15M3.5 15.5L7 19l3.5-3.5M17 20V5M13.5 8.5L17 5l3.5 3.5" />
-              </svg>
-            </button>
           </div>
         </header>
 
@@ -1097,11 +1111,6 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
               <div className="review-pane__coach" aria-live="polite">
                 {coach}
               </div>
-              {explain && current && msg && !activeRetry && !shownMove && (
-                <div className="review-pane__details">
-                  <MoveDetails ply={current} facts={msg.facts} preview={preview} onPreview={setPreview} />
-                </div>
-              )}
               {engineLines && shownMove && !shownOver && (
                 <div className="review-pane__details">
                   <LiveLines

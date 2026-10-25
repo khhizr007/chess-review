@@ -935,7 +935,6 @@ select option {
   transform: translate(-62%, -38%);
   pointer-events: none;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
-  animation: badge-pop 0.28s cubic-bezier(0.3, 1.6, 0.6, 1);
 }
 
 /* The board's layers, in paint order: the squares (their colours, the review's highlights, the
@@ -1219,14 +1218,253 @@ select option {
   height: 100%;
 }
 
-@keyframes badge-pop {
+/* Chess.com's board effects (its analysis bundle, 2026-10-25), started once the moved piece has
+   landed (--land, chessground's 180 ms glide). */
+.board-wrap {
+  --land: 0.18s;
+}
+
+/* The badge fades in on its corner (Chess.com's `.effect.fade-in`, 0.15 s). */
+.board-badge {
+  animation: badge-fade 0.15s cubic-bezier(0, 0, 0.4, 1) var(--land) both;
+}
+
+/* After a lit-square entrance, the corner badge takes over from the flying icon. */
+.board-badge--after-effect {
+  animation-delay: calc(var(--land) + 1.3s);
+  animation-duration: 0.01s;
+}
+
+@keyframes badge-fade {
   from {
-    transform: translate(-62%, -38%) scale(0.3);
     opacity: 0;
   }
+}
+
+/* Brilliant, Great and Tricky (`.animated-effect`): 0.3 s in, 0.7 s held, 0.3 s out. */
+.board-effect {
+  position: absolute;
+  z-index: 0;
+  width: 12.5%;
+  height: 12.5%;
+  pointer-events: none;
+}
+
+.board-effect--over {
+  z-index: 6;
+}
+
+.board-effect__square {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--effect-color) 80%, transparent);
+  opacity: 0;
+  animation:
+    effect-square-in 0.3s cubic-bezier(0, 0, 0.2, 1) var(--land) forwards,
+    effect-square-out 0.3s cubic-bezier(0.42, 0, 0.58, 1) calc(var(--land) + 1s) forwards;
+}
+
+.board-effect__icon {
+  position: absolute;
+  left: 50%;
+  top: 62.5%;
+  width: 70%;
+  aspect-ratio: 1;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4);
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35));
+  animation:
+    effect-icon-in 0.3s cubic-bezier(0, 0, 0.2, 1) var(--land) forwards,
+    effect-icon-corner 0.3s cubic-bezier(0.42, 0, 0.58, 1) calc(var(--land) + 1s) forwards;
+}
+
+.board-effect__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.board-effect__pill {
+  position: absolute;
+  left: 95%;
+  top: 25%;
+  padding: 0 2.12cqw;
+  border-radius: 500px;
+  background: #fff;
+  color: var(--effect-color);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  font-size: 2.73cqw;
+  font-weight: 700;
+  line-height: 4.55cqw;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  animation:
+    effect-pill-in 0.3s cubic-bezier(0, 0, 0.2, 1) var(--land) forwards,
+    effect-pill-out 0.3s cubic-bezier(0.42, 0, 0.58, 1) calc(var(--land) + 1s) forwards;
+}
+
+@keyframes effect-square-in {
   to {
-    transform: translate(-62%, -38%) scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes effect-square-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes effect-icon-in {
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* To the badge's corner at about its size, then gone as the badge appears. */
+@keyframes effect-icon-corner {
+  from {
+    opacity: 1;
+    left: 50%;
+    top: 62.5%;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  99% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    left: 95%;
+    top: 6%;
+    transform: translate(-50%, -50%) scale(0.55);
+  }
+}
+
+@keyframes effect-pill-in {
+  to {
+    opacity: 1;
+    top: 5%;
+  }
+}
+
+@keyframes effect-pill-out {
+  from {
+    opacity: 1;
+    top: 5%;
+    transform: translate(-50%, -50%);
+  }
+  to {
+    opacity: 0;
+    top: 5%;
+    transform: translate(-50%, -50%) scaleX(0);
+  }
+}
+
+/* Check (`vfx-king-check-square`): the square grows 15 % and back, then its red pulses. */
+.board-check {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  pointer-events: none;
+  animation:
+    check-square-grow 50ms linear var(--land) both,
+    check-square-shrink 0.25s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--land) + 50ms) forwards;
+}
+
+.board-check__overlay {
+  position: absolute;
+  inset: 0;
+  background: #e63946;
+  opacity: 0.55;
+  animation: check-pulse 2s cubic-bezier(0.33, 1, 0.68, 1) calc(var(--land) + 0.4s) infinite;
+}
+
+@keyframes check-square-grow {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.15);
+  }
+}
+
+@keyframes check-square-shrink {
+  from {
+    transform: scale(1.15);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes check-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* The king in check (`vfx-king-check`): lifts 10 %, wiggles ±4° five times, settles. Chessground
+   owns `transform`, so this uses `scale` and `rotate`. */
+.cg-wrap piece.cg-check-wiggle {
+  animation:
+    king-check-grow 50ms linear 0.18s forwards,
+    king-check-wiggle 0.2s linear 0.23s 5 forwards,
+    king-check-shrink 0.25s cubic-bezier(0.16, 1, 0.3, 1) 1.23s forwards;
+}
+
+@keyframes king-check-grow {
+  from {
+    scale: 1;
+  }
+  to {
+    scale: 1.1;
+  }
+}
+
+@keyframes king-check-wiggle {
+  0%,
+  50%,
+  100% {
+    scale: 1.1;
+    rotate: 0deg;
+  }
+  25% {
+    scale: 1.1;
+    rotate: -4deg;
+  }
+  75% {
+    scale: 1.1;
+    rotate: 4deg;
+  }
+}
+
+@keyframes king-check-shrink {
+  from {
+    scale: 1.1;
+  }
+  to {
+    scale: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-badge,
+  .board-check,
+  .board-check__overlay,
+  .cg-wrap piece.cg-check-wiggle,
+  .coach__bubble--brilliant,
+  .coach__bubble--brilliant::before,
+  .coach__bubble--great,
+  .coach__bubble--great::before {
+    animation: none;
+  }
+  .board-effect {
+    display: none;
   }
 }
 
@@ -1552,6 +1790,11 @@ select option {
   justify-content: flex-end;
 }
 
+.panel__header-start {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .panel__scroll {
   flex: 1;
   min-height: 0;
@@ -1660,9 +1903,16 @@ select option {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 2px rgba(38, 194, 163, 0.45), 0 0 14px rgba(38, 194, 163, 0.55);
 }
 
-.coach__avatar--impressed .piece-icon {
+.coach__avatar--impressed .piece-icon,
+.coach__avatar--great .piece-icon {
   transform: scale(1.06);
   animation: avatar-hop 0.5s var(--ease) 2;
+}
+
+/* Great is blue, not Brilliant's teal. */
+.coach__avatar--great {
+  background: radial-gradient(120% 90% at 30% 15%, #b5d0e8 0%, var(--c-great) 50%, #44698c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 2px rgba(116, 155, 191, 0.45), 0 0 14px rgba(116, 155, 191, 0.55);
 }
 
 .coach__avatar--concerned {
@@ -1711,6 +1961,38 @@ select option {
   from {
     opacity: 0.4;
     transform: translateY(2px);
+  }
+}
+
+/* A Brilliant or Great move lights the bubble (and its tail) in the class colour, held 0.75 s and
+   faded over 0.3 s (Chess.com's `bot-speech-content-brilliant-animate` / `-greatFind-animate`). */
+.coach__bubble--brilliant {
+  --lit: var(--c-brilliant);
+}
+
+.coach__bubble--great {
+  --lit: var(--c-great);
+}
+
+.coach__bubble--brilliant,
+.coach__bubble--great {
+  animation:
+    bubble-in 0.2s var(--ease),
+    bubble-lit 1.05s linear;
+}
+
+.coach__bubble--brilliant::before,
+.coach__bubble--great::before {
+  animation: bubble-lit 1.05s linear;
+}
+
+@keyframes bubble-lit {
+  0%,
+  71.4% {
+    background-color: var(--lit);
+  }
+  100% {
+    background-color: var(--bubble);
   }
 }
 
