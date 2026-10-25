@@ -3,14 +3,17 @@ frontend/node_modules
 frontend/dist
 *.log
 __pycache__/
-# Chess.com coach captures and the decoded text asset are local evaluation data only
-# (docs/calibration/coach-log.md); they hold Chess.com text and must never be committed.
+# Chess.com coach captures and the decoded text asset are local evaluation data only; they hold
+# Chess.com text and must never be committed.
 captures/
 *.coach.json
 *.keys.json
 coach_en_us.raw
 rating_ranges.raw
 tag_names.txt
+# Calibration data lives in a separate private repository; never commit a leftover local copy.
+/tests/calibration/
+/tools/calibrate/
 
-# A local sound pack (docs/sound.md). It may hold the reference client's audio, which must never be committed.
+# A local sound pack. It may hold the reference client's audio, which must never be committed.
 frontend/public/sounds/

@@ -15,7 +15,7 @@ Protocol: one JSON object per line.
 
 Setup (not part of the build; the maia2 package downloads the model weights on first use, from
 the location its authors publish, into --models-dir). maia2 0.10.0 pins torch 2.8.0, numpy 2.1.3
-and pandas 2.2.3, which need Python 3.12 or 3.13; see docs/configuration.md "Maia-2":
+and pandas 2.2.3, which need Python 3.12 or 3.13; see README.md "Maia-2 (optional)":
 
     uv venv --python 3.12 ~/maia312
     uv pip install --python ~/maia312/bin/python torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu

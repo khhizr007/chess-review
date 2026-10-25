@@ -5,27 +5,26 @@ then step through the game with move classifications, best moves, alternative li
 evaluation graph and a summary. You can also play your own moves on the board to explore sidelines,
 with a live Stockfish evaluation that runs in your browser.
 
-The grading rules reproduce the review logic recovered from a reference application. That logic is
-documented in [`docs/functional-spec.md`](docs/functional-spec.md):
+The grading rules reproduce the review logic of a reference application:
 - the expected-points curve and its rating rule;
 - the precision thresholds;
 - the classification decision tree and mate rules;
 - CAPS2 accuracy.
 
-Where the reference behaviour could not be recovered, documented and configurable fallbacks are
-used ([`docs/open-questions.md`](docs/open-questions.md)).
+Where the reference behaviour is not known, configurable fallbacks are used. The rules and their
+defaults are documented in `backend/crates/review-core/src/config.rs`.
 
-- **Backend:** Rust (axum, tokio, shakmaty, pgn-reader). The `review-core` crate holds the recovered
+- **Backend:** Rust (axum, tokio, shakmaty, pgn-reader). The `review-core` crate holds the
   rules with no I/O. `review-server` holds the API, PGN import, the Stockfish pool and the pipeline.
 - **Frontend:** React + TypeScript (Vite, chessground, chessops). Its API types are generated from the
-  Rust types.
+  Rust types (`frontend/src/api/generated/`).
 
 ## Requirements
 
 - Rust 1.88+ (`rustup`)
 - Node.js 20+ and npm
-- A UCI engine, normally [Stockfish](https://stockfishchess.org/download/). It is not bundled; see
-  [`docs/configuration.md`](docs/configuration.md#installing-stockfish).
+- A UCI engine, normally [Stockfish](https://stockfishchess.org/download/). It is not bundled (see
+  [Installing Stockfish](#installing-stockfish)).
 
 ## Quick start (development)
 
@@ -45,7 +44,7 @@ At the Standard preset (depth 18) a 40-move game takes about a minute on a 4-cor
 much quicker.
 
 **Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
-Moves and brilliant moves have sounds ([`docs/sound.md`](docs/sound.md)); the **Sound** switch turns them off.
+Moves and brilliant moves have sounds; the **Sound** switch turns them off.
 
 ## Single-process deployment
 
@@ -56,7 +55,67 @@ STOCKFISH_PATH=/path/to/stockfish STATIC_DIR=../frontend/dist ./target/release/r
 # → http://127.0.0.1:8080 serves both the UI and the API
 ```
 
-All settings are environment variables; see [`docs/configuration.md`](docs/configuration.md).
+All settings are environment variables (see [Configuration](#configuration)).
+
+## Configuration
+
+### Backend (environment variables)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `STOCKFISH_PATH` | `stockfish` found on `PATH` | UCI engine executable. Without one the server starts in "degraded" mode: import and parsing work, reviews return 503. |
+| `BIND_ADDR` | `127.0.0.1:8080` | Listen address |
+| `ENGINE_POOL_SIZE` | half the CPUs, 1–4 | Engine processes, which is also the maximum number of parallel searches |
+| `ENGINE_THREADS` | `1` | `Threads` per engine process |
+| `ENGINE_HASH_MB` | `64` | `Hash` per engine process |
+| `ENGINE_SEARCH_TIMEOUT_SECS` | `60` | Hard limit per position |
+| `ANALYSIS_CACHE_ENTRIES` | `20000` | LRU cache of position analyses (0 disables it) |
+| `OPENINGS_DIR` | `./data/openings` if present | Opening TSVs. Without them, no move is classified as Book. |
+| `MAX_CONCURRENT_REVIEWS` | `2` | Reviews that run at the same time; others queue |
+| `MAX_STORED_REVIEWS` | `100` | Finished reviews kept in memory |
+| `STATIC_DIR` | unset | Serve a built frontend (`frontend/dist`) from the backend |
+| `CORS_ORIGIN` | unset | Allowed browser origin. Only needed when the frontend is served from another origin without the Vite proxy. |
+| `MAIA_COMMAND` | unset | Command that starts the optional Maia-2 sidecar (see below). Without it the coach does not judge how hard a move was to find. |
+| `RUST_LOG` | `info,tower_http=warn` | Log filter |
+
+**CPU budget.** CPU use is about `ENGINE_POOL_SIZE × ENGINE_THREADS` cores while a review runs. On a
+4-core machine the defaults (2 × 1) keep the desktop responsive.
+
+**Review rules.** The defaults are returned by `GET /api/config/defaults`. A review request may pass
+`config` to override them; the fields are documented in `backend/crates/review-core/src/config.rs`.
+
+### Frontend
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VITE_BACKEND_URL` | `http://127.0.0.1:8080` | Where the Vite dev server proxies `/api` |
+
+### Maia-2 (optional)
+
+[Maia-2](https://github.com/CSSLab/maia2) (MIT) predicts the moves human players of a given rating
+make; the coach uses it to say when the best move was hard to find. It runs as a separate Python
+process and is not bundled. `maia2` 0.10.0 needs Python 3.12 or 3.13:
+
+```bash
+uv venv --python 3.12 ~/maia312
+uv pip install --python ~/maia312/bin/python torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+uv pip install --python ~/maia312/bin/python maia2==0.10.0 --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+MAIA_COMMAND="$HOME/maia312/bin/python tools/maia/maia_sidecar.py --type rapid" ./target/release/review-server
+```
+
+On first start the sidecar downloads the weights (280 MB) into `~/.cache/maia2`. If it fails to
+start or answer, reviews go on without it.
+
+### Installing Stockfish
+
+The server's Stockfish is GPL-3.0 and is **not** bundled. Install it from your package manager
+(`apt install stockfish`, `brew install stockfish`) or from https://stockfishchess.org/download/,
+then point `STOCKFISH_PATH` at the binary. Any UCI engine with `MultiPV` support works.
+
+The live engine for sidelines is a separate, bundled WebAssembly build (Stockfish 19 Lite,
+`frontend/public/engine/`, see `THIRD_PARTY.md`). It runs in the reader's browser and adds no work to
+the server. Any server that serves `.wasm` as `application/wasm` can host it; with `STATIC_DIR` the
+backend does.
 
 ## Tests and checks
 
@@ -70,24 +129,8 @@ cd frontend
 npm test && npm run typecheck && npm run lint && npm run build
 ```
 
-`cargo test` also regenerates `frontend/src/api/generated/*.ts`.
-
-## Documentation
-
-| Document | Content |
-|---|---|
-| [`docs/functional-spec.md`](docs/functional-spec.md) | Recovered behaviour, tagged Confirmed / Inferred / Unknown |
-| [`docs/open-questions.md`](docs/open-questions.md) | Unresolved items and the fallback used for each |
-| [`docs/architecture.md`](docs/architecture.md) | Components, data flow, concurrency |
-| [`docs/api.md`](docs/api.md) | HTTP API |
-| [`docs/implementation-notes.md`](docs/implementation-notes.md) | How the spec maps to code; fallback heuristics |
-| [`docs/parity.md`](docs/parity.md) | Parity evidence and expected differences |
-| [`docs/configuration.md`](docs/configuration.md) | Environment variables, engine installation |
-| [`docs/coach-analysis.md`](docs/coach-analysis.md) | How the reference coach explains moves, and the design for ours |
-| [`docs/coach-research-notes.md`](docs/coach-research-notes.md) | Research on chess commentary, tactic detection and feedback |
-| [`docs/coach-gap-analysis.md`](docs/coach-gap-analysis.md) | Where the coach stands against the reference after phases 0–3, and the revised plan |
-| [`docs/explore-mode.md`](docs/explore-mode.md) | Exploring your own moves with a live engine: analysis, measurements and plan |
-| [`tests/fixtures/`](tests/fixtures/README.md) | Sample PGNs and the test corpus |
+`cargo test` also regenerates `frontend/src/api/generated/*.ts`. The test PGNs are in
+[`backend/crates/review-server/tests/fixtures/`](backend/crates/review-server/tests/fixtures/README.md).
 
 ## License
 

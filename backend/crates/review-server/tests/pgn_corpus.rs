@@ -1,4 +1,4 @@
-//! PGN import over the shared fixture corpus (`tests/fixtures`).
+//! PGN import over the shared fixture corpus (`tests/fixtures`, in this crate).
 
 mod common;
 

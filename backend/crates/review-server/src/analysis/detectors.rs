@@ -1427,7 +1427,7 @@ mod tests {
 
     #[test]
     fn opera_game_sacrifices() {
-        let pgn = include_str!("../../../../../tests/fixtures/opera_game.pgn");
+        let pgn = include_str!("../../tests/fixtures/opera_game.pgn");
         let game = crate::pgn::parse_pgn(pgn).unwrap().remove(0).unwrap();
         let cfg = BrilliantConfig::default();
         let at = |ply: usize| {

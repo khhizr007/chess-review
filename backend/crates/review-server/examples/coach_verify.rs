@@ -2,8 +2,8 @@
 //! false claims by kind.
 //!
 //! ```text
-//! # a calibration run directory (or one of its game JSON files), as written by compare.py
-//! cargo run --release -p review-server --example coach_verify -- tests/calibration/runs/<run> [--list]
+//! # a directory of review JSON files (or one of them), e.g. a calibration run
+//! cargo run --release -p review-server --example coach_verify -- <run dir> [--list]
 //! # a PGN, reviewed here with a real engine
 //! STOCKFISH_PATH=/path/to/stockfish \
 //!   cargo run --release -p review-server --example coach_verify -- <game.pgn> [depth] [--list]

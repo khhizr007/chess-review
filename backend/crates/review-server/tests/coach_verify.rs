@@ -37,7 +37,8 @@ const FIXTURES: [&str; 10] = [
     "multi_games.pgn",
 ];
 
-/// Calibration games in the sample (the first ones by id).
+/// Calibration games in the sample (`tests/fixtures/calibration-sample`: the first 16 by id of the
+/// calibration set, rated online games).
 const CALIBRATION_SAMPLE: usize = 16;
 
 async fn reviews(pgn: &str, player_side: Option<Side>) -> Vec<ReviewResult> {
@@ -70,7 +71,7 @@ fn games() -> Vec<(String, String)> {
         .iter()
         .map(|f| ((*f).to_owned(), common::fixture(f)))
         .collect();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/calibration/games");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/calibration-sample");
     let mut pgns: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())
