@@ -484,49 +484,398 @@ select option {
 
 /* =================================================================== import */
 
-.import__intro {
-  max-width: 680px;
-  margin: 8px 0 24px;
+/*
+ * The landing page reads like a page of a chess book: a serif headline, a diagram with its
+ * caption, and the key to the annotation signs. The search stays the first thing to use.
+ */
+.landing {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  position: relative;
 }
 
-.import__eyebrow {
-  display: inline-block;
-  margin-bottom: 10px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: rgba(129, 182, 76, 0.16);
-  color: var(--green-200);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.landing__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 500px);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+  padding: clamp(8px, 4vh, 48px) 0 40px;
 }
 
-.import__intro h1 {
-  font-size: clamp(1.6rem, 3vw, 2.15rem);
-  font-weight: 800;
-  letter-spacing: -0.025em;
-}
-
-.import__intro p {
-  margin: 10px 0 0;
+.landing__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   max-width: 600px;
+}
+
+.landing__kicker {
+  margin: 0 0 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--green-200);
+}
+
+.landing__title {
+  font-family: var(--serif);
+  font-size: clamp(2.2rem, 4.6vw, 3.5rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.landing__lede {
+  margin: 18px 0 28px;
+  max-width: 34em;
+  font-size: 1.06rem;
+  line-height: 1.55;
   color: var(--text-3);
+}
+
+/* The username search: the page's one big control. */
+.landing .card--online {
+  padding: 16px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--panel-shadow), inset 0 0 0 1px var(--border);
+}
+
+.landing .online-form__input {
+  padding: 12px 14px;
+  font-size: 1.02rem;
+}
+
+.landing .online-form .button {
+  padding-inline: 20px;
+}
+
+/* "Or paste a PGN": folded until wanted. */
+.pgn-drawer {
+  margin-top: 14px;
+}
+
+.pgn-drawer summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-3);
+  font-size: 0.92rem;
+  font-weight: 600;
+  border-radius: var(--r-sm);
+}
+
+.pgn-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.pgn-drawer summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s var(--ease);
+}
+
+.pgn-drawer[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.pgn-drawer summary:hover {
+  color: var(--text);
+}
+
+.pgn-drawer__body {
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+}
+
+.pgn-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pgn-drawer__head .card__title {
+  margin: 0;
+}
+
+.landing .pgn-input {
+  min-height: 200px;
+}
+
+/* Once a game is loaded: which game, which side, start. */
+.setup {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  box-shadow: var(--panel-shadow), inset 0 0 0 1px rgba(129, 182, 76, 0.35);
+  animation: fade-in 0.18s ease-out;
+}
+
+.setup .card__title + .segmented {
+  margin-top: 2px;
+}
+
+.segmented--sides {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.segmented--sides label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup__start {
+  margin-top: 18px;
+}
+
+/* The diagram, captioned like a figure in a book. */
+.landing__figure {
+  margin: 0;
+  position: sticky;
+  top: 80px;
+}
+
+.mini-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  /* Fixed rows: an empty rank must keep its height. */
+  grid-template-rows: repeat(8, 1fr);
+  aspect-ratio: 1;
+  border-radius: var(--r);
+  /* Not overflow: hidden, or the corner badge is cut off; the corner squares round instead. */
+  box-shadow: 0 0 0 6px var(--gray-900), 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.mini-board__sq {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.mini-board__sq:nth-child(1) {
+  border-top-left-radius: var(--r);
+}
+
+.mini-board__sq:nth-child(8) {
+  border-top-right-radius: var(--r);
+}
+
+.mini-board__sq:nth-child(57) {
+  border-bottom-left-radius: var(--r);
+}
+
+.mini-board__sq:nth-child(64) {
+  border-bottom-right-radius: var(--r);
+}
+
+/* Each square is its own stacking context (container-type), so lift the one with the badge. */
+.mini-board__sq.has-badge {
+  z-index: 1;
+}
+
+.mini-board__sq.is-light {
+  background: var(--board-light);
+}
+
+.mini-board__sq.is-dark {
+  background: var(--board-dark);
+}
+
+.mini-board__sq.is-lit::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 51, 0.5);
+}
+
+.mini-board__sq .pc {
+  position: relative;
+  display: block;
+}
+
+.mini-board__rank,
+.mini-board__file {
+  position: absolute;
+  z-index: 1;
+  font-size: max(9px, 18cqi);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mini-board__rank {
+  top: 6%;
+  left: 7%;
+}
+
+.mini-board__file {
+  right: 7%;
+  bottom: 5%;
+}
+
+.is-light > .mini-board__rank,
+.is-light > .mini-board__file {
+  color: var(--board-dark);
+}
+
+.is-dark > .mini-board__rank,
+.is-dark > .mini-board__file {
+  color: var(--board-light);
+}
+
+.mini-board__badge {
+  position: absolute;
+  z-index: 2;
+  top: -14%;
+  right: -14%;
+  width: 48%;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+}
+
+.mini-board__badge .cls-icon {
+  width: 100%;
+  height: auto;
+}
+
+.landing__figure figcaption {
+  display: grid;
+  gap: 2px;
+  margin-top: 20px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border-strong);
+  font-family: var(--serif);
   font-size: 1rem;
 }
 
-.import__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
-  gap: 16px;
-  align-items: start;
+.landing__figure-players {
+  color: var(--text);
+  font-weight: 600;
 }
 
-.import__main {
+.landing__figure-where {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.landing__figure-note {
+  margin-top: 6px;
+  color: var(--text-3);
+}
+
+.landing__figure-note strong {
+  color: var(--c-brilliant);
+}
+
+/* Top bar's "Star" button with the repo's live GitHub count. */
+.topbar {
+  justify-content: space-between;
+}
+
+.gh-stars {
+  display: inline-flex;
+  align-items: stretch;
+  height: 32px;
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-2);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.12s;
+}
+
+.gh-stars:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.gh-stars__label,
+.gh-stars__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+}
+
+.gh-stars__count {
+  border-left: 1px solid var(--border-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Landing page footer. */
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: var(--panel-head);
+}
+
+.site-footer__inner {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 24px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+.site-footer a {
+  color: var(--text-3);
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.site-footer__links {
+  display: flex;
+  gap: 20px;
+  grid-row: span 2;
+  align-items: center;
+}
+
+.site-footer__fine {
+  font-size: 0.8rem;
+  color: var(--faint);
+}
+
+.app {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-width: 0;
+  min-height: 100vh;
+}
+
+.app > .main {
+  flex: 1;
+  width: 100%;
+}
+
+.landing .dropzone {
+  position: fixed;
+  inset: 16px;
+  z-index: 30;
 }
 
 /* Recent games from Chess.com or Lichess. */
@@ -676,7 +1025,7 @@ select option {
   box-shadow: inset 0 0 0 1px rgba(129, 182, 76, 0.7), 0 0 0 3px rgba(129, 182, 76, 0.18);
 }
 
-.card--pgn.is-dragging .pgn-input {
+.landing.is-dragging .pgn-input {
   box-shadow: inset 0 0 0 2px var(--green-300);
 }
 
@@ -715,10 +1064,6 @@ select option {
   color: var(--muted);
   font-size: 0.9rem;
   text-align: center;
-}
-
-.card--settings .card__title + .segmented {
-  margin-top: 2px;
 }
 
 .game-list {
@@ -3311,8 +3656,22 @@ select option {
     padding: 8px 8px 0;
   }
 
-  .import__grid {
+  .landing__hero {
     grid-template-columns: 1fr;
+  }
+
+  .landing__figure {
+    position: static;
+    max-width: 440px;
+  }
+
+  .site-footer__inner {
+    grid-template-columns: 1fr;
+    padding: 20px 16px;
+  }
+
+  .site-footer__links {
+    grid-row: auto;
   }
 
   .pgn-input {

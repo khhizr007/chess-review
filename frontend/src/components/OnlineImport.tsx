@@ -114,7 +114,7 @@ export function OnlineImport({ onPick, currentPgn }: Props) {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
-        <button type="submit" className="button button--ghost" disabled={loading || !username.trim()}>
+        <button type="submit" className="button button--primary" disabled={loading || !username.trim()}>
           {loading ? "Loading…" : "Show games"}
         </button>
       </form>

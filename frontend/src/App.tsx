@@ -6,6 +6,7 @@ import { Logo } from "./components/Logo";
 import { PieceDefs } from "./components/pieces";
 import { ReviewLoading } from "./components/ReviewLoading";
 import { ReviewScreen } from "./components/ReviewScreen";
+import { GitHubStars, SiteFooter } from "./components/SiteChrome";
 import { useReviewJob } from "./hooks/useReviewJob";
 import { parseReviewHash, reviewHash } from "./lib/hash";
 
@@ -46,6 +47,7 @@ export function App() {
       {!reviewLayout && (
         <header className="topbar">
           <Logo />
+          <GitHubStars />
         </header>
       )}
       <main className={reviewLayout ? "main main--review" : "main"}>
@@ -86,6 +88,7 @@ export function App() {
           </section>
         )}
       </main>
+      {!reviewLayout && <SiteFooter />}
     </div>
   );
 }

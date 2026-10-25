@@ -78,3 +78,17 @@ describe("ImportPanel: this is me", () => {
     expect(myUsernames()).toEqual([]);
   });
 });
+
+describe("ImportPanel: analysis settings", () => {
+  it("offers no depth or line choice and always asks for depth 18", async () => {
+    serve("Alice", "Bob");
+    const onStart = vi.fn();
+    await load(onStart);
+    expect(screen.queryByRole("group", { name: "Strength" })).toBeNull();
+    expect(screen.queryByLabelText("Engine lines per position")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start review" }));
+    const req = onStart.mock.calls[0]?.[0] as CreateReviewRequest;
+    expect(req.strength).toBe("standard");
+    expect(req).not.toHaveProperty("multipv");
+  });
+});
