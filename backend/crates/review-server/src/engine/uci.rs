@@ -224,6 +224,7 @@ fn go_command(request: &AnalysisRequest) -> String {
     let mut go = match request.limit {
         SearchLimit::Depth { depth } => format!("go depth {}", depth.max(1)),
         SearchLimit::MoveTime { millis } => format!("go movetime {}", millis.max(10)),
+        SearchLimit::Nodes { nodes } => format!("go nodes {}", nodes.max(1)),
     };
     if let Some(moves) = request.searchmoves.as_ref().filter(|m| !m.is_empty()) {
         go.push_str(" searchmoves ");
