@@ -288,17 +288,17 @@ async fn analyse_positions(
     let done = &done;
     let progress = &progress;
     let searched = work.len();
-    let searches =
-        futures::stream::iter(work.into_iter().chain(threat_work).map(|req| async move {
+    let searches = search_all(
+        evaluator,
+        work.into_iter().chain(threat_work).map(|req| async move {
             let Some(req) = req else { return Ok(None) };
             let analysis = evaluator.analyze(&req, cancel).await?;
             let n = done.fetch_add(1, Ordering::SeqCst) + 1;
             progress(n, total);
             Ok::<_, EngineError>(Some(analysis))
-        }))
-        .buffered(evaluator.parallelism().max(1))
-        .collect::<Vec<_>>()
-        .await;
+        }),
+    )
+    .await;
     let mut results = Vec::with_capacity(searches.len());
     for (k, result) in searches.into_iter().enumerate() {
         match result {
@@ -368,13 +368,12 @@ async fn analyse_positions(
                 ))
             })
             .collect();
-        let results = futures::stream::iter(
+        let results = search_all(
+            evaluator,
             after_best
                 .into_iter()
                 .map(|(i, req)| async move { (i, evaluator.analyze(&req, cancel).await) }),
         )
-        .buffered(evaluator.parallelism().max(1))
-        .collect::<Vec<_>>()
         .await;
         for (i, result) in results {
             match result {
@@ -419,11 +418,12 @@ async fn analyse_positions(
                 )
             })
             .collect();
-        let results = futures::stream::iter(shallow.into_iter().map(|(i, req)| async move {
-            Ok::<_, EngineError>((i, evaluator.analyze(&req, cancel).await?))
-        }))
-        .buffered(evaluator.parallelism().max(1))
-        .collect::<Vec<_>>()
+        let results = search_all(
+            evaluator,
+            shallow.into_iter().map(|(i, req)| async move {
+                Ok::<_, EngineError>((i, evaluator.analyze(&req, cancel).await?))
+            }),
+        )
         .await;
         for result in results {
             match result {
@@ -439,6 +439,32 @@ async fn analyse_positions(
         }
     }
     Ok(infos)
+}
+
+/// Runs searches with up to the evaluator's parallelism in flight, starting the
+/// next one as soon as any finishes (a free-engine queue), and returns the
+/// results in input order. Unlike `buffered`, a slow search does not hold back
+/// the others: `buffered` counts finished results queued behind it as in flight.
+async fn search_all<F, T>(evaluator: &dyn Evaluator, jobs: impl Iterator<Item = F>) -> Vec<T>
+where
+    F: std::future::Future<Output = T>,
+{
+    let width = evaluator.parallelism().max(1);
+    let mut jobs = jobs.enumerate();
+    let mut running = futures::stream::FuturesUnordered::new();
+    let mut out: Vec<(usize, T)> = Vec::new();
+    loop {
+        while running.len() < width {
+            let Some((k, job)) = jobs.next() else { break };
+            running.push(async move { (k, job.await) });
+        }
+        match running.next().await {
+            Some(done) => out.push(done),
+            None => break,
+        }
+    }
+    out.sort_unstable_by_key(|(k, _)| *k);
+    out.into_iter().map(|(_, r)| r).collect()
 }
 
 /// Evaluation of the position after a line's first move: for the mover's own

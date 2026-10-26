@@ -98,7 +98,7 @@ pub struct Defaults {
 #[ts(export)]
 pub struct StrengthPreset {
     pub strength: Strength,
-    pub depth: u32,
+    pub limit: SearchLimit,
 }
 
 async fn defaults() -> Json<Defaults> {
@@ -113,7 +113,7 @@ async fn defaults() -> Json<Defaults> {
         .into_iter()
         .map(|strength| StrengthPreset {
             strength,
-            depth: strength.depth(),
+            limit: strength.limit(),
         })
         .collect(),
         default_strength: Strength::Standard,
@@ -230,13 +230,16 @@ pub struct CreateReviewRequest {
     /// Which game of a multi-game PGN (default 0).
     #[ts(optional)]
     pub game_index: Option<u32>,
-    /// Depth preset; ignored when `depth` or `movetime_ms` is given.
+    /// Depth preset; ignored when `depth`, `movetime_ms` or `nodes` is given.
     #[ts(optional)]
     pub strength: Option<Strength>,
     #[ts(optional)]
     pub depth: Option<u32>,
     #[ts(optional)]
     pub movetime_ms: Option<u32>,
+    /// Node budget per position (UCI `go nodes`).
+    #[ts(optional)]
+    pub nodes: Option<u32>,
     /// Engine lines per position (1–5, default 3).
     #[ts(optional)]
     pub multipv: Option<u8>,
@@ -252,28 +255,34 @@ pub struct CreateReviewRequest {
 fn search_limit(
     depth: Option<u32>,
     movetime_ms: Option<u32>,
+    nodes: Option<u32>,
     strength: Option<Strength>,
 ) -> Result<SearchLimit, ApiError> {
-    match (depth, movetime_ms) {
-        (Some(_), Some(_)) => Err(ApiError::bad_request(
+    match (depth, movetime_ms, nodes) {
+        (None, None, Some(nodes)) if (1_000..=50_000_000).contains(&nodes) => {
+            Ok(SearchLimit::Nodes { nodes })
+        }
+        (None, None, Some(_)) => Err(ApiError::bad_request(
             "invalid_settings",
-            "give either depth or movetime_ms, not both",
+            "nodes must be between 1000 and 50000000",
         )),
-        (Some(depth), None) if (1..=40).contains(&depth) => Ok(SearchLimit::Depth { depth }),
-        (Some(_), None) => Err(ApiError::bad_request(
+        (_, _, Some(_)) | (Some(_), Some(_), None) => Err(ApiError::bad_request(
+            "invalid_settings",
+            "give only one of depth, movetime_ms and nodes",
+        )),
+        (Some(depth), None, None) if (1..=40).contains(&depth) => Ok(SearchLimit::Depth { depth }),
+        (Some(_), None, None) => Err(ApiError::bad_request(
             "invalid_settings",
             "depth must be between 1 and 40",
         )),
-        (None, Some(millis)) if (50..=60_000).contains(&millis) => {
+        (None, Some(millis), None) if (50..=60_000).contains(&millis) => {
             Ok(SearchLimit::MoveTime { millis })
         }
-        (None, Some(_)) => Err(ApiError::bad_request(
+        (None, Some(_), None) => Err(ApiError::bad_request(
             "invalid_settings",
             "movetime_ms must be between 50 and 60000",
         )),
-        (None, None) => Ok(SearchLimit::Depth {
-            depth: strength.unwrap_or(Strength::Standard).depth(),
-        }),
+        (None, None, None) => Ok(strength.unwrap_or(Strength::Standard).limit()),
     }
 }
 
@@ -296,7 +305,7 @@ async fn create_review(
 ) -> Result<(StatusCode, Json<ReviewStatus>), ApiError> {
     let Json(req) = body?;
     let evaluator = require_engine(&state)?;
-    let limit = search_limit(req.depth, req.movetime_ms, req.strength)?;
+    let limit = search_limit(req.depth, req.movetime_ms, req.nodes, req.strength)?;
     let multipv = req.multipv.unwrap_or(3);
     if !(1..=5).contains(&multipv) {
         return Err(ApiError::bad_request(
@@ -566,7 +575,7 @@ async fn analyze_position(
         }));
     }
     let evaluator = require_engine(&state)?;
-    let limit = search_limit(req.depth, req.movetime_ms, Some(Strength::Standard))?;
+    let limit = search_limit(req.depth, req.movetime_ms, None, Some(Strength::Standard))?;
     let multipv = req.multipv.unwrap_or(3).clamp(1, 5);
     let analysis = evaluator
         .analyze(

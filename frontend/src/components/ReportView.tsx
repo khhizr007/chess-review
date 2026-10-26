@@ -255,7 +255,9 @@ export function ReportView({ review, current, onSelect, onReviewAt, onStart, onN
               {review.engine},{" "}
               {review.settings.limit.kind === "depth"
                 ? `depth ${review.settings.limit.depth}`
-                : `${review.settings.limit.millis} ms per position`}
+                : review.settings.limit.kind === "nodes"
+                  ? `${review.settings.limit.nodes.toLocaleString("en-US")} nodes per position`
+                  : `${review.settings.limit.millis} ms per position`}
               , {review.settings.multipv} line(s). Win-probability rating: {review.rating_used}.
             </li>
             <li>Forced moves are counted as Best, as in the reference app.</li>

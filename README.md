@@ -40,8 +40,8 @@ npm run dev
 ```
 
 Open http://localhost:5173. Then type your Chess.com or Lichess username under **Your games** and pick a game, or click **Load sample**, or paste or open a PGN. Then click **Start review**.
-At the Standard preset (depth 18) a 40-move game takes about a minute on a 4-core machine. **Fast** is
-much quicker.
+At the Standard preset (600,000 nodes per position, Chess.com's Game Review budget) a 40-move game
+takes about 15 seconds on an 8-core machine. **Fast** is much quicker.
 
 **Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
 Moves and brilliant moves have sounds; the **Sound** switch turns them off.
@@ -65,7 +65,7 @@ All settings are environment variables (see [Configuration](#configuration)).
 |---|---|---|
 | `STOCKFISH_PATH` | `stockfish` found on `PATH` | UCI engine executable. Without one the server starts in "degraded" mode: import and parsing work, reviews return 503. |
 | `BIND_ADDR` | `127.0.0.1:8080` | Listen address |
-| `ENGINE_POOL_SIZE` | half the CPUs, 1–4 | Engine processes, which is also the maximum number of parallel searches |
+| `ENGINE_POOL_SIZE` | half the CPUs, 1–8 | Engine processes, which is also the maximum number of parallel searches. Each Stockfish process uses about 370 MB of RAM. |
 | `ENGINE_THREADS` | `1` | `Threads` per engine process |
 | `ENGINE_HASH_MB` | `64` | `Hash` per engine process |
 | `ENGINE_SEARCH_TIMEOUT_SECS` | `60` | Hard limit per position |

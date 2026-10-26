@@ -181,7 +181,8 @@ impl Evaluator for ScriptedEngine {
         let key = position_key(&request.fen);
         let depth = match request.limit {
             review_server::engine::SearchLimit::Depth { depth } => Some(depth),
-            review_server::engine::SearchLimit::MoveTime { .. } => None,
+            review_server::engine::SearchLimit::MoveTime { .. }
+            | review_server::engine::SearchLimit::Nodes { .. } => None,
         };
         let lines: Vec<_> = self
             .scripts

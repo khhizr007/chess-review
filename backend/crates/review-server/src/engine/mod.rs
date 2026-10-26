@@ -11,13 +11,15 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-/// Search budget per position.
+/// Search budget per position. `Nodes` (UCI `go nodes`) is deterministic with
+/// one thread and a cleared hash, and it caps the cost of every search.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
 pub enum SearchLimit {
     Depth { depth: u32 },
     MoveTime { millis: u32 },
+    Nodes { nodes: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

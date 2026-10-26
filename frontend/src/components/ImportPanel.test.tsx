@@ -80,7 +80,7 @@ describe("ImportPanel: this is me", () => {
 });
 
 describe("ImportPanel: analysis settings", () => {
-  it("offers no depth or line choice and always asks for depth 18", async () => {
+  it("offers no depth or line choice and always asks for the Standard preset", async () => {
     serve("Alice", "Bob");
     const onStart = vi.fn();
     await load(onStart);

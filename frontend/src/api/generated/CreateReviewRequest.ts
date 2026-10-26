@@ -9,9 +9,13 @@ export type CreateReviewRequest = { pgn: string,
  */
 game_index?: number, 
 /**
- * Depth preset; ignored when `depth` or `movetime_ms` is given.
+ * Depth preset; ignored when `depth`, `movetime_ms` or `nodes` is given.
  */
 strength?: Strength, depth?: number, movetime_ms?: number, 
+/**
+ * Node budget per position (UCI `go nodes`).
+ */
+nodes?: number, 
 /**
  * Engine lines per position (1–5, default 3).
  */
