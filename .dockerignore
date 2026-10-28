@@ -12,6 +12,7 @@ frontend/public/sounds
 tests/calibration
 tools/*
 !tools/maia
+!tools/sounds
 captures
 *.coach.json
 *.keys.json

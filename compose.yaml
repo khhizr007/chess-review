@@ -4,10 +4,9 @@ services:
       context: .
       args:
         # Optional sound pack from another GitHub repository (see the Dockerfile's "Sound pack").
-        # Set these in a .env file next to this one, e.g. SOUNDS_REPO=khhizr007/chess-sounds.
+        # Set these in a .env file next to this one, e.g. SOUNDS_REPO=khhizr007/chess_sounds.
         SOUNDS_REPO: ${SOUNDS_REPO:-}
-        SOUNDS_REF: ${SOUNDS_REF:-main}
-        SOUNDS_DIR: ${SOUNDS_DIR:-.}
+        SOUNDS_REF: ${SOUNDS_REF:-master}
       secrets:
         - github_token
     image: chess-review

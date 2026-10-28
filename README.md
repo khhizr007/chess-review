@@ -63,9 +63,10 @@ Then open http://127.0.0.1:8080. Every variable in [Configuration](#configuratio
 `x86-64-avx2`; use `x86-64` on CPUs without AVX2). Reviews live in memory and are lost when the
 container stops.
 
-A recorded sound pack can be pulled from another GitHub repository at build time. Put
-`SOUNDS_REPO=owner/name` (and, if needed, `SOUNDS_DIR` and `SOUNDS_REF`) in a `.env` file, then
-build with a read-only token for a private repository:
+A recorded sound pack can be pulled from another GitHub repository at build time, in the raw
+layout `tools/sounds/install-sound-pack.sh` reads. Put `SOUNDS_REPO=owner/name` (and, if the branch
+is not `master`, `SOUNDS_REF`) in a `.env` file, then build with a read-only token for a private
+repository:
 
 ```bash
 GITHUB_TOKEN=<token> docker compose up -d --build

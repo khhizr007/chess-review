@@ -36,18 +36,19 @@ RUN curl -fsSL -o /tmp/sf.tar \
  && rm -rf /tmp/sf.tar /tmp/stockfish
 
 # --- Sound pack (optional, from a separate repository) --------------------------
-# Set SOUNDS_REPO=owner/name to pull <kind>.mp3 files (move.mp3, capture.mp3, ...) from that
-# GitHub repository; SOUNDS_DIR is the folder inside it that holds them. A private repository
-# needs a token as the build secret `github_token` (read-only "Contents" access is enough); it is
-# mounted for this step only and never stored in the image. Without SOUNDS_REPO the stage is
-# empty and the app uses its synthesised sounds.
+# Set SOUNDS_REPO=owner/name to pull a raw sound pack (default/*.mp3 and assets-ds/*.mp3, as in
+# khhizr007/chess_sounds) from GitHub; tools/sounds/install-sound-pack.sh renames it to the
+# <kind>.mp3 files the frontend loads. A private repository needs a token as the build secret
+# `github_token` (read-only "Contents" access is enough); it is mounted for this step only and
+# never stored in the image. Without SOUNDS_REPO the stage is empty and the app uses its
+# synthesised sounds.
 FROM debian:trixie-slim AS sounds
 ARG SOUNDS_REPO=
-ARG SOUNDS_REF=main
-ARG SOUNDS_DIR=.
+ARG SOUNDS_REF=master
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
+COPY tools/sounds/install-sound-pack.sh /work/tools/sounds/install-sound-pack.sh
 RUN --mount=type=secret,id=github_token,required=false \
     set -eu; mkdir -p /sounds; \
     if [ -n "${SOUNDS_REPO}" ]; then \
@@ -57,7 +58,8 @@ RUN --mount=type=secret,id=github_token,required=false \
       curl -fsSL ${auth:+-H "$auth"} -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${SOUNDS_REPO}/tarball/${SOUNDS_REF}" \
         | tar -xz -C /tmp/repo --strip-components=1; \
-      cp /tmp/repo/"${SOUNDS_DIR}"/*.mp3 /sounds/; \
+      bash /work/tools/sounds/install-sound-pack.sh /tmp/repo; \
+      cp /work/frontend/public/sounds/*.mp3 /sounds/; \
       rm -rf /tmp/repo; \
       echo "sound pack:"; ls /sounds; \
     fi
