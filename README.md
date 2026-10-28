@@ -46,6 +46,35 @@ takes about 15 seconds on an 8-core machine. **Fast** is much quicker.
 **Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
 Moves and brilliant moves have sounds; the **Sound** switch turns them off.
 
+## Docker
+
+The image builds the frontend and the server, and bundles Stockfish 18 (official release binary)
+and the Maia-2 sidecar with its rapid weights (CPU PyTorch; the image is about 2 GB, and Maia uses
+about 400 MB of RAM). Run with `-e MAIA_COMMAND=` to turn Maia off.
+
+```bash
+docker build -t chess-review .
+docker run --rm -p 127.0.0.1:8080:8080 -e ENGINE_POOL_SIZE=2 chess-review
+# or: docker compose up --build
+```
+
+Then open http://127.0.0.1:8080. Every variable in [Configuration](#configuration) can be set with
+`-e`. Build arguments: `STOCKFISH_VERSION` (default `sf_18`) and `STOCKFISH_ARCH` (default
+`x86-64-avx2`; use `x86-64` on CPUs without AVX2). Reviews live in memory and are lost when the
+container stops.
+
+A recorded sound pack can be pulled from another GitHub repository at build time, in the raw
+layout `tools/sounds/install-sound-pack.sh` reads. Put `SOUNDS_REPO=owner/name` (and, if the branch
+is not `master`, `SOUNDS_REF`) in a `.env` file, then build with a read-only token for a private
+repository:
+
+```bash
+GITHUB_TOKEN=<token> docker compose up -d --build
+```
+
+The token is a build secret and is not stored in the image. Without `SOUNDS_REPO` the app uses its
+synthesised sounds.
+
 ## Single-process deployment
 
 ```bash
@@ -94,7 +123,8 @@ All settings are environment variables (see [Configuration](#configuration)).
 
 [Maia-2](https://github.com/CSSLab/maia2) (MIT) predicts the moves human players of a given rating
 make; the coach uses it to say when the best move was hard to find. It runs as a separate Python
-process and is not bundled. `maia2` 0.10.0 needs Python 3.12 or 3.13:
+process; the Docker image bundles it, otherwise install it yourself. `maia2` 0.10.0 needs Python
+3.12 or 3.13:
 
 ```bash
 uv venv --python 3.12 ~/maia312
