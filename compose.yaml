@@ -1,6 +1,15 @@
 services:
   chess-review:
-    build: .
+    build:
+      context: .
+      args:
+        # Optional sound pack from another GitHub repository (see the Dockerfile's "Sound pack").
+        # Set these in a .env file next to this one, e.g. SOUNDS_REPO=khhizr007/chess-sounds.
+        SOUNDS_REPO: ${SOUNDS_REPO:-}
+        SOUNDS_REF: ${SOUNDS_REF:-main}
+        SOUNDS_DIR: ${SOUNDS_DIR:-.}
+      secrets:
+        - github_token
     image: chess-review
     ports:
       - "127.0.0.1:8080:8080"
@@ -9,3 +18,8 @@ services:
       ENGINE_POOL_SIZE: "2"
       MAX_CONCURRENT_REVIEWS: "2"
     restart: unless-stopped
+
+secrets:
+  # Read from the GITHUB_TOKEN environment variable at build time; empty is fine for a public repo.
+  github_token:
+    environment: GITHUB_TOKEN

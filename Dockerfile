@@ -35,6 +35,33 @@ RUN curl -fsSL -o /tmp/sf.tar \
  && install -m 0755 "/tmp/stockfish/stockfish-ubuntu-${STOCKFISH_ARCH}" /usr/local/bin/stockfish \
  && rm -rf /tmp/sf.tar /tmp/stockfish
 
+# --- Sound pack (optional, from a separate repository) --------------------------
+# Set SOUNDS_REPO=owner/name to pull <kind>.mp3 files (move.mp3, capture.mp3, ...) from that
+# GitHub repository; SOUNDS_DIR is the folder inside it that holds them. A private repository
+# needs a token as the build secret `github_token` (read-only "Contents" access is enough); it is
+# mounted for this step only and never stored in the image. Without SOUNDS_REPO the stage is
+# empty and the app uses its synthesised sounds.
+FROM debian:trixie-slim AS sounds
+ARG SOUNDS_REPO=
+ARG SOUNDS_REF=main
+ARG SOUNDS_DIR=.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=secret,id=github_token,required=false \
+    set -eu; mkdir -p /sounds; \
+    if [ -n "${SOUNDS_REPO}" ]; then \
+      auth=""; \
+      if [ -s /run/secrets/github_token ]; then auth="Authorization: Bearer $(cat /run/secrets/github_token)"; fi; \
+      mkdir /tmp/repo; \
+      curl -fsSL ${auth:+-H "$auth"} -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${SOUNDS_REPO}/tarball/${SOUNDS_REF}" \
+        | tar -xz -C /tmp/repo --strip-components=1; \
+      cp /tmp/repo/"${SOUNDS_DIR}"/*.mp3 /sounds/; \
+      rm -rf /tmp/repo; \
+      echo "sound pack:"; ls /sounds; \
+    fi
+
 # --- Maia-2 (MIT): human-move model for the coach, with its weights -------------
 # maia2 0.10.0 pins torch 2.8.0 and needs Python 3.12 or 3.13. CPU-only torch keeps it small.
 FROM python:3.12-slim-trixie AS maia
@@ -61,6 +88,7 @@ COPY tools/maia/maia_sidecar.py /app/maia/maia_sidecar.py
 COPY --from=stockfish /usr/local/bin/stockfish /usr/local/bin/stockfish
 COPY --from=backend /usr/local/bin/review-server /usr/local/bin/review-server
 COPY --from=frontend /app/frontend/dist /app/static
+COPY --from=sounds /sounds/ /app/static/sounds/
 COPY backend/data/openings /app/data/openings
 
 ENV BIND_ADDR=0.0.0.0:8080 \

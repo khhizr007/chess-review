@@ -17,3 +17,6 @@ tag_names.txt
 
 # A local sound pack. It may hold the reference client's audio, which must never be committed.
 frontend/public/sounds/
+
+# Local Docker settings (may hold a token).
+.env
