@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# One image: the Rust server serves the API and the built frontend, and runs Stockfish.
+# One image: the Rust server serves the API and the built frontend, and runs Stockfish and the
+# Maia-2 sidecar. Set MAIA_COMMAND= (empty) at run time to turn Maia off.
 #   docker build -t chess-review .
 #   docker run --rm -p 8080:8080 chess-review
 
@@ -34,10 +35,29 @@ RUN curl -fsSL -o /tmp/sf.tar \
  && install -m 0755 "/tmp/stockfish/stockfish-ubuntu-${STOCKFISH_ARCH}" /usr/local/bin/stockfish \
  && rm -rf /tmp/sf.tar /tmp/stockfish
 
+# --- Maia-2 (MIT): human-move model for the coach, with its weights -------------
+# maia2 0.10.0 pins torch 2.8.0 and needs Python 3.12 or 3.13. CPU-only torch keeps it small.
+FROM python:3.12-slim-trixie AS maia
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
+RUN python -m venv /opt/maia \
+ && /opt/maia/bin/pip install --no-cache-dir torch==2.8.0 --index-url "${TORCH_INDEX}" \
+ && /opt/maia/bin/pip install --no-cache-dir maia2==0.10.0 --extra-index-url "${TORCH_INDEX}"
+# Fetch the weights at build time (maia2's own published files, 280 MB), so start-up needs no network.
+RUN mkdir -p /opt/maia-models \
+ && /opt/maia/bin/python -c "import gdown; \
+gdown.download('https://drive.google.com/uc?id=1gbC1-c7c0EQOPPAVpGWubezeEW8grVwc', '/opt/maia-models/rapid_model.pt', quiet=True); \
+gdown.download('https://drive.google.com/uc?id=1GQTskYMVMubNwZH2Bi6AmevI15CS6gk0', '/opt/maia-models/config.yaml', quiet=True)" \
+ && test -s /opt/maia-models/rapid_model.pt && test -s /opt/maia-models/config.yaml \
+ && chmod -R a+rX /opt/maia-models
+
 # --- Runtime ------------------------------------------------------------------
-FROM debian:trixie-slim
+# Python base, because the Maia venv links to this image's /usr/local/bin/python3.12.
+FROM python:3.12-slim-trixie
 RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin app
 WORKDIR /app
+COPY --from=maia /opt/maia /opt/maia
+COPY --from=maia /opt/maia-models /opt/maia-models
+COPY tools/maia/maia_sidecar.py /app/maia/maia_sidecar.py
 COPY --from=stockfish /usr/local/bin/stockfish /usr/local/bin/stockfish
 COPY --from=backend /usr/local/bin/review-server /usr/local/bin/review-server
 COPY --from=frontend /app/frontend/dist /app/static
@@ -47,6 +67,7 @@ ENV BIND_ADDR=0.0.0.0:8080 \
     STOCKFISH_PATH=/usr/local/bin/stockfish \
     STATIC_DIR=/app/static \
     OPENINGS_DIR=/app/data/openings \
+    MAIA_COMMAND="/opt/maia/bin/python /app/maia/maia_sidecar.py --type rapid --models-dir /opt/maia-models --threads 2" \
     RUST_LOG=info,tower_http=warn
 
 USER app

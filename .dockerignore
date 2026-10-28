@@ -10,7 +10,8 @@ backend/target
 # Local-only material that must never ship (see .gitignore and THIRD_PARTY.md).
 frontend/public/sounds
 tests/calibration
-tools
+tools/*
+!tools/maia
 captures
 *.coach.json
 *.keys.json

@@ -48,7 +48,9 @@ Moves and brilliant moves have sounds; the **Sound** switch turns them off.
 
 ## Docker
 
-The image builds the frontend and the server, and bundles Stockfish 18 (official release binary).
+The image builds the frontend and the server, and bundles Stockfish 18 (official release binary)
+and the Maia-2 sidecar with its rapid weights (CPU PyTorch; the image is about 2 GB, and Maia uses
+about 400 MB of RAM). Run with `-e MAIA_COMMAND=` to turn Maia off.
 
 ```bash
 docker build -t chess-review .
@@ -109,7 +111,8 @@ All settings are environment variables (see [Configuration](#configuration)).
 
 [Maia-2](https://github.com/CSSLab/maia2) (MIT) predicts the moves human players of a given rating
 make; the coach uses it to say when the best move was hard to find. It runs as a separate Python
-process and is not bundled. `maia2` 0.10.0 needs Python 3.12 or 3.13:
+process; the Docker image bundles it, otherwise install it yourself. `maia2` 0.10.0 needs Python
+3.12 or 3.13:
 
 ```bash
 uv venv --python 3.12 ~/maia312
