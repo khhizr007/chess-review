@@ -1,0 +1,17 @@
+# Keep the build context small and free of local-only data.
+.git
+.claude
+.kiro
+**/node_modules
+frontend/dist
+backend/target
+*.log
+
+# Local-only material that must never ship (see .gitignore and THIRD_PARTY.md).
+frontend/public/sounds
+tests/calibration
+tools
+captures
+*.coach.json
+*.keys.json
+extension

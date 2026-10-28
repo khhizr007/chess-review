@@ -79,7 +79,7 @@ async fn main() -> std::process::ExitCode {
 
     let served = axum::serve(listener, app)
         .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+            shutdown_signal().await;
             tracing::info!("shutting down");
         })
         .await;
@@ -94,5 +94,31 @@ async fn main() -> std::process::ExitCode {
             tracing::error!("server error: {e}");
             std::process::ExitCode::FAILURE
         }
+    }
+}
+
+
+/// Resolves on Ctrl-C, or on SIGTERM (what `docker stop` and most hosts send) on Unix.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(e) => {
+                tracing::warn!("cannot listen for SIGTERM: {e}");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
     }
 }

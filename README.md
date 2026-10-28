@@ -46,6 +46,21 @@ takes about 15 seconds on an 8-core machine. **Fast** is much quicker.
 **Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
 Moves and brilliant moves have sounds; the **Sound** switch turns them off.
 
+## Docker
+
+The image builds the frontend and the server, and bundles Stockfish 18 (official release binary).
+
+```bash
+docker build -t chess-review .
+docker run --rm -p 127.0.0.1:8080:8080 -e ENGINE_POOL_SIZE=2 chess-review
+# or: docker compose up --build
+```
+
+Then open http://127.0.0.1:8080. Every variable in [Configuration](#configuration) can be set with
+`-e`. Build arguments: `STOCKFISH_VERSION` (default `sf_18`) and `STOCKFISH_ARCH` (default
+`x86-64-avx2`; use `x86-64` on CPUs without AVX2). Reviews live in memory and are lost when the
+container stops.
+
 ## Single-process deployment
 
 ```bash
