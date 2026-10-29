@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ApiError, api } from "../api/client";
 import type { Classification } from "../api/generated/Classification";
 import type { CreateReviewRequest } from "../api/generated/CreateReviewRequest";
@@ -39,6 +39,12 @@ function lastMoveLabel(game: GameSummary): string | null {
   return `${number}${ply % 2 === 0 ? "." : "…"}${last.san}`;
 }
 
+/** Scrolls just enough to show the whole element (nothing if it is already in view); no motion when reduced. */
+function scrollIntoReach(element: HTMLElement | null) {
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  element?.scrollIntoView?.({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+}
+
 export function ImportPanel({ onStart, busy }: Props) {
   const [pgn, setPgn] = useState("");
   const [games, setGames] = useState<ParseEntry[] | null>(null);
@@ -49,6 +55,12 @@ export function ImportPanel({ onStart, busy }: Props) {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [pgnOpen, setPgnOpen] = useState(false);
+  // The PGN the last parse was for: until it matches `pgn`, `games` belongs to the previous text.
+  const [parsedPgn, setParsedPgn] = useState("");
+  // The PGN of the game picked from "Your games"; its Start review then sits under that game.
+  const [onlinePgn, setOnlinePgn] = useState<string | null>(null);
+  const pickedRef = useRef<HTMLDivElement>(null);
+  const setupRef = useRef<HTMLDivElement>(null);
   // The side the user played, if any: the coach then talks to them.
   const [side, setSide] = useState<Side | null>(null);
 
@@ -68,6 +80,7 @@ export function ImportPanel({ onStart, busy }: Props) {
     if (!pgn.trim()) {
       setGames(null);
       setParseError(null);
+      setParsedPgn(pgn);
       return;
     }
     const timer = setTimeout(async () => {
@@ -82,6 +95,7 @@ export function ImportPanel({ onStart, busy }: Props) {
         setGames(null);
         setParseError(err instanceof ApiError || err instanceof Error ? err.message : String(err));
       } finally {
+        setParsedPgn(pgn);
         setParsing(false);
       }
     }, 350);
@@ -106,6 +120,64 @@ export function ImportPanel({ onStart, busy }: Props) {
     setSide(selectedGame ? mySide(selectedGame, myUsernames()) : null);
   }, [selectedGame]);
   const canStart = !busy && !!health?.engine && !!selectedEntry?.game && selectedEntry.game.ply_count > 0;
+  const fromOnline = onlinePgn !== null && pgn === onlinePgn;
+  const parsed = parsedPgn === pgn && !parsing;
+
+  // A picked game's Start review appears under it; bring it fully into view if it lands below the fold.
+  useEffect(() => {
+    if (!fromOnline || !parsed) return;
+    scrollIntoReach(pickedRef.current);
+  }, [fromOnline, parsed, pgn]);
+
+  // Likewise when a pasted PGN first turns into a game: the setup appears under the text box.
+  const hasSetup = !!games && !fromOnline;
+  useEffect(() => {
+    if (hasSetup) scrollIntoReach(setupRef.current);
+  }, [hasSetup]);
+
+  // A single game needs no "which game" list.
+  const oneGame = games?.length === 1 && !!games[0]?.game;
+
+  const start = () => {
+    if (selectedGame) rememberChoice(selectedGame, side);
+    // The Standard preset and the server's default engine lines, as Chess.com's review offers no choice.
+    onStart({ pgn, game_index: selected, strength: "standard", ...(side ? { player_side: side } : {}) }, selectedGame);
+  };
+
+  // Which side the user played, then Start review: under a picked online game, or under a pasted PGN.
+  const startControls = (
+    <>
+      {selectedGame && (
+        <>
+          <h2 className="card__title">This is me</h2>
+          <fieldset className="segmented segmented--sides" aria-label="Which side you played">
+            {(
+              [
+                { id: "white", label: selectedGame.white ?? "White", hint: "White" },
+                { id: "black", label: selectedGame.black ?? "Black", hint: "Black" },
+                { id: null, label: "Neither", hint: "neutral coach" },
+              ] as const
+            ).map((o) => (
+              <label key={o.id ?? "none"} className={side === o.id ? "is-active" : ""}>
+                <input
+                  type="radio"
+                  name="player-side"
+                  className="visually-hidden"
+                  checked={side === o.id}
+                  onChange={() => setSide(o.id)}
+                />
+                {o.label}
+                <span className="small muted">{o.hint}</span>
+              </label>
+            ))}
+          </fieldset>
+        </>
+      )}
+      <button type="button" className="button button--primary button--block setup__start" disabled={!canStart} onClick={start}>
+        {busy ? "Starting…" : "Start review"}
+      </button>
+    </>
+  );
 
   // A PGN file dropped anywhere on the page is read.
   const drop = {
@@ -148,11 +220,10 @@ export function ImportPanel({ onStart, busy }: Props) {
           </h1>
           <p className="landing__lede">Enter your Chess.com or Lichess username and pick a game. No account needed.</p>
 
-          {healthError && <div className="notice notice--error">Cannot reach the server: {healthError}</div>}
+          {healthError && <div className="notice notice--error">Servers unavailable. Please try again in a moment.</div>}
           {health && !health.engine && (
-            <div className="notice notice--error">
-              The engine is unavailable: {health.engine_error ?? "not configured"}. Set <code>STOCKFISH_PATH</code> and
-              restart the backend.
+            <div className="notice notice--error" title={health.engine_error ?? undefined}>
+              Analysis servers unavailable. Please try again later.
             </div>
           )}
 
@@ -160,8 +231,22 @@ export function ImportPanel({ onStart, busy }: Props) {
             currentPgn={pgn}
             onPick={(game, username) => {
               rememberUsername(username);
+              setOnlinePgn(game.pgn);
               setPgn(game.pgn);
             }}
+            pickedPanel={
+              fromOnline && (
+                <div className="picked-game" ref={pickedRef}>
+                  {parseError ? (
+                    <div className="notice notice--error">{parseError}</div>
+                  ) : parsed && selectedGame ? (
+                    startControls
+                  ) : (
+                    <p className="picked-game__loading muted small">Loading the game…</p>
+                  )}
+                </div>
+              )
+            }
           />
 
           <details className="pgn-drawer" open={pgnOpen} onToggle={(e) => setPgnOpen(e.currentTarget.open)}>
@@ -196,84 +281,50 @@ export function ImportPanel({ onStart, busy }: Props) {
               />
             </div>
           </details>
-          {parsing && <p className="muted small">Checking PGN…</p>}
-          {parseError && <div className="notice notice--error">{parseError}</div>}
+          {parsing && !fromOnline && <p className="muted small">Checking PGN…</p>}
+          {parseError && !fromOnline && <div className="notice notice--error">{parseError}</div>}
 
-          {games && (
-            <div className="setup">
-              <h2 className="card__title">Game</h2>
-              <ul className="game-list" role="radiogroup" aria-label="Games in the PGN">
-                {games.map((entry) => (
-                  <li key={entry.index}>
-                    <label className={`game-option ${entry.game ? "" : "game-option--error"}`}>
-                      <input
-                        type="radio"
-                        name="game"
-                        disabled={!entry.game}
-                        checked={selected === entry.index}
-                        onChange={() => setSelected(entry.index)}
-                      />
-                      {entry.game ? (
-                        <span>
-                          <strong>
-                            {entry.game.white ?? "White"} – {entry.game.black ?? "Black"}
-                          </strong>
-                          <span className="muted small">
-                            {[entry.game.event, entry.game.date, entry.game.result, `${entry.game.ply_count} plies`]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
-                        </span>
-                      ) : (
-                        <span>
-                          <strong>Game {entry.index + 1}: cannot be reviewed</strong>
-                          <span className="small">{entry.error_message}</span>
-                        </span>
-                      )}
-                    </label>
-                  </li>
-                ))}
-              </ul>
-
-              {selectedGame && (
+          {games && !fromOnline && (
+            <div className="setup" ref={setupRef}>
+              {!oneGame && (
                 <>
-                  <h2 className="card__title">This is me</h2>
-                  <fieldset className="segmented segmented--sides" aria-label="Which side you played">
-                    {(
-                      [
-                        { id: "white", label: selectedGame.white ?? "White", hint: "White" },
-                        { id: "black", label: selectedGame.black ?? "Black", hint: "Black" },
-                        { id: null, label: "Neither", hint: "neutral coach" },
-                      ] as const
-                    ).map((o) => (
-                      <label key={o.id ?? "none"} className={side === o.id ? "is-active" : ""}>
-                        <input
-                          type="radio"
-                          name="player-side"
-                          className="visually-hidden"
-                          checked={side === o.id}
-                          onChange={() => setSide(o.id)}
-                        />
-                        {o.label}
-                        <span className="small muted">{o.hint}</span>
-                      </label>
+                  <h2 className="card__title">Game</h2>
+                  <ul className="game-list" role="radiogroup" aria-label="Games in the PGN">
+                    {games.map((entry) => (
+                      <li key={entry.index}>
+                        <label className={`game-option ${entry.game ? "" : "game-option--error"}`}>
+                          <input
+                            type="radio"
+                            name="game"
+                            disabled={!entry.game}
+                            checked={selected === entry.index}
+                            onChange={() => setSelected(entry.index)}
+                          />
+                          {entry.game ? (
+                            <span>
+                              <strong>
+                                {entry.game.white ?? "White"} – {entry.game.black ?? "Black"}
+                              </strong>
+                              <span className="muted small">
+                                {[entry.game.event, entry.game.date, entry.game.result, `${entry.game.ply_count} plies`]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </span>
+                            </span>
+                          ) : (
+                            <span>
+                              <strong>Game {entry.index + 1}: cannot be reviewed</strong>
+                              <span className="small">{entry.error_message}</span>
+                            </span>
+                          )}
+                        </label>
+                      </li>
                     ))}
-                  </fieldset>
+                  </ul>
                 </>
               )}
 
-              <button
-                type="button"
-                className="button button--primary button--block setup__start"
-                disabled={!canStart}
-                onClick={() => {
-                  if (selectedGame) rememberChoice(selectedGame, side);
-                  // The Standard preset and the server's default engine lines, as Chess.com's review offers no choice.
-                  onStart({ pgn, game_index: selected, strength: "standard", ...(side ? { player_side: side } : {}) }, selectedGame);
-                }}
-              >
-                {busy ? "Starting…" : "Start review"}
-              </button>
+              {startControls}
               {health?.engine && (
                 <p className="engine-status">
                   <span className="engine-status__dot" aria-hidden="true" />
