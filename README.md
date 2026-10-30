@@ -1,18 +1,49 @@
 # Chess Game Review
 
-A chess game-review application. Import a PGN, have every move searched with Stockfish and graded,
-then step through the game with move classifications, best moves, alternative lines, accuracy, an
-evaluation graph and a summary. You can also play your own moves on the board to explore sidelines,
-with a live Stockfish evaluation that runs in your browser.
+**The most complete open-source chess game review.** Review your games and learn from your
+mistakes, for free, with no daily limit and no account.
 
-The grading rules reproduce the review logic of a reference application:
-- the expected-points curve and its rating rule;
-- the precision thresholds;
-- the classification decision tree and mate rules;
-- CAPS2 accuracy.
+Enter your Chess.com or Lichess username, pick a game, and get a full review in about 15 seconds:
+every move graded, a coach that explains *why* in plain words, and a live engine for the moves you
+try yourself.
 
-Where the reference behaviour is not known, configurable fallbacks are used. The rules and their
-defaults are documented in `backend/crates/review-core/src/config.rs`.
+## Why this review
+
+Most open-source review tools grade a move by how many centipawns it lost, and stop there. This
+project grades moves with the full rule set a professional review uses, and adds a real coach on top.
+
+| | **Chess Game Review** | Typical open-source review | Paid commercial review |
+|---|:---:|:---:|:---:|
+| Free, unlimited reviews | ✅ | ✅ | Limited on the free tier |
+| Open source, self-hostable | ✅ | ✅ | ❌ |
+| Full grade set: Brilliant, Great, Best, Excellent, Good, Book, Inaccuracy, Mistake, Miss, Blunder | ✅ | Partial | ✅ |
+| Grades from win chances and player rating, not raw centipawns | ✅ | ❌ | ✅ |
+| Coach explains each move: forks, pins, skewers, trapped pieces, mates, threats, structure | ✅ | ❌ | ✅ |
+| Coach also explains the moves *you* try on the board | ✅ | ❌ | ✅ |
+| Every coach sentence checked against the board by an automated fact checker | ✅ | ❌ | ❌ |
+| Says when the best move was hard to find for your rating (Maia-2) | ✅ | ❌ | ❌ |
+| Live engine for sidelines, running in your browser | ✅ | Some | ✅ |
+| Accuracy per side and per game phase, evaluation graph, takeaways | ✅ | Partial | ✅ |
+| One-click handoff from Chess.com's Review button (browser extension) | ✅ | ❌ | — |
+
+### Where it goes further
+
+- **A coach you can trust.** The coach names the real event on the board and shows the line that
+  proves it. A built-in fact checker (`coach_verify`) re-checks every sentence against the position;
+  on our test games it finds zero false claims.
+- **Honest about difficulty.** With the optional Maia-2 model, the coach tells you when the best move
+  is one most players at your rating would miss, instead of only calling your move bad.
+- **Your ideas count too.** Play any move on the board and it is graded and explained the same way as
+  the game's moves. The live engine runs in your browser, so exploring costs the server nothing.
+- **Yours to run.** One Docker command, your own machine, your own data. Finished reviews are kept for
+  a day, then deleted.
+
+## How it works
+
+Every move is searched with Stockfish, then graded by expected points (win chances adjusted for the
+players' rating), precision thresholds, a classification decision tree with mate rules, and a
+per-move accuracy score. The rules and their defaults are documented in
+`backend/crates/review-core/src/config.rs`.
 
 - **Backend:** Rust (axum, tokio, shakmaty, pgn-reader). The `review-core` crate holds the
   rules with no I/O. `review-server` holds the API, PGN import, the Stockfish pool and the pipeline.
@@ -40,7 +71,7 @@ npm run dev
 ```
 
 Open http://localhost:5173. Then type your Chess.com or Lichess username under **Your games** and pick a game, or click **Load sample**, or paste or open a PGN. Then click **Start review**.
-At the Standard preset (600,000 nodes per position, Chess.com's Game Review budget) a 40-move game
+At the Standard preset (600,000 nodes per position) a 40-move game
 takes about 15 seconds on an 8-core machine. **Fast** is much quicker.
 
 **Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
