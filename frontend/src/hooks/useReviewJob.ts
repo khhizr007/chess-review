@@ -63,7 +63,7 @@ export function useReviewJob() {
     } catch (err) {
       if (controller.signal.aborted) return;
       if (err instanceof ApiError && err.status === 404) {
-        setView({ kind: "error", message: "This review is no longer available on the server. Please run it again." });
+        setView({ kind: "error", message: "This review is no longer available. Please run it again." });
       } else {
         setView({ kind: "error", message: message(err) });
       }

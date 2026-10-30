@@ -18,12 +18,12 @@ function say(element, text, tone) {
 
 /** Whether something answers at the app address (an opaque request: no page data is read). */
 async function checkApp(url) {
-  say(appStatus, "Checking the app…");
+  say(appStatus, "Checking servers…");
   try {
     await fetch(url, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(3000) });
-    say(appStatus, "The app is running.", "ok");
+    say(appStatus, "Servers available.", "ok");
   } catch {
-    say(appStatus, "Nothing answers at this address. Start the app (npm run dev in frontend).", "error");
+    say(appStatus, "Servers unavailable. Check the address, or try again later.", "error");
   }
 }
 

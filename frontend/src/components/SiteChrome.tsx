@@ -99,9 +99,6 @@ export function SiteFooter() {
           <a href={`${REPO_URL}/issues`} target="_blank" rel="noreferrer">
             Report a bug
           </a>
-          <a href={`${REPO_URL}/blob/main/THIRD_PARTY.md`} target="_blank" rel="noreferrer">
-            Credits
-          </a>
         </nav>
         <p className="site-footer__fine">Not affiliated with Chess.com or Lichess.</p>
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { OnlineGamesError, SITE_NAMES, fetchRecentGames, outcomeFor, type OnlineGame, type Site } from "../lib/onlineGames";
 
 interface Props {
@@ -6,6 +6,8 @@ interface Props {
   onPick: (game: OnlineGame, username: string) => void;
   /** The PGN being imported, to mark the game it came from. */
   currentPgn: string;
+  /** Shown right under the picked game: what to do with it (side, Start review). */
+  pickedPanel?: ReactNode;
 }
 
 const KEY = "chess-review:online-account";
@@ -41,7 +43,7 @@ function playedOn(ms: number): string {
 const OUTCOME_LABEL = { won: "W", lost: "L", drawn: "D" } as const;
 
 /** Lists a Chess.com or Lichess player's recent games; picking one imports its PGN. */
-export function OnlineImport({ onPick, currentPgn }: Props) {
+export function OnlineImport({ onPick, currentPgn, pickedPanel }: Props) {
   const [site, setSite] = useState<Site>(() => loadAccount().site);
   const [username, setUsername] = useState(() => loadAccount().username);
   const [games, setGames] = useState<OnlineGame[] | null>(null);
@@ -131,7 +133,7 @@ export function OnlineImport({ onPick, currentPgn }: Props) {
             const opponent = g.userSide === "black" ? g.white : g.black;
             const picked = currentPgn === g.pgn;
             return (
-              <li key={g.id}>
+              <li key={g.id} className={picked ? "is-picked" : undefined}>
                 <button
                   type="button"
                   className={`online-game ${picked ? "is-picked" : ""}`}
@@ -154,15 +156,12 @@ export function OnlineImport({ onPick, currentPgn }: Props) {
                   </span>
                   <span className="online-game__side small muted">as {g.userSide ?? "?"}</span>
                 </button>
+                {picked && pickedPanel}
               </li>
             );
           })}
         </ul>
       )}
-      <p className="online-note small muted">
-        Your browser asks {SITE_NAMES[site]} directly for your public games; the username is not sent to this app's
-        server.
-      </p>
     </div>
   );
 }

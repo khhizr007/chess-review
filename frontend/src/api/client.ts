@@ -36,7 +36,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
-    throw new ApiError(0, "network_error", "Cannot reach the review server. Is the backend running?");
+    throw new ApiError(0, "network_error", "Servers unavailable. Check your connection and try again.");
   }
   const text = await response.text();
   const data: unknown = text ? safeJson(text) : null;

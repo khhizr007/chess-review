@@ -621,6 +621,7 @@ select option {
   background: var(--panel);
   box-shadow: var(--panel-shadow), inset 0 0 0 1px rgba(129, 182, 76, 0.35);
   animation: fade-in 0.18s ease-out;
+  scroll-margin: 16px;
 }
 
 .setup .card__title + .segmented {
@@ -919,7 +920,8 @@ select option {
   list-style: none;
   padding: 0;
   margin: 12px 0 0;
-  max-height: 264px;
+  /* Tall enough for the picked game's card (row, sides, Start review) to fit without scrolling inside. */
+  max-height: min(420px, 60vh);
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -995,8 +997,43 @@ select option {
   flex: none;
 }
 
-.online-note {
-  margin: 10px 0 0;
+/* The picked game opens into its own card: the row on top, which side and Start review under it. */
+.online-games > li.is-picked {
+  border-radius: var(--r);
+  background: rgba(129, 182, 76, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(129, 182, 76, 0.55);
+}
+
+.online-games > li.is-picked .online-game {
+  background: transparent;
+  box-shadow: none;
+}
+
+.picked-game {
+  padding: 4px 12px 12px;
+  animation: fade-in 0.18s ease-out;
+  /* Room above and below when it is scrolled into view, so it doesn't sit flush on the edge. */
+  scroll-margin: 16px;
+}
+
+.picked-game .setup__start {
+  margin-top: 12px;
+}
+
+.picked-game > .notice {
+  margin: 4px 0 0;
+}
+
+.picked-game__loading {
+  margin: 4px 0 0;
+  min-height: 1.4em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .picked-game,
+  .setup {
+    animation: none;
+  }
 }
 
 .pgn-input {
