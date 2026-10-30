@@ -154,7 +154,7 @@ export interface ArrowSource {
 const NO_ARROWS: ReadonlySet<Classification> = new Set(["book", "best", "brilliant", "great_find", "forced"]);
 
 /**
- * The arrows a move shows by default, as on Chess.com (docs/polish-gaps.md #7): none on book and
+ * The arrows a move shows by default (docs/polish-gaps.md #7): none on book and
  * best moves; otherwise the best move's arrow (with `withBest`) and one arrow of the coach's main
  * sentence, never one along the move just played.
  */
@@ -179,7 +179,7 @@ export function coachMood(c: Classification | null | undefined): CoachMood {
   switch (c) {
     case "brilliant":
       return "impressed";
-    // Great keeps its own colour (blue), as Chess.com's Great is not Brilliant's teal.
+    // Great keeps its own colour (blue): Great is not Brilliant's teal.
     case "great_find":
       return "great";
     case "best":

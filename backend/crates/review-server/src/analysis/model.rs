@@ -167,9 +167,6 @@ pub enum Strength {
 }
 
 impl Strength {
-    /// Search budget per position: Chess.com's Game Review node budgets
-    /// (libcee 4.10.15 `get_nodes_for_strength`). On the 577 calibration games
-    /// STANDARD's depths are the closest to the ones Chess.com reports.
     pub fn limit(self) -> SearchLimit {
         let nodes = match self {
             Strength::Fast => 150_000,

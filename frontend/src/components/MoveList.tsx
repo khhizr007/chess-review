@@ -10,7 +10,7 @@ import { San } from "./PieceIcon";
 
 /**
  * The lines explored instead of one game move, listed under it while the board shows that move or is
- * in one of the lines (Chess.com's review lists no other variations).
+ * in one of the lines (the review lists no other variations).
  */
 export interface ListSideline {
   /** Game ply the lines branch from. */
@@ -27,7 +27,7 @@ export interface ListSideline {
   classOf?: (moves: PlayedMove[]) => Classification | null;
 }
 
-/** Chess.com's variation picker: which continuation of the shown move → follows. */
+/** The variation picker: which continuation of the shown move → follows. */
 export interface ListChoice {
   options: PlayedMove[];
   index: number;
@@ -43,7 +43,7 @@ interface Props {
   onSelect: (ply: number) => void;
   sideline?: ListSideline | null;
   choice?: ListChoice | null;
-  /** The game's result ("1-0"), listed after the last move as on Chess.com; null when unfinished. */
+  /** The game's result ("1-0"), listed after the last move; null when unfinished. */
   result?: string | null;
 }
 
@@ -109,7 +109,7 @@ function MoveCell({
 const pathKey = (path: number[]) => path.join(".");
 
 /**
- * One explored line in PGN order, as Chess.com lists it: "2. e4 d5 (2... e5) 3. exd5". A move's
+ * One explored line in PGN order: "2. e4 d5 (2... e5) 3. exd5". A move's
  * variations follow the move they replace, in brackets, and the line goes on after them.
  */
 function SidelineRow({ sideline, root }: { sideline: ListSideline; root: number }) {
@@ -189,7 +189,7 @@ function SidelineRow({ sideline, root }: { sideline: ListSideline; root: number 
 }
 
 /**
- * Chess.com's variation picker, under the shown move: ↑ ↓ or the mouse choose, → Enter or a click
+ * The variation picker, under the shown move: ↑ ↓ or the mouse choose, → Enter or a click
  * follow. A click elsewhere or scrolling the list closes it.
  */
 function VariationPicker({ choice, anchor, side }: { choice: ListChoice; anchor: HTMLElement | null; side: "white" | "black" }) {

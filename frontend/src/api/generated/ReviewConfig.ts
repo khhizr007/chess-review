@@ -15,15 +15,12 @@ precision_thresholds: [number, number, number, number],
  */
 outcome_thresholds: [number, number, number, number, number, number], 
 /**
- * Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
- * Calibrated: 1200..=3000. On Chess.com's own scores the 2500 cap makes
- * titled games too lenient, and games below 1000 are graded as if rated
- * about 1200, Blunders above all (see `docs/calibration/log.md`).
+ * Rating clamp applied to `max(WhiteElo, BlackElo)`. Calibrated: 1200..=3000
+ * (see `docs/calibration/log.md`).
  */
 rating_min: number, rating_max: number, 
 /**
- * Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
- * recovered rule is 0; Chess.com grades match a higher rating than the PGN's
+ * Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200
  * (see `docs/parity.md`).
  */
 rating_offset: number, 
@@ -51,7 +48,7 @@ caps_exclude_completely_lost: boolean,
  */
 material_horizon_plies: number, 
 /**
- * Book moves must form an unbroken run from the start. Off by default: Chess.com
- * also marks a move Book when play transposes back into the book (calibration).
+ * Book moves must form an unbroken run from the start. Off by default: a move is
+ * also marked Book when play transposes back into the book (calibration).
  */
 book_requires_unbroken: boolean, coach: CoachConfig, };

@@ -86,7 +86,7 @@ export function formatEval(ev: Eval): string {
   return `${ev.winner === "white" ? "" : "−"}M${ev.moves}`;
 }
 
-/** Short eval for compact places (bar label); a mate on the board shows the result, as on Chess.com. */
+/** Short eval for compact places (bar label); a mate on the board shows the result. */
 export function formatEvalShort(ev: Eval): string {
   if (ev.kind === "cp") {
     const pawns = Math.abs(ev.cp / 100);

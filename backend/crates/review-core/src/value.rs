@@ -143,7 +143,7 @@ impl Value {
         Some(if self.0 >= 0 { n } else { -n })
     }
 
-    /// `TEP::to_score`: pawns, with mate in N mapped to ±(1000 − 10·min(N, 50)).
+    /// Score in pawns, with mate in N mapped to ±(1000 − 10·min(N, 50)).
     pub fn to_pawns(self) -> f64 {
         match self.mate_moves() {
             None => f64::from(self.0) / 100.0,

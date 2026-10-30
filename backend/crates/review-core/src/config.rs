@@ -15,14 +15,11 @@ pub struct ReviewConfig {
     pub precision_thresholds: [f64; 4],
     /// Expected-outcome bucket boundaries. Recovered: `[0.10, 0.20, 0.35, 0.65, 0.80, 0.90]`.
     pub outcome_thresholds: [f64; 6],
-    /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
-    /// Calibrated: 1200..=3000. On Chess.com's own scores the 2500 cap makes
-    /// titled games too lenient, and games below 1000 are graded as if rated
-    /// about 1200, Blunders above all (see `docs/calibration/log.md`).
+    /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Calibrated: 1200..=3000
+    /// (see `docs/calibration/log.md`).
     pub rating_min: i32,
     pub rating_max: i32,
-    /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
-    /// recovered rule is 0; Chess.com grades match a higher rating than the PGN's
+    /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200
     /// (see `docs/parity.md`).
     pub rating_offset: i32,
     /// Material (cp) a Blunder must actually lose to stay a Blunder (fallback for
@@ -41,14 +38,13 @@ pub struct ReviewConfig {
     pub caps_exclude_completely_lost: bool,
     /// Plies of the principal variation inspected for material changes (fallback).
     pub material_horizon_plies: u32,
-    /// Book moves must form an unbroken run from the start. Off by default: Chess.com
-    /// also marks a move Book when play transposes back into the book (calibration).
+    /// Book moves must form an unbroken run from the start. Off by default: a move is
+    /// also marked Book when play transposes back into the book (calibration).
     pub book_requires_unbroken: bool,
     pub coach: CoachConfig,
 }
 
-/// Brilliant detection (`is_candidate<13>`, `compute_board_event<13>` and the sacrifice base tags,
-/// recovered; see `docs/calibration/great-blunder-analysis.md` §8): a Best move, or a Good one when
+/// Brilliant detection: a Best move, or a Good one when
 /// the best move does not force mate, that sacrifices a piece and leaves the mover in a playable
 /// position. Newer players (below `great_find.high_rated_min`) get the more generous sacrifice test.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -57,7 +53,7 @@ pub struct ReviewConfig {
 pub struct BrilliantConfig {
     pub enabled: bool,
     /// What the opponent must win by capturing the piece (static exchange, cp) for it to count
-    /// as given up: the reference's "strongly SEE-threatened" set (collect_eval_terms, SEE ≥ 200).
+    /// as given up.
     pub min_threat_cp: i32,
     /// A moved pawn can be the piece given up. The reference allows it, but a pawn can never be
     /// strongly threatened (its SEE is at most 100), so this only matters below min_threat_cp 200.
@@ -88,44 +84,43 @@ pub struct BrilliantConfig {
     /// Legacy (`reference_standing` off): a piece left standing does not count when the move
     /// captured a piece worth at least as much.
     pub standing_trade_excludes: bool,
-    /// "Had a safe square" uses the reference's `Piece::safe_squares`: a move of the piece whose own
+    /// "Had a safe square" uses the reference's safe-square rule: a move of the piece whose own
     /// exchange does not lose (an even trade is safe), over the squares it attacks. Recovered: on.
     pub reference_safe_squares: bool,
     /// Legacy (`reference_standing` off): an ignored threat counts only if the piece had a safe
     /// square. The reference has no such test.
     pub ignored_needs_safe_square: bool,
-    /// Pieces left standing follow the reference's `ignored_threats` (with its walk-back over earlier
-    /// moves), `is_indirect_sacrifice` and `is_sacrifice_of_not_moved` instead of the approximation
-    /// above. Recovered: on (docs/calibration/brilliant-analysis.md §8).
+    /// Pieces left standing follow the reference's ignored-threat test (with its walk-back over
+    /// earlier moves) and its indirect-sacrifice and left-standing sacrifice tests instead of the
+    /// approximation above. Recovered: on.
     pub reference_standing: bool,
     /// The moved piece's tests follow the reference exactly: strong threats (SEE ≥ 200) in the
     /// mutual-threat and saved-pieces tests, and a discovered attack is a new strong threat by an
-    /// uncovered slider (`piece_value_of_greatest_discovered_attack`). Recovered: on.
+    /// uncovered slider. Recovered: on.
     pub reference_moved: bool,
-    /// Report 4 checks in `is_sacrifice_of_not_moved`: no pinned attacker (`has_pinned_attacker`).
+    /// The left-standing sacrifice test also needs no pinned attacker.
     pub ref_pinned_attacker: bool,
-    /// Report 4: no overloaded attacker (`has_overloaded_attacker`).
+    /// No overloaded attacker (`has_overloaded_attacker`).
     pub ref_overloaded: bool,
-    /// Report 4: the opponent keeps its safe promotion squares (`safe_promotion_squares`).
+    /// The opponent keeps its safe promotion squares (`safe_promotion_squares`).
     pub ref_promotion: bool,
-    /// Report 4: trapped means threatened with no safe square (`is_trapped`, theme 31).
+    /// Trapped means threatened with no safe square.
     pub ref_trapped: bool,
-    /// Report 4, high-rated moved piece: a non-pinned capturer and no deflection.
+    /// High-rated moved piece: a non-pinned capturer and no deflection.
     pub ref_deflection: bool,
-    /// Report 5: pins follow the reference's slider collectors instead of the standard definition.
+    /// Pins follow the reference's slider rules instead of the standard definition.
     pub ref_decoded_pins: bool,
-    /// Report 5: trapped follows the reference's theme 31 instead of "threatened, no safe square".
+    /// Trapped follows the reference's own rule instead of "threatened, no safe square".
     pub ref_decoded_trapped: bool,
-    /// Report 4 §5: an ignored piece that is relatively pinned counts only if another Good-or-better
-    /// move loses no material (`defensible_by_alternative`).
+    /// An ignored piece that is relatively pinned counts only if another Good-or-better move
+    /// loses no material.
     pub ref_relative_pin_defensible: bool,
-    /// Report §12.3: in `is_sacrifice_of_not_moved`, the threats the move created exclude only the
-    /// SEE-threateners of the sacrificed square (`see_threats_to`), not every geometric attacker.
+    /// In the left-standing sacrifice test, the threats the move created exclude only the
+    /// SEE-threateners of the sacrificed square, not every geometric attacker.
     pub ref_created_see_threats: bool,
 }
 
-/// Great detection (`is_candidate<15>` and its tags, recovered; see
-/// `docs/calibration/great-blunder-analysis.md`). A Great move is a Best or Excellent move that is
+/// Great detection. A Great move is a Best or Excellent move that is
 /// not easy to find and is a key moment after the opponent's error (it forces mate, wins material,
 /// or, in low-rated games, takes a free piece), the only good move in a critical position, or a
 /// move that makes the mover winning or brings them back to equal.
@@ -134,7 +129,7 @@ pub struct BrilliantConfig {
 #[ts(export)]
 pub struct GreatFindConfig {
     pub enabled: bool,
-    /// `TEP::is_high_rated`: `max(WhiteElo, BlackElo)` at least this. Not a requirement: below it
+    /// High-rated game: `max(WhiteElo, BlackElo)` at least this. Not a requirement: below it
     /// Great is more generous (free captures and recaptures are not "easy", a free piece taken
     /// after the opponent's error is a key moment, recaptures and mates are not excluded).
     /// Recovered: 1000.
@@ -172,8 +167,7 @@ pub struct MissConfig {
     /// Opponent's previous EP loss that counts as an opportunity to punish.
     pub opportunity_min_opponent_ep_lost: f64,
     /// A missed free piece or tactic is a Miss only after the opponent's previous move lost at
-    /// least this (Chess.com: a Miss fails "to capitalize on your opponent's mistake").
-    /// Calibrated: 0.05. 0 turns it off.
+    /// least this. Calibrated: 0.05. 0 turns it off.
     pub tactic_min_opponent_ep_lost: f64,
     /// "Missed brilliant": the best move is a sacrifice and its EP is at least this.
     pub brilliant_min_best_ep: f64,

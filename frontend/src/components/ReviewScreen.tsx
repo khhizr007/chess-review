@@ -76,9 +76,8 @@ const HINT_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(255, 196, 
 const MARK_SQUARE: CSSProperties = { boxShadow: "inset 0 0 0 4px rgba(250, 65, 45, 0.8)", background: "rgba(250, 65, 45, 0.2)" };
 const NO_SENTENCES: Sentence[] = [];
 /**
- * Moves whose badge plays Chess.com's lit-square entrance in its review: the square lights up in the
- * class colour, the icon grows in its middle with the class name over it, then flies to the corner
- * (its `rxt` marks these three as `animated` on the Review tab; bundle of 2026-10-25).
+ * Moves whose badge plays the lit-square entrance: the square lights up in the
+ * class colour, the icon grows in its middle with the class name over it, then flies to the corner.
  */
 const ANIMATED_BADGES = new Set<Classification>(["brilliant", "great_find", "tricky"]);
 const ENDINGS: Record<Ending, string> = {
@@ -126,7 +125,7 @@ function saveFlag(key: string, value: boolean) {
   }
 }
 
-/** The kings of a final position: the winner's crown, as on Chess.com. */
+/** The kings of a final position: the winner's crown. */
 function crownMark(fen: string, winner: Side): BoardEndMark[] {
   const square = kingSquare(fen, winner);
   return square ? [{ square, mark: "winner" }] : [];
@@ -149,7 +148,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
   const winner: Side | null = review.game.result === "1-0" ? "white" : review.game.result === "0-1" ? "black" : null;
   const [mode, setMode] = useState<Mode>(initialPly === null ? "report" : "review");
   const [ply, setPly] = useState(() => Math.max(0, Math.min(total, initialPly ?? 0)));
-  // The reader's own side is at the bottom, as on Chess.com (White when no side was chosen); the
+  // The reader's own side is at the bottom (White when no side was chosen); the
   // flip button turns the board from there.
   const home: Side = review.settings.player_side ?? "white";
   const [flipped, setFlipped] = useState(false);
@@ -158,21 +157,20 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
   const [filter, setFilter] = useState<MoveFilter>("all");
   const [preview, setPreview] = useState<LinePreview | null>(null);
   const [retry, setRetry] = useState<Retry | null>(null);
-  // On by default, as Chess.com's review arrows are.
+  // On by default.
   const [showSuggestion, setShowSuggestion] = useState(() => loadFlag("review.engineArrow", true));
-  // The live engine's lines while exploring. Chess.com keeps them out of Game Review (they are on
-  // its Analysis tab), so they are off until the reader asks for them.
+  // The live engine's lines while exploring. They are off until the reader asks for them.
   const [engineLines, setEngineLines] = useState(() => loadFlag("review.engineLines", false));
   const [soundOn, setSoundOn] = useState(() => loadFlag("review.sound", true));
   const [playing, setPlaying] = useState(false);
   const [linePlaying, setLinePlaying] = useState(false);
   const [hovered, setHovered] = useState<Mark | null>(null);
   const [pinned, setPinned] = useState<Mark | null>(null);
-  /** Every line the reader explored, kept for the session as on Chess.com (docs/explore-mode.md §5.2). */
+  /** Every line the reader explored, kept for the session (docs/explore-mode.md §5.2). */
   const [explored, setExplored] = useState<Explored>({});
   /** The explored move shown, as a path down `explored[ply]`; empty on a game position. */
   const [path, setPath] = useState<number[]>([]);
-  /** Chess.com's variation picker, open on this continuation of the shown move. */
+  /** The variation picker, open on this continuation of the shown move. */
   const [choice, setChoice] = useState<number | null>(null);
   /** A pawn move waiting for its promotion piece. */
   const [promotion, setPromotion] = useState<{ from: string; to: string } | null>(null);
@@ -320,7 +318,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
   const closeChoice = useCallback(() => setChoice(null), []);
 
   /**
-   * ← / → and the nav buttons, as in Chess.com's review. On a game position they step through the
+   * ← / → and the nav buttons. On a game position they step through the
    * game, even where lines were explored. In a sideline they walk it: back from its first move is
    * its branch (a game position), forward follows the shown move's line and stops at its end. Where
    * variations were played after the shown move, → (`choose`) opens the picker instead.
@@ -420,7 +418,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
         setMode("review");
         stepBoard(1, true);
       } else if (e.key === "Home" || e.key === "End" || e.key === "ArrowUp" || e.key === "ArrowDown") {
-        // ↑ and ↓ go to the start and the end, as on Chess.com; Home and End too.
+        // ↑ and ↓ go to the start and the end; Home and End too.
         setMode("review");
         go(e.key === "Home" || e.key === "ArrowUp" ? 0 : total);
       } else if (e.key === "f") setFlipped((f) => !f);
@@ -527,7 +525,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
   };
 
   /**
-   * Chess.com's ★ on an explored move: the best move from the position the shown move was played
+   * The ★ on an explored move: the best move from the position the shown move was played
    * from, added beside it as a variation ("2... e5 (2... d5)"), and shown.
    */
   const playBest = (best: MoveRef) => {
@@ -684,8 +682,8 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
       : liveLines[0]
         ? { eval: liveLines[0].eval, ep: expectedPointsFor(liveLines[0].eval, "white", review.rating_used) }
         : null;
-  // An engine line shown on the board (Best among them) moves the bar to the line's evaluation, as on
-  // Chess.com. The coach's lines carry no evaluation, so the bar stays on the game for them.
+  // An engine line shown on the board (Best among them) moves the bar to the line's evaluation.
+  // The coach's lines carry no evaluation, so the bar stays on the game for them.
   const previewEval =
     preview && preview.source !== "coach" && previewMove
       ? (preview.source === "alternatives" ? current?.lines : next?.lines)?.[preview.line]?.eval
@@ -857,7 +855,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
       );
     }
 
-    // Exploring a sideline the reader played on the board. Chess.com's bubble is the same as for a
+    // Exploring a sideline the reader played on the board. The bubble is the same as for a
     // game move (icon, verdict, eval, the coach's note). Under it, "Resume" alone when there is
     // nothing to show, else icon buttons: ★ for a better move, 💡 for the coach's line, then ▶
     // (docs/explore-mode.md §5.2, "What the panel shows").
@@ -966,7 +964,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
     // The played move.
     if (!msg) return null;
     const atEnd = ply >= total;
-    // Chess.com's Explain plays the coach's line on the board; it is offered only when there is one.
+    // Explain plays the coach's line on the board; it is offered only when there is one.
     const explanation = current.coach?.show_lines?.[0];
     const actions: CoachAction[] = explanation
       ? [{ label: "Explain", icon: Icons.bulb, onClick: () => openShowLine(0), hint: explanation.label }]
@@ -1063,7 +1061,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
             Game Review
           </h1>
           <div className="panel__header-end">
-            {/* Where Chess.com has "Go to Analysis": the live lines of an explored move. */}
+            {/* The live lines of an explored move. */}
             {mode === "review" && shownMove && !shownOver && (
               <button
                 type="button"
@@ -1076,7 +1074,7 @@ export function ReviewScreen({ review, reviewId, initialPly = null, onNewGame }:
                 {Icons.lines}
               </button>
             )}
-            {/* Sound is a header icon, as on Chess.com, so the tools row fits the panel. */}
+            {/* Sound is a header icon, so the tools row fits the panel. */}
             <button
               type="button"
               className="icon-btn"

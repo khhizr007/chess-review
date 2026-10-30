@@ -18,8 +18,7 @@ tactic_min_gain_cp: number,
 opportunity_min_opponent_ep_lost: number, 
 /**
  * A missed free piece or tactic is a Miss only after the opponent's previous move lost at
- * least this (Chess.com: a Miss fails "to capitalize on your opponent's mistake").
- * Calibrated: 0.05. 0 turns it off.
+ * least this. Calibrated: 0.05. 0 turns it off.
  */
 tactic_min_opponent_ep_lost: number, 
 /**

@@ -40,7 +40,7 @@ export function lastBookPly(plies: PlyReview[]): number | null {
 }
 
 /**
- * Whether the move list marks a move with its icon, as Chess.com does (docs/polish-gaps.md #14): the
+ * Whether the move list marks a move with its icon (docs/polish-gaps.md #14): the
  * brilliant, great, mistake and blunder classes, best moves at key moments, and the last book move.
  * Inaccuracies, misses and other book moves stay plain.
  */

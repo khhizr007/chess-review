@@ -1,5 +1,5 @@
 // The URL hash: the review shown, and the move when one is being reviewed, so a reload returns to
-// it (Chess.com keeps `?move=N` in its URL the same way).
+// it.
 
 export interface ReviewHash {
   id: string;

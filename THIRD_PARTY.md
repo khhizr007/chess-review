@@ -18,21 +18,6 @@ rules and PGN libraries below are GPL-3.0.
 | [@badrap/result](https://github.com/badrap/result) (dependency of chessops) | Result type | MIT | Bundled into the frontend build |
 | Piece outlines by Colin M.L. Burnett ("cburnett", as shipped in react-chessboard and Lichess) | Piece geometry in `frontend/src/lib/pieceShapes.ts`; the shading and colours are this project's own | GPL-2.0-or-later / BSD / GFDL | Bundled into the frontend build |
 
-## Reference application
-
-The review rules were recovered by analysing a commercial Android application. The project contains
-**no** code, assets, data files or credentials from that application.
-
-- The formulas and thresholds were reimplemented independently in `backend/crates/review-core`.
-- Book moves use the public-domain opening list above, not the reference app's embedded book.
-- The UI uses its own styling and symbols.
-- Sounds play on the reference client's events, but each one is synthesised in the browser by
-  this project's code (`frontend/src/lib/synth.ts`). No audio files are included. A developer may install
-  recordings of their own into the gitignored `frontend/public/sounds/` (`tools/sounds/install-sound-pack.sh`).
-  Those recordings are not part of the project and must not be committed or distributed.
-- The web UI's colour values and spacing follow the reference website's published dark theme, observed in its
-  public stylesheets. No images, piece sets, logos, fonts or code from it are included.
-
 The sample game in the frontend and `backend/crates/review-server/tests/fixtures/opera_game.pgn`
 (Morphy, 1858) and `stalemate.pgn` (Loyd's composition) are public domain. The games in
 `tests/fixtures/calibration-sample/` are rated online games as the site's public API returned them.

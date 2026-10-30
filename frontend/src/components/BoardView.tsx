@@ -23,7 +23,7 @@ export interface Arrow {
 export interface BoardBadge {
   square: string;
   classification: Classification;
-  /** Chess.com's lit-square entrance (Brilliant, Great, Tricky): see `AnimatedBadge`. */
+  /** The lit-square entrance (Brilliant, Great, Tricky): see `AnimatedBadge`. */
   animated?: boolean;
 }
 
@@ -59,7 +59,7 @@ interface Props {
   badge?: BoardBadge | null;
   /** The kings' badges when the position shown ends the game. */
   endMarks?: BoardEndMark[];
-  /** The square of a king in check: it turns red and the king wiggles, as on Chess.com. */
+  /** The square of a king in check: it turns red and the king wiggles. */
   check?: string | null;
   moves?: BoardMoves | null;
   promotion?: BoardPromotion | null;
@@ -132,8 +132,7 @@ function PromotionPicker({ promotion, flipped }: { promotion: BoardPromotion; fl
 }
 
 /**
- * Chess.com's entrance for a Brilliant, Great or Tricky move (`.animated-effect` in its analysis
- * bundle): the square lights up in the class colour while the icon grows in its middle under a pill
+ * The entrance for a Brilliant, Great or Tricky move: the square lights up in the class colour while the icon grows in its middle under a pill
  * naming the class; after 0.7 s the icon flies to the corner and shrinks, the pill folds away and the
  * square fades. The ordinary corner badge then takes over.
  */
@@ -160,7 +159,7 @@ function AnimatedBadge({ badge, flipped, part }: { badge: BoardBadge; flipped: b
 }
 
 /**
- * Chess.com's check effect (`vfx-king-check-square` and `vfx-king-check`): the king's square grows
+ * The check effect: the king's square grows
  * a little and turns red, its red pulses, and the king wiggles. The square sits under the pieces.
  */
 function CheckSquare({ square, flipped }: { square: string; flipped: boolean }) {
@@ -361,7 +360,7 @@ function eventPosition(e: MouseEvent | TouchEvent): [number, number] | undefined
 /**
  * The board. Positions and annotations come from the backend, except in sidelines the reader plays
  * (docs/explore-mode.md §5.1); pieces can be moved only when `moves` is given, by dragging or by
- * clicking the piece and then a square. As on Chess.com, any piece can be picked up, whichever side
+ * clicking the piece and then a square. Any piece can be picked up, whichever side
  * is to move: it shows a growing highlight on its square, and, if it can move, dots on free squares
  * and rings on pieces it can take. A move the rules forbid flashes its square red and is not played.
  *
@@ -456,7 +455,7 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
     const keyAt = (pos: [number, number] | undefined) => (pos ? (api.getKeyAtDomPos(pos) ?? null) : null);
 
     // The press: chessground picks up, moves or puts down on its own (on cg-board); these run just
-    // before it (capture) and just after it (bubble) to add Chess.com's rules.
+    // before it (capture) and just after it (bubble) to add our own rules.
     let rightFrom: string | null = null;
     const onPressBefore = (e: MouseEvent | TouchEvent) => {
       // The board may have moved on the page since chessground last measured it.
@@ -483,7 +482,7 @@ export function BoardView({ fen, flipped, arrows, squareStyles, badge, endMarks,
       own.hold(held && !held.newPiece ? held.orig : null);
     };
 
-    // The release. Chessground plays a legal drop itself; the rest is Chess.com's: a refused drop
+    // The release. Chessground plays a legal drop itself; the rest is ours: a refused drop
     // flashes and the piece goes back still picked up, a drop off the board just goes back, and a
     // drop on its own square counts as a click (it puts down a piece picked up before this press).
     let keep: string | null | undefined;

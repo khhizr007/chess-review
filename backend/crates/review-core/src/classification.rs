@@ -58,7 +58,7 @@ impl Classification {
         )
     }
 
-    /// `node_lib::is_bad_classification`.
+    /// Whether the classification counts as a bad move.
     pub fn is_bad(self) -> bool {
         matches!(
             self,
@@ -406,8 +406,8 @@ pub fn classify(f: &MoveFacts, cfg: &ReviewConfig) -> ClassificationOutcome {
     }
 
     // Missed opportunities, checked against the unadjusted precision grade. A move that walks
-    // into a forced mate is never a Miss (calibration: 1 of Chess.com's 319 Misses allows mate,
-    // 34 of its 228 Blunders do).
+    // into a forced mate is never a Miss (calibration: 1 of the reference's 319 Misses allows
+    // mate, 34 of its 228 Blunders do).
     let walks_into_mate = f.played.mate_moves().is_some_and(|n| n < 0);
     if grade >= Precision::Mistake && !walks_into_mate {
         let a = f.material.drops_material;

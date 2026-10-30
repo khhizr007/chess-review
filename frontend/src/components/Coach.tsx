@@ -36,7 +36,7 @@ export function EvalPill({ value }: { value: Eval }) {
 
 /**
  * Avatar plus white speech bubble, as in the reference coach. A Brilliant or Great move lights the
- * bubble up in its class colour, which then fades to white (Chess.com's `bot-speech-content-*-animate`).
+ * bubble up in its class colour, which then fades to white.
  */
 export function CoachBubble({ children, mood, flash }: { children: ReactNode; mood?: CoachMood; flash?: Classification | null }) {
   const lit = flash === "brilliant" ? "coach__bubble--brilliant" : flash === "great_find" ? "coach__bubble--great" : "";
@@ -57,7 +57,7 @@ export interface CoachAction {
   primary?: boolean;
   pressed?: boolean;
   hint?: string;
-  /** Only the icon is shown, as on Chess.com's explore buttons; the label names it for screen readers. */
+  /** Only the icon is shown; the label names it for screen readers. */
   iconOnly?: boolean;
 }
 
