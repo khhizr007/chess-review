@@ -11,14 +11,14 @@ use crate::coach::CoachNote;
 use crate::engine::SearchLimit;
 use crate::openings::OpeningName;
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Header {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct GameInfo {
     pub index: u32,
@@ -48,7 +48,7 @@ pub struct MoveRef {
     pub fen: String,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Line {
     pub rank: u32,
@@ -58,7 +58,7 @@ pub struct Line {
     pub moves: Vec<MoveRef>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, TS)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MoveFlags {
     pub check: bool,
@@ -71,7 +71,7 @@ pub struct MoveFlags {
 }
 
 /// Analysis of one played move.
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PlyReview {
     /// 1-based ply index of this move.
@@ -123,7 +123,7 @@ pub struct PlyReview {
     pub clock_ms: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SideSummary {
     pub side: Side,
@@ -137,7 +137,7 @@ pub struct SideSummary {
     pub misses: u32,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct GraphPoint {
     /// Ply after which this evaluation holds (0 = start position).
@@ -148,7 +148,7 @@ pub struct GraphPoint {
     pub classification: Option<Classification>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, TS)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PhaseStarts {
     /// First ply played in the middlegame / endgame.
@@ -181,7 +181,7 @@ impl Strength {
     }
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReviewSettingsUsed {
     pub limit: SearchLimit,
@@ -191,7 +191,7 @@ pub struct ReviewSettingsUsed {
     pub player_side: Option<Side>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReviewResult {
     pub game: GameInfo,

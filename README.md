@@ -60,8 +60,9 @@ docker run --rm -p 127.0.0.1:8080:8080 -e ENGINE_POOL_SIZE=2 chess-review
 
 Then open http://127.0.0.1:8080. Every variable in [Configuration](#configuration) can be set with
 `-e`. Build arguments: `STOCKFISH_VERSION` (default `sf_18`) and `STOCKFISH_ARCH` (default
-`x86-64-avx2`; use `x86-64` on CPUs without AVX2). Reviews live in memory and are lost when the
-container stops.
+`x86-64-avx2`; use `x86-64` on CPUs without AVX2). Finished reviews are saved in the
+`/app/data/reviews` volume for a day (`REVIEW_TTL_SECS`), so they survive a restart; compose keeps
+them in the named volume `reviews`.
 
 A recorded sound pack can be pulled from another GitHub repository at build time, in the raw
 layout `tools/sounds/install-sound-pack.sh` reads. Put `SOUNDS_REPO=owner/name` (and, if the branch
@@ -101,7 +102,9 @@ All settings are environment variables (see [Configuration](#configuration)).
 | `ANALYSIS_CACHE_ENTRIES` | `20000` | LRU cache of position analyses (0 disables it) |
 | `OPENINGS_DIR` | `./data/openings` if present | Opening TSVs. Without them, no move is classified as Book. |
 | `MAX_CONCURRENT_REVIEWS` | `2` | Reviews that run at the same time; others queue |
-| `MAX_STORED_REVIEWS` | `100` | Finished reviews kept in memory |
+| `MAX_STORED_REVIEWS` | `5000` | Finished reviews kept on disk. Beyond it the oldest are deleted first. |
+| `REVIEW_STORE_DIR` | `./data/reviews` | Directory for finished reviews, one JSON file each. Only running and queued reviews stay in memory. Avoid a tmpfs such as `/tmp` on many Linux hosts: it is held in RAM. |
+| `REVIEW_TTL_SECS` | `86400` (one day) | How long a finished review is kept. After it the review returns 404 and its file is deleted (minimum 60). |
 | `STATIC_DIR` | unset | Serve a built frontend (`frontend/dist`) from the backend |
 | `CORS_ORIGIN` | unset | Allowed browser origin. Only needed when the frontend is served from another origin without the Vite proxy. |
 | `MAIA_COMMAND` | unset | Command that starts the optional Maia-2 sidecar (see below). Without it the coach does not judge how hard a move was to find. |

@@ -20,3 +20,6 @@ frontend/public/sounds/
 
 # Local Docker settings (may hold a token).
 .env
+
+# Finished reviews the server stores on disk (REVIEW_STORE_DIR default).
+data/reviews/

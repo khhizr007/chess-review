@@ -14,6 +14,7 @@ use review_server::engine::{
     AnalysisRequest, EngineError, EngineLine, Evaluator, PositionAnalysis,
 };
 use review_server::openings::OpeningBook;
+use review_server::store::ReviewStore;
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Color, Position};
 use tokio_util::sync::CancellationToken;
@@ -28,6 +29,16 @@ pub fn fixture(name: &str) -> String {
 pub fn openings() -> Arc<OpeningBook> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/openings");
     Arc::new(OpeningBook::load_dir(&dir).expect("opening data").0)
+}
+
+/// A fresh, empty directory for a test's review store.
+pub fn store_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("review-server-test-{}", uuid::Uuid::new_v4()))
+}
+
+/// A review store in a fresh directory, keeping reviews for an hour.
+pub fn review_store() -> ReviewStore {
+    ReviewStore::open(store_dir(), Duration::from_secs(3600), 100).expect("review store")
 }
 
 /// One-ply engine: scores every legal move by checkmate, stalemate, or material.
