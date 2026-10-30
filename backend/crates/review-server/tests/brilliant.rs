@@ -59,7 +59,7 @@ async fn hanging_piece_sacrifice_rated_best_is_brilliant() {
 
 #[tokio::test]
 async fn near_best_sacrifice_is_brilliant() {
-    // `is_candidate<13>`: a move graded Good or better qualifies when the best move does not force
+    // A move graded Good or better qualifies when the best move does not force
     // mate, so the sacrifice need not be the engine's first choice.
     let engine = ScriptedEngine::default().script(
         GREEK_GIFT,
@@ -85,7 +85,7 @@ async fn sacrifice_when_completely_winning_anyway_is_not_brilliant() {
 
 #[tokio::test]
 async fn sacrifice_with_a_safe_alternative_is_still_brilliant() {
-    // Most of Chess.com's Brilliants have a second-best move almost as good; a
+    // Most Brilliants in the calibration games have a second-best move almost as good; a
     // sacrifice that is the only good move is not required.
     let engine = ScriptedEngine::default().script(
         GREEK_GIFT,

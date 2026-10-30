@@ -5,7 +5,7 @@ import { back, inSideline, listedBranch, moveLabel, nextMoves, play, sidelineLab
 
 const NONE = { check: false, checkmate: false, stalemate: false, capture: false, castle: false, promotion: false, en_passant: false };
 const mv = (uci: string): PlayedMove => ({ san: uci, uci, fen: `fen-${uci}`, from: uci.slice(0, 2), to: uci.slice(2, 4), flags: NONE });
-// The game the rules were observed on (Chess.com, 2026-10-22): 1. d4 c6 2. Nf3 d5 3. Bf4 (only the UCI matters here).
+// The game the rules were observed on (2026-10-22): 1. d4 c6 2. Nf3 d5 3. Bf4 (only the UCI matters here).
 const plies = ["d2d4", "c7c6", "g1f3", "d7d5", "c1f4"].map((uci) => ({ uci }) as PlyReview);
 const start: BoardState = { ply: 2, path: [], explored: {} };
 const playAll = (s: BoardState, ucis: string[]) => ucis.reduce((b, u) => play(b, plies, mv(u)), s);

@@ -9,7 +9,7 @@ afterEach(cleanup);
 const tally = (counts: Partial<Record<Classification, number>>) =>
   Object.entries(counts).map(([classification, count]) => ({ classification, count }));
 
-// Chess.com's own counts for game 142636591844.
+// The reference counts for game 142636591844.
 const review = {
   engine: "Stockfish 18",
   rating_used: 1500,

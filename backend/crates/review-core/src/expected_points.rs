@@ -29,13 +29,13 @@ fn slope(rating: i32) -> f64 {
     0.004 * ((f64::from(rating) * 0.0685 - 12.0) / 100.0)
 }
 
-/// `TEP::centipawns_to_expected_points`.
+/// Centipawns to expected points.
 pub fn cp_to_expected_points(cp: i32, rating: i32) -> f64 {
     let e = (-slope(rating) * f64::from(cp)).exp();
     (2.0 / (e + 1.0) - 1.0) * 0.5 + 0.5
 }
 
-/// `TEP::expected_points_to_centipawns` (truncates toward zero like the reference).
+/// Expected points to centipawns (truncates toward zero like the reference).
 pub fn expected_points_to_cp(ep: f64, rating: i32) -> i32 {
     let cp = (1.0 / ep - 1.0).ln() / (-slope(rating));
     cp as i32
@@ -64,7 +64,7 @@ pub enum ExpectedOutcome {
     CompletelyWinning = 6,
 }
 
-/// `TEP::expected_outcome(Value, rating)`.
+/// The expected-outcome bucket of a value at a rating.
 pub fn expected_outcome(value: Value, rating: i32, cfg: &ReviewConfig) -> ExpectedOutcome {
     use ExpectedOutcome::*;
     const ORDER: [ExpectedOutcome; 6] = [Losing, Worse, Equal, Better, Winning, CompletelyWinning];

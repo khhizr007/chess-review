@@ -1,5 +1,5 @@
 // Sidelines: moves the reader plays on the board instead of the game's (docs/explore-mode.md §5.2).
-// As on Chess.com, every explored move is kept for the session in a tree of variations, and the board
+// Every explored move is kept for the session in a tree of variations, and the board
 // shows either a game position or one explored move.
 import type { PlyReview } from "../api/generated/PlyReview";
 import type { Side } from "../api/generated/Side";
@@ -80,7 +80,7 @@ export function play(state: BoardState, plies: PlyReview[], move: PlayedMove): B
 
 /**
  * The moves → can go to inside a sideline: the shown move's continuations. None at the end of a line,
- * and several when variations were played there, which is when Chess.com asks which one to follow.
+ * and several when variations were played there, which is when the reader is asked which one to follow.
  * Null on a game position, where → follows the game.
  */
 export function nextMoves(state: BoardState): ExploreNode[] | null {
@@ -102,7 +102,7 @@ export function sidelineOf(state: BoardState): Sideline | null {
 }
 
 /**
- * The game ply whose explored lines the move list shows, as Chess.com's review does: the lines the board
+ * The game ply whose explored lines the move list shows: the lines the board
  * is in, or those that replace the game move shown. Null when there are none.
  */
 export function listedBranch(state: BoardState): number | null {

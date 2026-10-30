@@ -113,7 +113,7 @@ pub(crate) struct MoveJudgement {
     /// The square of a threatened piece the move leaves standing (an ignored threat, whatever the
     /// move's grade): the mover's next move does not ignore it again.
     pub ignored_threat: Option<Square>,
-    /// `max(WhiteElo, BlackElo)` reaches `great_find.high_rated_min` (`TEP::is_high_rated`).
+    /// `max(WhiteElo, BlackElo)` reaches `great_find.high_rated_min` (a high-rated game).
     pub high_rated: bool,
     pub good_grade: bool,
     /// The move carried a Great tag (before Brilliant takes precedence), and its line wins
@@ -227,7 +227,7 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
 
     let gf = &cfg.great_find;
     let prev = &input.previous_moves;
-    // `TEP::is_high_rated`: below it Brilliant and Great take their more generous branches.
+    // High-rated game: below it Brilliant and Great take their more generous branches.
     let high_rated = input.highest_elo as i32 >= gf.high_rated_min;
     let is_best = grade == Some(Precision::Best);
     let played_mate = played_value.mate_moves();
@@ -261,7 +261,7 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
                 .mate_moves()
                 .is_some_and(|n| n < 0)
         });
-    // `defensible_by_alternative` (report 4 §5, report 5 §5-6): another candidate move, graded Good
+    // Defence by another move: another candidate move, graded Good
     // or better, loses no material along its line.
     let alt_defends = lines
         .iter()
@@ -295,7 +295,7 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
             .is_some_and(|s| material_gate(balance_after, see::value(s.role)) || !opponent_lost)
         && (position_critical || endgame_gain_ok(&played_walk, bc.endgame_min_gain_cp));
 
-    // Great (`is_candidate<15>` and its tags; docs/calibration/great-blunder-analysis.md §2.1): a
+    // Great: a
     // Best or Excellent move that is not easy to find and is a key moment after the opponent's
     // error, the only good move in a critical position, or a move that makes the mover winning or
     // brings them back to equal. Low-rated games (`!high_rated`) get the more generous branch.

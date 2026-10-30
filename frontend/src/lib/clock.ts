@@ -1,4 +1,4 @@
-// Player clocks from the PGN's [%clk] tags, as Chess.com shows them in the player strips.
+// Player clocks from the PGN's [%clk] tags, as shown in the player strips.
 import type { ReviewResult } from "../api/generated/ReviewResult";
 import type { Side } from "../api/generated/Side";
 
@@ -24,7 +24,7 @@ export function clocksAt(review: ReviewResult, ply: number): Record<Side, number
   return clocks;
 }
 
-/** "9:57", "1:05:00", and tenths under 20 seconds ("0:04.2"), as on Chess.com. Time is rounded down. */
+/** "9:57", "1:05:00", and tenths under 20 seconds ("0:04.2"). Time is rounded down. */
 export function formatClock(ms: number): string {
   const tenths = Math.floor(Math.max(0, ms) / 100);
   const total = Math.floor(tenths / 10);

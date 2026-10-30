@@ -8,7 +8,7 @@
  */
 export type GreatFindConfig = { enabled: boolean, 
 /**
- * `TEP::is_high_rated`: `max(WhiteElo, BlackElo)` at least this. Not a requirement: below it
+ * High-rated game: `max(WhiteElo, BlackElo)` at least this. Not a requirement: below it
  * Great is more generous (free captures and recaptures are not "easy", a free piece taken
  * after the opponent's error is a key moment, recaptures and mates are not excluded).
  * Recovered: 1000.

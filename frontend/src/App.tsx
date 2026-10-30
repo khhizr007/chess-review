@@ -22,7 +22,7 @@ export function App() {
   const { view, start, follow, cancel, reset } = useReviewJob();
   // The game as parsed at import, so the board and players show while the review runs.
   const [game, setGame] = useState<GameSummary | null>(null);
-  // A Chess.com game opened from the browser extension: null, being looked up, or why it failed.
+  // A game opened from the browser extension: null, being looked up, or why it failed.
   const [handoff, setHandoff] = useState<{ state: "finding" } | { state: "error"; message: string } | null>(() =>
     parseHandoffHash(window.location.hash) ? { state: "finding" } : null,
   );

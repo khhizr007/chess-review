@@ -61,7 +61,7 @@ counter_threat_excludes: boolean,
  */
 standing_trade_excludes: boolean, 
 /**
- * "Had a safe square" uses the reference's `Piece::safe_squares`: a move of the piece whose own
+ * "Had a safe square" uses the reference's safe-square rule: a move of the piece whose own
  * exchange does not lose (an even trade is safe), over the squares it attacks. Recovered: on.
  */
 reference_safe_squares: boolean, 
@@ -71,52 +71,52 @@ reference_safe_squares: boolean,
  */
 ignored_needs_safe_square: boolean, 
 /**
- * Pieces left standing follow the reference's `ignored_threats` (with its walk-back over earlier
- * moves), `is_indirect_sacrifice` and `is_sacrifice_of_not_moved` instead of the approximation
- * above. Recovered: on (docs/calibration/brilliant-analysis.md §8).
+ * Pieces left standing follow the reference's ignored-threat test (with its walk-back over
+ * earlier moves) and its indirect-sacrifice and left-standing sacrifice tests instead of the
+ * approximation above. Recovered: on.
  */
 reference_standing: boolean, 
 /**
  * The moved piece's tests follow the reference exactly: strong threats (SEE ≥ 200) in the
  * mutual-threat and saved-pieces tests, and a discovered attack is a new strong threat by an
- * uncovered slider (`piece_value_of_greatest_discovered_attack`). Recovered: on.
+ * uncovered slider. Recovered: on.
  */
 reference_moved: boolean, 
 /**
- * Report 4 checks in `is_sacrifice_of_not_moved`: no pinned attacker (`has_pinned_attacker`).
+ * The left-standing sacrifice test also needs no pinned attacker.
  */
 ref_pinned_attacker: boolean, 
 /**
- * Report 4: no overloaded attacker (`has_overloaded_attacker`).
+ * No overloaded attacker (`has_overloaded_attacker`).
  */
 ref_overloaded: boolean, 
 /**
- * Report 4: the opponent keeps its safe promotion squares (`safe_promotion_squares`).
+ * The opponent keeps its safe promotion squares (`safe_promotion_squares`).
  */
 ref_promotion: boolean, 
 /**
- * Report 4: trapped means threatened with no safe square (`is_trapped`, theme 31).
+ * Trapped means threatened with no safe square.
  */
 ref_trapped: boolean, 
 /**
- * Report 4, high-rated moved piece: a non-pinned capturer and no deflection.
+ * High-rated moved piece: a non-pinned capturer and no deflection.
  */
 ref_deflection: boolean, 
 /**
- * Report 5: pins follow the reference's slider collectors instead of the standard definition.
+ * Pins follow the reference's slider rules instead of the standard definition.
  */
 ref_decoded_pins: boolean, 
 /**
- * Report 5: trapped follows the reference's theme 31 instead of "threatened, no safe square".
+ * Trapped follows the reference's own rule instead of "threatened, no safe square".
  */
 ref_decoded_trapped: boolean, 
 /**
- * Report 4 §5: an ignored piece that is relatively pinned counts only if another Good-or-better
- * move loses no material (`defensible_by_alternative`).
+ * An ignored piece that is relatively pinned counts only if another Good-or-better move
+ * loses no material.
  */
 ref_relative_pin_defensible: boolean, 
 /**
- * Report §12.3: in `is_sacrifice_of_not_moved`, the threats the move created exclude only the
- * SEE-threateners of the sacrificed square (`see_threats_to`), not every geometric attacker.
+ * In the left-standing sacrifice test, the threats the move created exclude only the
+ * SEE-threateners of the sacrificed square, not every geometric attacker.
  */
 ref_created_see_threats: boolean, };

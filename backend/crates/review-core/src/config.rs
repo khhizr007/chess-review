@@ -84,39 +84,39 @@ pub struct BrilliantConfig {
     /// Legacy (`reference_standing` off): a piece left standing does not count when the move
     /// captured a piece worth at least as much.
     pub standing_trade_excludes: bool,
-    /// "Had a safe square" uses the reference's `Piece::safe_squares`: a move of the piece whose own
+    /// "Had a safe square" uses the reference's safe-square rule: a move of the piece whose own
     /// exchange does not lose (an even trade is safe), over the squares it attacks. Recovered: on.
     pub reference_safe_squares: bool,
     /// Legacy (`reference_standing` off): an ignored threat counts only if the piece had a safe
     /// square. The reference has no such test.
     pub ignored_needs_safe_square: bool,
-    /// Pieces left standing follow the reference's `ignored_threats` (with its walk-back over earlier
-    /// moves), `is_indirect_sacrifice` and `is_sacrifice_of_not_moved` instead of the approximation
-    /// above. Recovered: on (docs/calibration/brilliant-analysis.md §8).
+    /// Pieces left standing follow the reference's ignored-threat test (with its walk-back over
+    /// earlier moves) and its indirect-sacrifice and left-standing sacrifice tests instead of the
+    /// approximation above. Recovered: on.
     pub reference_standing: bool,
     /// The moved piece's tests follow the reference exactly: strong threats (SEE ≥ 200) in the
     /// mutual-threat and saved-pieces tests, and a discovered attack is a new strong threat by an
-    /// uncovered slider (`piece_value_of_greatest_discovered_attack`). Recovered: on.
+    /// uncovered slider. Recovered: on.
     pub reference_moved: bool,
-    /// Report 4 checks in `is_sacrifice_of_not_moved`: no pinned attacker (`has_pinned_attacker`).
+    /// The left-standing sacrifice test also needs no pinned attacker.
     pub ref_pinned_attacker: bool,
-    /// Report 4: no overloaded attacker (`has_overloaded_attacker`).
+    /// No overloaded attacker (`has_overloaded_attacker`).
     pub ref_overloaded: bool,
-    /// Report 4: the opponent keeps its safe promotion squares (`safe_promotion_squares`).
+    /// The opponent keeps its safe promotion squares (`safe_promotion_squares`).
     pub ref_promotion: bool,
-    /// Report 4: trapped means threatened with no safe square (`is_trapped`, theme 31).
+    /// Trapped means threatened with no safe square.
     pub ref_trapped: bool,
-    /// Report 4, high-rated moved piece: a non-pinned capturer and no deflection.
+    /// High-rated moved piece: a non-pinned capturer and no deflection.
     pub ref_deflection: bool,
-    /// Report 5: pins follow the reference's slider collectors instead of the standard definition.
+    /// Pins follow the reference's slider rules instead of the standard definition.
     pub ref_decoded_pins: bool,
-    /// Report 5: trapped follows the reference's theme 31 instead of "threatened, no safe square".
+    /// Trapped follows the reference's own rule instead of "threatened, no safe square".
     pub ref_decoded_trapped: bool,
-    /// Report 4 §5: an ignored piece that is relatively pinned counts only if another Good-or-better
-    /// move loses no material (`defensible_by_alternative`).
+    /// An ignored piece that is relatively pinned counts only if another Good-or-better move
+    /// loses no material.
     pub ref_relative_pin_defensible: bool,
-    /// Report §12.3: in `is_sacrifice_of_not_moved`, the threats the move created exclude only the
-    /// SEE-threateners of the sacrificed square (`see_threats_to`), not every geometric attacker.
+    /// In the left-standing sacrifice test, the threats the move created exclude only the
+    /// SEE-threateners of the sacrificed square, not every geometric attacker.
     pub ref_created_see_threats: bool,
 }
 
@@ -129,7 +129,7 @@ pub struct BrilliantConfig {
 #[ts(export)]
 pub struct GreatFindConfig {
     pub enabled: bool,
-    /// `TEP::is_high_rated`: `max(WhiteElo, BlackElo)` at least this. Not a requirement: below it
+    /// High-rated game: `max(WhiteElo, BlackElo)` at least this. Not a requirement: below it
     /// Great is more generous (free captures and recaptures are not "easy", a free piece taken
     /// after the opponent's error is a key moment, recaptures and mates are not excluded).
     /// Recovered: 1000.
