@@ -1,9 +1,4 @@
 //! Factual move descriptions generated from engine output.
-//!
-//! The reference application's coach text comes from a tactical-tag and
-//! speech system that was not recovered. These sentences only restate
-//! computed facts (evaluation, mate distance, material along the engine line)
-//! and never name a tactical motif.
 
 use review_core::{Classification, MissKind, Side, Value};
 

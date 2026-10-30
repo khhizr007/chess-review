@@ -540,9 +540,6 @@ fn sacrifice_of_not_moved(
     let cap_val = m.capture().map_or(0, see::value);
     let occupied = ab.occupied();
     let attackers_of_sq = if cfg.ref_created_see_threats {
-        // Chess.com excludes only SEE-threateners of `sq` (`see_threats_to`), not every piece that
-        // geometrically attacks it: a piece that attacks `sq` but cannot capture it without losing
-        // material still counts as a threat the move created (report, §12.3).
         see_threateners(ab, sq)
     } else {
         ab.attacks_to(sq, opponent, occupied) & ab.by_color(opponent)
@@ -1218,8 +1215,6 @@ mod tests {
 
     #[test]
     fn legal_trap_gives_up_the_queen() {
-        // Legal's trap, 5.Nxe5 (Chess.com: Brilliant): the queen on d1 is left en
-        // prise; it is worth more than the knight, so it is the piece given up.
         let fen = "rn1qkbnr/ppp2p1p/3p2p1/4p3/2B1P1b1/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5";
         assert_eq!(
             sac(fen, "f3e5", &BrilliantConfig::default()),
@@ -1247,9 +1242,6 @@ mod tests {
 
     #[test]
     fn traxler_knight_sacrifice_with_a_discovered_attack() {
-        // 8...Nxg3 (Chess.com game 185058622904, both players below 1000: Brilliant). hxg3 wins
-        // the knight for a pawn. Newer players get no disguised-trade test; in a high-rated game
-        // the discovered attack on c4 would make it one.
         let fen = "r1b1k2r/pppp1Npp/2n5/4p3/2B1n2q/6P1/PPPP3P/RNBQK2R b kq - 0 8";
         let (p, m) = mv(fen, "e4g3");
         assert_eq!(
@@ -1269,9 +1261,6 @@ mod tests {
 
     #[test]
     fn ignored_threat_walks_back_over_earlier_moves() {
-        // 15...d5 (same game; Chess.com: Brilliant, tagged IgnoresThreat on the rook). The rook on
-        // h8 has been en prise since 5.Nxf7, but no earlier move of Black ignored it as a sacrifice,
-        // so leaving it again now counts. A pawn can never be strongly threatened (SEE ≥ 200).
         let fen = "r1b1k2r/pppp1Npp/8/4p3/2Bn3q/8/PPPP2K1/RNBQ4 b kq - 7 15";
         let (p, m) = mv(fen, "d7d5");
         let cfg = BrilliantConfig::default();
@@ -1337,8 +1326,6 @@ mod tests {
 
     #[test]
     fn castling_can_leave_a_piece_behind() {
-        // 19.O-O-O (Chess.com game 186411389477: Brilliant): the king no longer
-        // guards e2, so the queen on e3 can take the bishop.
         let fen = "r3k2r/p2b1pp1/8/1pp4p/2p5/Q1P1q1PP/PP1NB1P1/R3KR2 w Qkq - 0 19";
         assert_eq!(
             sac(fen, "e1c1", &BrilliantConfig::default()).map(|s| (s.square, s.role)),

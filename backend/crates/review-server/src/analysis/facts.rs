@@ -249,11 +249,6 @@ pub(crate) fn judge_move(input: &MoveInput<'_>, cfg: &ReviewConfig) -> MoveJudge
                 && ep_best - alt_ep >= gf.critical_min_alternative_loss
         });
 
-    // Brilliant (`is_candidate<13>`, `compute_board_event<13>`; great-blunder-analysis.md §8): a
-    // sacrifice by the best move, or by a Good one when the best move does not force mate, that
-    // leaves the mover in a playable position; not when answering check into a mated second line,
-    // nor around a promotion; in the endgame only in a critical position or for a material gain;
-    // and not when the mover is already a piece up against a lost opponent.
     let bc = &cfg.brilliant;
     let best_forces_mate = best_value.mate_moves().is_some_and(|n| n >= 0);
     let qualifies = is_best

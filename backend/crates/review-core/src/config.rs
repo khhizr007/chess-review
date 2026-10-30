@@ -15,14 +15,11 @@ pub struct ReviewConfig {
     pub precision_thresholds: [f64; 4],
     /// Expected-outcome bucket boundaries. Recovered: `[0.10, 0.20, 0.35, 0.65, 0.80, 0.90]`.
     pub outcome_thresholds: [f64; 6],
-    /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Recovered: 1000..=2500.
-    /// Calibrated: 1200..=3000. On Chess.com's own scores the 2500 cap makes
-    /// titled games too lenient, and games below 1000 are graded as if rated
-    /// about 1200, Blunders above all (see `docs/calibration/log.md`).
+    /// Rating clamp applied to `max(WhiteElo, BlackElo)`. Calibrated: 1200..=3000
+    /// (see `docs/calibration/log.md`).
     pub rating_min: i32,
     pub rating_max: i32,
-    /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200. The
-    /// recovered rule is 0; Chess.com grades match a higher rating than the PGN's
+    /// Added to `max(WhiteElo, BlackElo)` before the clamp. Calibrated: 200
     /// (see `docs/parity.md`).
     pub rating_offset: i32,
     /// Material (cp) a Blunder must actually lose to stay a Blunder (fallback for
@@ -41,14 +38,13 @@ pub struct ReviewConfig {
     pub caps_exclude_completely_lost: bool,
     /// Plies of the principal variation inspected for material changes (fallback).
     pub material_horizon_plies: u32,
-    /// Book moves must form an unbroken run from the start. Off by default: Chess.com
-    /// also marks a move Book when play transposes back into the book (calibration).
+    /// Book moves must form an unbroken run from the start. Off by default: a move is
+    /// also marked Book when play transposes back into the book (calibration).
     pub book_requires_unbroken: bool,
     pub coach: CoachConfig,
 }
 
-/// Brilliant detection (`is_candidate<13>`, `compute_board_event<13>` and the sacrifice base tags,
-/// recovered; see `docs/calibration/great-blunder-analysis.md` §8): a Best move, or a Good one when
+/// Brilliant detection: a Best move, or a Good one when
 /// the best move does not force mate, that sacrifices a piece and leaves the mover in a playable
 /// position. Newer players (below `great_find.high_rated_min`) get the more generous sacrifice test.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -57,7 +53,7 @@ pub struct ReviewConfig {
 pub struct BrilliantConfig {
     pub enabled: bool,
     /// What the opponent must win by capturing the piece (static exchange, cp) for it to count
-    /// as given up: the reference's "strongly SEE-threatened" set (collect_eval_terms, SEE ≥ 200).
+    /// as given up.
     pub min_threat_cp: i32,
     /// A moved pawn can be the piece given up. The reference allows it, but a pawn can never be
     /// strongly threatened (its SEE is at most 100), so this only matters below min_threat_cp 200.
@@ -124,8 +120,7 @@ pub struct BrilliantConfig {
     pub ref_created_see_threats: bool,
 }
 
-/// Great detection (`is_candidate<15>` and its tags, recovered; see
-/// `docs/calibration/great-blunder-analysis.md`). A Great move is a Best or Excellent move that is
+/// Great detection. A Great move is a Best or Excellent move that is
 /// not easy to find and is a key moment after the opponent's error (it forces mate, wins material,
 /// or, in low-rated games, takes a free piece), the only good move in a critical position, or a
 /// move that makes the mover winning or brings them back to equal.
@@ -172,8 +167,7 @@ pub struct MissConfig {
     /// Opponent's previous EP loss that counts as an opportunity to punish.
     pub opportunity_min_opponent_ep_lost: f64,
     /// A missed free piece or tactic is a Miss only after the opponent's previous move lost at
-    /// least this (Chess.com: a Miss fails "to capitalize on your opponent's mistake").
-    /// Calibrated: 0.05. 0 turns it off.
+    /// least this. Calibrated: 0.05. 0 turns it off.
     pub tactic_min_opponent_ep_lost: f64,
     /// "Missed brilliant": the best move is a sacrifice and its EP is at least this.
     pub brilliant_min_best_ep: f64,

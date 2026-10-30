@@ -71,8 +71,6 @@ async fn near_best_sacrifice_is_brilliant() {
 
 #[tokio::test]
 async fn sacrifice_when_completely_winning_anyway_is_not_brilliant() {
-    // Chess.com: "You should not be completely winning even if you hadn't found
-    // the move". The quiet alternative already keeps +7.
     let engine = ScriptedEngine::default().script(
         GREEK_GIFT,
         &[
