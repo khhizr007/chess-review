@@ -18,3 +18,4 @@ captures
 *.keys.json
 extension
 .env
+**/data/reviews

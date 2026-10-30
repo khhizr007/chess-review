@@ -7,14 +7,14 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shakmaty::san::San;
 use shakmaty::{Chess, Position};
 use ts_rs::TS;
 
 use crate::board;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OpeningName {
     pub eco: String,

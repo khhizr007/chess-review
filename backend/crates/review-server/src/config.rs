@@ -20,7 +20,11 @@ pub struct AppConfig {
     pub cors_origin: Option<String>,
     /// Reviews that may run at the same time; others wait in the queue.
     pub max_concurrent_reviews: usize,
-    /// Finished reviews kept in memory.
+    /// Directory where finished reviews are stored, one file each.
+    pub review_store_dir: PathBuf,
+    /// How long a finished review is kept on disk.
+    pub review_ttl: Duration,
+    /// Most finished reviews kept on disk; the oldest go first beyond it.
     pub max_stored_reviews: usize,
     /// Command that starts the human-move model sidecar (`MAIA_COMMAND`), if any.
     pub human_model_command: Option<String>,
@@ -103,7 +107,11 @@ impl AppConfig {
             static_dir: optional_path("STATIC_DIR"),
             cors_origin: std::env::var("CORS_ORIGIN").ok().filter(|v| !v.is_empty()),
             max_concurrent_reviews: parse_var("MAX_CONCURRENT_REVIEWS", 2usize)?.max(1),
-            max_stored_reviews: parse_var("MAX_STORED_REVIEWS", 100usize)?.max(1),
+            // Not the OS temp dir: on many Linux hosts /tmp is a tmpfs, which is held in memory.
+            review_store_dir: optional_path("REVIEW_STORE_DIR")
+                .unwrap_or_else(|| PathBuf::from("data/reviews")),
+            review_ttl: Duration::from_secs(parse_var("REVIEW_TTL_SECS", 86_400u64)?.max(60)),
+            max_stored_reviews: parse_var("MAX_STORED_REVIEWS", 5_000usize)?.max(1),
             human_model_command: std::env::var("MAIA_COMMAND")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),

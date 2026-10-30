@@ -16,7 +16,13 @@ services:
       # Each Stockfish process holds about 370 MB and Maia about 400 MB; size the pool to the host.
       ENGINE_POOL_SIZE: "2"
       MAX_CONCURRENT_REVIEWS: "2"
+    volumes:
+      # Finished reviews, kept for a day across restarts and rebuilds.
+      - reviews:/app/data/reviews
     restart: unless-stopped
+
+volumes:
+  reviews:
 
 secrets:
   # Read from the GITHUB_TOKEN environment variable at build time; empty is fine for a public repo.

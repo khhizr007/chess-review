@@ -348,6 +348,15 @@ fn parse_id(id: &str) -> Result<Uuid, ApiError> {
     Uuid::parse_str(id).map_err(|_| ApiError::not_found("review"))
 }
 
+fn storage_error(e: std::io::Error) -> ApiError {
+    tracing::error!("review storage: {e}");
+    ApiError::new(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "storage_error",
+        "the stored review could not be read",
+    )
+}
+
 async fn review_status(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -355,6 +364,8 @@ async fn review_status(
     state
         .jobs
         .status(parse_id(&id)?)
+        .await
+        .map_err(storage_error)?
         .map(Json)
         .ok_or_else(|| ApiError::not_found("review"))
 }
@@ -366,14 +377,19 @@ async fn cancel_review(
     state
         .jobs
         .cancel(parse_id(&id)?)
+        .await
+        .map_err(storage_error)?
         .map(Json)
         .ok_or_else(|| ApiError::not_found("review"))
 }
 
-fn completed(state: &AppState, id: &str) -> Result<Arc<ReviewResult>, ApiError> {
+/// A completed review, read from disk.
+async fn completed(state: &AppState, id: &str) -> Result<ReviewResult, ApiError> {
     let (status, result) = state
         .jobs
         .result(parse_id(id)?)
+        .await
+        .map_err(storage_error)?
         .ok_or_else(|| ApiError::not_found("review"))?;
     result.ok_or_else(|| {
         ApiError::new(
@@ -389,19 +405,18 @@ async fn review_result(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<ReviewResult>, ApiError> {
-    Ok(Json(completed(&state, &id)?.as_ref().clone()))
+    Ok(Json(completed(&state, &id).await?))
 }
 
 async fn review_ply(
     State(state): State<AppState>,
     Path((id, ply)): Path<(String, u32)>,
 ) -> Result<Json<PlyReview>, ApiError> {
-    let review = completed(&state, &id)?;
+    let review = completed(&state, &id).await?;
     review
         .plies
-        .iter()
+        .into_iter()
         .find(|p| p.ply == ply)
-        .cloned()
         .map(Json)
         .ok_or_else(|| ApiError::not_found("ply"))
 }
@@ -479,7 +494,7 @@ async fn judge_sideline_move(
     body: Result<Json<JudgeMoveRequest>, JsonRejection>,
 ) -> Result<Json<SidelineJudgement>, ApiError> {
     let Json(req) = body?;
-    let review = completed(&state, &id)?;
+    let review = completed(&state, &id).await?;
     let before = req
         .before
         .into_iter()

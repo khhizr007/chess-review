@@ -6,6 +6,8 @@ use review_server::engine::Evaluator;
 use review_server::engine::pool::EnginePool;
 use review_server::human::{HumanModel, MaiaSidecar};
 use review_server::jobs::JobStore;
+use review_server::store::ReviewStore;
+use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -50,7 +52,31 @@ async fn main() -> std::process::ExitCode {
         }
     };
 
-    let mut jobs = JobStore::new(config.max_concurrent_reviews, config.max_stored_reviews);
+    let store = match ReviewStore::open(
+        &config.review_store_dir,
+        config.review_ttl,
+        config.max_stored_reviews,
+    ) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::error!(dir = %config.review_store_dir.display(), "cannot open the review store: {e}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    tracing::info!(
+        dir = %store.dir().display(),
+        ttl_secs = store.ttl().as_secs(),
+        max = config.max_stored_reviews,
+        "review store ready"
+    );
+    // Expired reviews are never served (reads check their age); the sweep reclaims the disk.
+    let sweep_every = (config.review_ttl / 24).clamp(
+        std::time::Duration::from_secs(60),
+        std::time::Duration::from_secs(600),
+    );
+    let mut jobs = JobStore::new(config.max_concurrent_reviews, store);
+    let stop_sweeper = CancellationToken::new();
+    let sweeper = jobs.spawn_sweeper(sweep_every, stop_sweeper.clone());
     if let Some(command) = &config.human_model_command {
         match MaiaSidecar::start(command).await {
             Ok(model) => {
@@ -85,6 +111,8 @@ async fn main() -> std::process::ExitCode {
         .await;
 
     jobs.cancel_all();
+    stop_sweeper.cancel();
+    let _ = sweeper.await;
     if let Some(pool) = pool {
         pool.shutdown().await;
     }
@@ -96,7 +124,6 @@ async fn main() -> std::process::ExitCode {
         }
     }
 }
-
 
 /// Resolves on Ctrl-C, or on SIGTERM (what `docker stop` and most hosts send) on Unix.
 async fn shutdown_signal() {

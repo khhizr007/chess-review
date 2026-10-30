@@ -12,17 +12,43 @@ use http_body_util::BodyExt;
 use review_server::api::{AppState, router};
 use review_server::engine::Evaluator;
 use review_server::jobs::JobStore;
+use review_server::store::ReviewStore;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 fn app(with_engine: bool) -> Router {
+    app_with(with_engine, JobStore::new(2, common::review_store()))
+}
+
+fn app_with(with_engine: bool, jobs: JobStore) -> Router {
     router(AppState {
         evaluator: with_engine
             .then(|| Arc::new(common::FakeEngine::default()) as Arc<dyn Evaluator>),
         engine_error: (!with_engine).then(|| "no engine configured".to_owned()),
         openings: common::openings(),
-        jobs: JobStore::new(2, 10),
+        jobs,
     })
+}
+
+/// Starts a review of `pgn` and waits until it has finished.
+async fn finished_review(app: &Router, pgn: &str) -> String {
+    let (status, created) = call(
+        app,
+        "POST",
+        "/api/reviews",
+        Some(json!({ "pgn": pgn, "strength": "fast" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let id = created["id"].as_str().unwrap().to_owned();
+    for _ in 0..200 {
+        let (_, status) = call(app, "GET", &format!("/api/reviews/{id}"), None).await;
+        if status["state"] == "completed" {
+            return id;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("review {id} did not complete");
 }
 
 async fn call(app: &Router, method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
@@ -296,4 +322,73 @@ async fn judging_a_sideline_move() {
     let unknown = format!("/api/reviews/{}/judge", uuid::Uuid::new_v4());
     let (status, _) = call(&app, "POST", &unknown, Some(body)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_finished_review_leaves_memory_and_is_served_from_disk() {
+    let dir = common::store_dir();
+    let open = || ReviewStore::open(&dir, Duration::from_secs(3600), 100).unwrap();
+    let jobs = JobStore::new(2, open());
+    let app = app_with(true, jobs.clone());
+    let id = finished_review(&app, &common::fixture("scholars_mate.pgn")).await;
+
+    assert_eq!(
+        jobs.in_memory(),
+        0,
+        "nothing of the finished review stays in memory"
+    );
+    assert!(dir.join(format!("{id}.json")).is_file());
+    let (status, result) = call(&app, "GET", &format!("/api/reviews/{id}/result"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["plies"].as_array().unwrap().len(), 7);
+    let (status, cancelled) = call(&app, "DELETE", &format!("/api/reviews/{id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cancelled["state"], "completed");
+
+    // A restarted server (a new job store on the same directory) still has it.
+    let restarted = app_with(true, JobStore::new(2, open()));
+    let (status, again) = call(
+        &restarted,
+        "GET",
+        &format!("/api/reviews/{id}/result"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(again, result, "the stored review reads back unchanged");
+    let (status, ply) = call(
+        &restarted,
+        "GET",
+        &format!("/api/reviews/{id}/plies/7"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(ply["san"], "Qxf7#");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn an_expired_review_is_gone() {
+    let dir = common::store_dir();
+    let jobs = JobStore::new(
+        2,
+        ReviewStore::open(&dir, Duration::from_secs(3600), 100).unwrap(),
+    );
+    let app = app_with(true, jobs);
+    let id = finished_review(&app, &common::fixture("scholars_mate.pgn")).await;
+
+    // Same directory, a time to live every file has already outlived.
+    let expired = JobStore::new(2, ReviewStore::open(&dir, Duration::ZERO, 100).unwrap());
+    let app = app_with(true, expired.clone());
+    let (status, _) = call(&app, "GET", &format!("/api/reviews/{id}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&app, "GET", &format!("/api/reviews/{id}/result"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(
+        !dir.join(format!("{id}.json")).exists(),
+        "the read deleted it"
+    );
+    assert_eq!(expired.sweep().await.unwrap().kept, 0);
+    std::fs::remove_dir_all(&dir).unwrap();
 }

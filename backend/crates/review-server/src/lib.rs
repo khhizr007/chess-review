@@ -10,6 +10,7 @@ pub mod human;
 pub mod jobs;
 pub mod openings;
 pub mod pgn;
+pub mod store;
 
 use std::sync::Arc;
 
