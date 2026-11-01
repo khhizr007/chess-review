@@ -1,0 +1,152 @@
+import { describe, expect, it } from "vitest";
+import type { PlyReview } from "../api/generated/PlyReview";
+import type { ReviewResult } from "../api/generated/ReviewResult";
+import { kingSquare, kingSquareToMove, uciSquares } from "./fen";
+import { parseReviewHash, reviewHash } from "./hash";
+import type { Classification } from "../api/generated/Classification";
+import { foldedReportRows, formatEval, formatEvalShort, moveNumberLabel } from "./format";
+import { fenAt, matchesFilter, needsAttention, stepFiltered } from "./review";
+
+function ply(n: number, overrides: Partial<PlyReview> = {}): PlyReview {
+  return {
+    ply: n,
+    move_number: Math.ceil(n / 2),
+    mover: n % 2 === 1 ? "white" : "black",
+    san: `m${n}`,
+    uci: "e2e4",
+    from: "e2",
+    to: "e4",
+    fen_before: `before-${n}`,
+    fen_after: `after-${n}`,
+    flags: { check: false, checkmate: false, stalemate: false, capture: false, castle: false, promotion: false, en_passant: false },
+    eval_before: { kind: "cp", cp: 0 },
+    eval_after: { kind: "cp", cp: 0 },
+    eval_best: null,
+    ep_before: 0.5,
+    ep_after: 0.5,
+    ep_best: 0.5,
+    ep_lost: 0,
+    classification: "best",
+    miss_kind: null,
+    precision: "best",
+    rule: "precision",
+    best_move: null,
+    played_is_best: true,
+    show_best_move: false,
+    lines: [],
+    accuracy: 100,
+    phase: "opening",
+    is_book: false,
+    is_key_moment: false,
+    is_critical: false,
+    material_lost_cp: null,
+    explanation: [],
+    coach: { sentences: [], show_lines: [], events: [] },
+    pgn_comment: null,
+    clock_ms: null,
+    ...overrides,
+  };
+}
+
+function review(plies: PlyReview[]): ReviewResult {
+  return { game: { start_fen: "start" }, plies } as unknown as ReviewResult;
+}
+
+describe("formatEval", () => {
+  it("formats centipawns from White's view", () => {
+    expect(formatEval({ kind: "cp", cp: 124 })).toBe("+1.24");
+    expect(formatEval({ kind: "cp", cp: -30 })).toBe("−0.30");
+    expect(formatEval({ kind: "cp", cp: 0 })).toBe("0.00");
+  });
+
+  it("formats mates and finished games", () => {
+    expect(formatEval({ kind: "mate", winner: "white", moves: 3 })).toBe("M3");
+    expect(formatEval({ kind: "mate", winner: "black", moves: 2 })).toBe("−M2");
+    expect(formatEval({ kind: "mate", winner: "black", moves: 0 })).toBe("0-1");
+    expect(formatEvalShort({ kind: "mate", winner: "white", moves: 0 })).toBe("1-0");
+    expect(formatEvalShort({ kind: "mate", winner: "black", moves: 0 })).toBe("0-1");
+    expect(formatEvalShort({ kind: "cp", cp: 1530 })).toBe("15");
+  });
+
+  it("labels move numbers", () => {
+    expect(moveNumberLabel(12, "white")).toBe("12.");
+    expect(moveNumberLabel(12, "black")).toBe("12…");
+  });
+});
+
+describe("foldedReportRows", () => {
+  const fold = (counts: Partial<Record<Classification, number>>) => [...foldedReportRows((c) => counts[c] ?? 0)].sort();
+
+  it("matches the reference on game 142636591844: earned Book and Inaccuracy still fold", () => {
+    // The reference report of this game: Book 2/1, Best 7/2, Excellent 3/2, Good 4/1, Inaccuracy 1/3.
+    expect(fold({ book: 3, best: 9, excellent: 5, good: 5, inaccuracy: 4, mistake: 7, miss: 1 })).toEqual(
+      ["book", "brilliant", "great_find", "inaccuracy"],
+    );
+  });
+
+  it("lets earned Brilliant and Great moves take the first slots", () => {
+    expect(fold({ brilliant: 1, great_find: 2, best: 9, excellent: 5, good: 5, book: 2 })).toEqual(
+      ["book", "excellent", "good", "inaccuracy"],
+    );
+  });
+
+  it("tops the slots up with empty rows in priority order and never folds the errors", () => {
+    expect(fold({ good: 1 })).toEqual(["best", "book", "excellent", "inaccuracy"]);
+    // As in the reference's loading skeleton: Brilliant, Great and Best show before any counts.
+    expect(fold({})).toEqual(["book", "excellent", "good", "inaccuracy"]);
+  });
+});
+
+describe("review navigation", () => {
+  const r = review([
+    ply(1, { phase: "opening" }),
+    ply(2, { classification: "mistake", phase: "middlegame" }),
+    ply(3, { classification: "brilliant", is_critical: true, phase: "middlegame" }),
+    ply(4, { classification: "blunder", phase: "endgame" }),
+  ]);
+
+  it("maps plies to positions", () => {
+    expect(fenAt(r, 0)).toBe("start");
+    expect(fenAt(r, 2)).toBe("after-2");
+    expect(fenAt(r, 99)).toBe("after-4");
+  });
+
+  it("filters like the reference client", () => {
+    expect(needsAttention(r.plies[1]!)).toBe(true);
+    expect(needsAttention(r.plies[2]!)).toBe(false);
+    expect(matchesFilter(r.plies[2]!, "key")).toBe(true);
+    expect(matchesFilter(r.plies[3]!, "endgame")).toBe(true);
+    expect(matchesFilter(r.plies[0]!, "best")).toBe(true);
+  });
+
+  it("steps through filtered moves", () => {
+    expect(stepFiltered(r, 0, 1, "attention")).toBe(2);
+    expect(stepFiltered(r, 2, 1, "attention")).toBe(4);
+    expect(stepFiltered(r, 4, 1, "attention")).toBeNull();
+    expect(stepFiltered(r, 4, -1, "attention")).toBe(2);
+  });
+});
+
+describe("fen helpers", () => {
+  it("finds the king of the side to move", () => {
+    expect(kingSquareToMove("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")).toBe("e1");
+    expect(kingSquareToMove("6k1/5ppp/8/8/8/8/5PPP/3R2K1 b - - 0 1")).toBe("g8");
+    expect(kingSquare("6k1/5ppp/8/8/8/8/5PPP/3R2K1 b - - 0 1", "white")).toBe("g1");
+  });
+
+  it("parses UCI squares", () => {
+    expect(uciSquares("e7e8q")).toEqual({ from: "e7", to: "e8" });
+    expect(uciSquares("bad")).toBeNull();
+  });
+});
+
+describe("review hash", () => {
+  const id = "ae2efb71-0300-4cbc-910a-c7b700c6d6fc";
+
+  it("keeps the move shown, so a reload returns to it", () => {
+    expect(reviewHash(id, 12)).toBe(`#review=${id}&move=12`);
+    expect(parseReviewHash(reviewHash(id, 12))).toEqual({ id, move: 12 });
+    expect(parseReviewHash(reviewHash(id, null))).toEqual({ id, move: null });
+    expect(parseReviewHash("#review=nope&move=3")).toBeNull();
+  });
+});

@@ -1,0 +1,17 @@
+[package]
+name = "review-core"
+description = "Pure game-review rules: expected points, move classification, CAPS2 accuracy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

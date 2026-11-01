@@ -1,0 +1,751 @@
+# English coach text. Every word in this file was written for this project.
+#
+# A sentence is a frame (chosen by circumstance and style) with the tag's
+# phrase in {pred}. A frame lists one or more wordings; one is picked per move.
+# Styles: `you` talks to the player about their own move, `opponent` talks to
+# the player about the other side's move, `neutral` names the sides. A frame
+# without a `you` or `opponent` wording uses the `neutral` one.
+#
+# Placeholders:
+#   {move}        the move under review
+#   {reply}       the move that carries out the event
+#   {line}        the moves of the line before {reply}
+#   {best}        the engine's best move
+#   {mover}       who played {move}: "you", "your opponent", "White", "Black"
+#   {mover_s}     the same as an owner: "your", "their", "White's", "Black's"
+#   {from} {to}   how the game stood for {mover} before and after {move} ("equal", "worse")
+#   {piece}       the piece in focus with its owner and square ("your knight on f6")
+#   {piece_role}  the same without the square ("your knight")
+#   {square}      the square in focus
+#   {targets}     the other pieces involved ("your queen on d8 and rook on h8")
+#   {gain}        the material won ("a knight", "two pawns")
+#   {n}           moves to mate
+#   {pred}        (frames only) the tag's phrase
+
+# ---------------------------------------------------------------- frames
+
+# The move itself is the problem.
+[frame.base]
+neutral = ["{move} {pred}."]
+
+[frame.base_refuted]
+neutral = ["{move} {pred}, and {reply} wins {gain}.", "{move} {pred}, so {reply} wins {gain}."]
+
+# The move loses a piece in an exchange, not for free.
+[frame.base_loses]
+neutral = ["{move} {pred} and loses material after {reply}.", "{move} {pred}: after {reply}, it loses material."]
+
+# The move allows the opponent's best reply to do something.
+[frame.permits]
+neutral = ["{move} allows {reply}, which {pred}.", "After {move}, {reply} {pred}."]
+
+[frame.permits_line]
+neutral = ["{move} allows {line}, and then {reply} {pred}.", "After {move} {line}, {reply} {pred}."]
+
+# As above, when the line before {reply} is too long to spell out.
+[frame.permits_long]
+neutral = ["{move} allows a sequence that ends with {reply}, which {pred}."]
+
+# The best move would have done something.
+[frame.misses]
+you = ["You missed {reply}, which {pred}.", "{reply} was the move here: it {pred}."]
+opponent = ["Your opponent missed {reply}, which {pred}.", "{reply} was the move here: it {pred}."]
+neutral = ["{mover} missed {reply}, which {pred}.", "{reply} was the move here: it {pred}."]
+
+[frame.misses_line]
+you = ["You missed a chance: after {line}, {reply} {pred}."]
+opponent = ["Your opponent missed a chance: after {line}, {reply} {pred}."]
+neutral = ["{mover} missed a chance: after {line}, {reply} {pred}."]
+
+[frame.misses_long]
+you = ["You missed a sequence that ends with {reply}, which {pred}."]
+opponent = ["Your opponent missed a sequence that ends with {reply}, which {pred}."]
+neutral = ["{mover} missed a sequence that ends with {reply}, which {pred}."]
+
+# The best move would have taken the piece the other side just left hanging.
+[frame.misses_same]
+you = ["You missed {reply}, which wins {piece}: it had just been left hanging."]
+opponent = ["Your opponent missed {reply}, which wins {piece}: it had just been left hanging."]
+neutral = ["{mover} missed {reply}, which wins {piece}: it had just been left hanging."]
+
+# The best move would have threatened something: {reply} is the threat, the
+# move that would follow if the other side did nothing.
+[frame.misses_threatens]
+you = ["You missed {best}, which threatens {reply}: it {pred}."]
+opponent = ["Your opponent missed {best}, which threatens {reply}: it {pred}."]
+neutral = ["{mover} missed {best}, which threatens {reply}: it {pred}."]
+
+# The best move would have stopped the other side's threat {reply}.
+[frame.misses_prevents]
+you = ["You missed {best}, which stops {reply}: it {pred}."]
+opponent = ["Your opponent missed {best}, which stops {reply}: it {pred}."]
+neutral = ["{mover} missed {best}, which stops {reply}: it {pred}."]
+
+# The best move was a sacrifice.
+[frame.misses_sacrifice]
+you = ["You missed {best}, a sacrifice that works."]
+opponent = ["Your opponent missed {best}, a sacrifice that works."]
+neutral = ["{mover} missed {best}, a sacrifice that works."]
+
+# The best move was the only one that kept the game in hand.
+[frame.misses_only]
+you = ["You missed {best}, the only good move here."]
+opponent = ["Your opponent missed {best}, the only good move here."]
+neutral = ["{mover} missed {best}, the only good move here."]
+
+# A forced move: there was no other legal move.
+[frame.forced]
+you = ["{move} was your only legal move."]
+opponent = ["{move} was your opponent's only legal move."]
+neutral = ["{move} was the only legal move."]
+
+# What was better, after the main sentence.
+[frame.best]
+neutral = ["Better was {best}.", "{best} was the better move."]
+
+[frame.best_event]
+neutral = ["Better was {best}, which {pred}.", "{best} was better: it {pred}."]
+
+[frame.best_line]
+neutral = ["Better was {best}: after {line}, {reply} {pred}."]
+
+[frame.best_long]
+neutral = ["Better was {best}, starting a sequence that ends with {reply}, which {pred}."]
+
+[frame.best_threatens]
+neutral = ["Better was {best}, threatening {reply}, which {pred}.", "{best} was better: it threatens {reply}, which {pred}."]
+
+[frame.best_prevents]
+neutral = ["Better was {best}, stopping {reply}, which {pred}.", "{best} was better: it stops {reply}, which {pred}."]
+
+[frame.best_sacrifice]
+neutral = ["Better was {best}, a sacrifice that works."]
+
+[frame.best_only]
+neutral = ["Better was {best}, the only good move here.", "{best} was the only good move here."]
+
+# A move that let the game slip by a step with no tactic to name.
+[frame.slide]
+neutral = ["{move} lets {mover_s} position slide from {from} to {to}."]
+
+# A good move: what it does by itself or on its own line. {reply} is the move
+# that does it ({move} itself when the event is on the first move).
+[frame.good]
+neutral = ["{reply} {pred}."]
+
+[frame.good_line]
+neutral = ["After {line}, {reply} {pred}.", "{line}, and then {reply} {pred}."]
+
+[frame.good_long]
+neutral = ["{move} starts a sequence that ends with {reply}, which {pred}."]
+
+# A good move that gives up material on purpose (followed by what it leads to).
+[frame.sacrifice]
+neutral = ["{move} {pred}, and it pays off."]
+
+# A good move that is the only one keeping the game in hand.
+[frame.only]
+neutral = ["{move} is the only good move here."]
+
+# What the move threatens: the mover's next move if the other side did nothing.
+[frame.threatens]
+neutral = ["{move} threatens {reply}, which {pred}.", "{move} sets up a threat: {reply} {pred}."]
+
+# What the move stops: the other side's threat before it.
+[frame.prevents]
+neutral = ["{move} stops {reply}, which {pred}.", "{move} defends against {reply}, which {pred}."]
+
+# Brilliant and Great moves. `brilliant` and `great_find` stand alone (before a
+# frame with no wording of its own); the others replace the frame named after
+# the prefix.
+[frame.brilliant]
+neutral = ["{move} gives up material, and it pays off."]
+
+[frame.brilliant_good]
+neutral = ["{move} is a sacrifice that works: it {pred}."]
+
+[frame.brilliant_good_line]
+neutral = ["{move} is a sacrifice that works: after {line}, {reply} {pred}."]
+
+[frame.brilliant_good_long]
+neutral = ["{move} is a sacrifice that works: it starts a sequence that ends with {reply}, which {pred}."]
+
+[frame.brilliant_threatens]
+neutral = ["{move} is a sacrifice that works: it threatens {reply}, which {pred}."]
+
+[frame.brilliant_prevents]
+neutral = ["{move} is a sacrifice that works: it stops {reply}, which {pred}."]
+
+[frame.brilliant_sacrifice]
+neutral = ["{move} is a sacrifice: it {pred}, and that pays off."]
+
+[frame.great_find]
+neutral = ["{move} is the one strong move here: the others are clearly worse."]
+
+[frame.great_find_good]
+neutral = ["{move} is the one strong move here: it {pred}."]
+
+[frame.great_find_good_line]
+neutral = ["{move} is the one strong move here: after {line}, {reply} {pred}."]
+
+[frame.great_find_good_long]
+neutral = ["{move} is the one strong move here: it starts a sequence that ends with {reply}, which {pred}."]
+
+[frame.great_find_threatens]
+neutral = ["{move} is the one strong move here: it threatens {reply}, which {pred}."]
+
+[frame.great_find_prevents]
+neutral = ["{move} is the one strong move here: it stops {reply}, which {pred}."]
+
+[frame.great_find_only]
+neutral = ["{move} is the one strong move here: the others all fall short."]
+
+# A book move, said with its development idea.
+[frame.book_good]
+neutral = ["{reply} is a book move: it {pred}.", "{reply}, a book move, {pred}."]
+
+# The best move is hard to find at the player's level (from a human-move
+# model): what was missed is said gently. Each replaces the frame without
+# `_hard`.
+[frame.misses_hard]
+you = ["{reply} was hard to find at this level, but it {pred}."]
+opponent = ["{reply} was hard to find at this level, but it {pred}."]
+neutral = ["{reply} was hard to find at this level, but it {pred}."]
+
+[frame.misses_line_hard]
+neutral = ["A hard chance to see at this level: after {line}, {reply} {pred}."]
+
+[frame.misses_long_hard]
+neutral = ["A hard sequence to find at this level ends with {reply}, which {pred}."]
+
+[frame.misses_threatens_hard]
+neutral = ["{best} was hard to find at this level: it threatens {reply}, which {pred}."]
+
+[frame.misses_prevents_hard]
+neutral = ["{best} was hard to find at this level: it stops {reply}, which {pred}."]
+
+[frame.misses_sacrifice_hard]
+neutral = ["{best} was a sacrifice that works, hard to find at this level."]
+
+[frame.misses_only_hard]
+neutral = ["{best} was the only good move here, and a hard one to find at this level."]
+
+[frame.best_hard]
+neutral = ["Better was {best}, though it is hard to find at this level."]
+
+[frame.best_event_hard]
+neutral = ["Better was {best}, a hard move to find at this level: it {pred}."]
+
+[frame.best_line_hard]
+neutral = ["Better was {best}, hard to find at this level: after {line}, {reply} {pred}."]
+
+[frame.best_long_hard]
+neutral = ["Better was {best}, hard to find at this level: it starts a sequence that ends with {reply}, which {pred}."]
+
+[frame.best_threatens_hard]
+neutral = ["Better was {best}, hard to find at this level: it threatens {reply}, which {pred}."]
+
+[frame.best_prevents_hard]
+neutral = ["Better was {best}, hard to find at this level: it stops {reply}, which {pred}."]
+
+[frame.best_sacrifice_hard]
+neutral = ["Better was {best}, a sacrifice that works, though hard to find at this level."]
+
+[frame.best_only_hard]
+neutral = ["Better was {best}, the only good move here and a hard one to find at this level."]
+
+# A bad move that players of this level often play (from a human-move
+# model): the sentence leads with the check that was skipped. Each replaces
+# the frame without `_natural`.
+[frame.base_natural]
+neutral = ["{move} looks natural, but it {pred}."]
+
+[frame.base_refuted_natural]
+neutral = ["{move} looks natural, but check the reply first: it {pred}, and {reply} wins {gain}."]
+
+[frame.base_loses_natural]
+neutral = ["{move} looks natural, but check the reply first: it {pred} and loses material after {reply}."]
+
+[frame.permits_natural]
+neutral = ["{move} looks natural, but check the reply first: {reply} {pred}."]
+
+[frame.permits_line_natural]
+neutral = ["{move} looks natural, but check the replies first: after {line}, {reply} {pred}."]
+
+[frame.permits_long_natural]
+neutral = ["{move} looks natural, but it allows a sequence that ends with {reply}, which {pred}."]
+
+# ---------------------------------------------------------------- tags
+#
+# vp      phrase after the move that does it ("Nd4 forks your queen and rook")
+# wins    the phrase when the event also wins material (default: "{vp}, winning {gain}")
+# vp_long the phrase for a mate in more than one move
+# label   the button that replays the line
+# min_rating  the lowest player rating at which the tag is said
+
+[tag.back_rank_mate]
+vp = "mates on the back rank"
+label = "Show the mate"
+min_rating = 0
+
+[tag.checkmate]
+vp = "is checkmate"
+label = "Show the mate"
+min_rating = 0
+
+[tag.forced_mate]
+vp = "starts a forced mate"
+vp_long = "starts a forced mate in {n}"
+label = "Show the mate"
+min_rating = 0
+
+[tag.free_piece]
+vp = "wins {piece}"
+wins = "wins {piece}"
+label = "Show the capture"
+min_rating = 0
+
+[tag.wins_trade]
+vp = "wins the trade on {square}"
+label = "Show the trade"
+min_rating = 0
+
+[tag.trapped_piece]
+vp = "traps {piece}"
+label = "Show the trapped piece"
+min_rating = 0
+
+[tag.double_check]
+vp = "gives double check"
+label = "Show the double check"
+min_rating = 0
+
+[tag.royal_fork]
+vp = "forks {targets}"
+label = "Show the fork"
+min_rating = 0
+
+[tag.fork]
+vp = "forks {targets}"
+label = "Show the fork"
+min_rating = 0
+
+[tag.discovered_check]
+vp = "uncovers a check from {piece}"
+label = "Show the discovered check"
+min_rating = 0
+
+[tag.discovered_attack]
+vp = "uncovers an attack by {piece_role} on {targets}"
+label = "Show the discovered attack"
+min_rating = 0
+
+[tag.skewer]
+vp = "skewers {targets}"
+label = "Show the skewer"
+min_rating = 0
+
+[tag.exploits_pin]
+vp = "makes use of the pin on {piece}"
+label = "Show the pin"
+min_rating = 0
+
+[tag.pin]
+vp = "pins {piece} to {targets}"
+label = "Show the pin"
+min_rating = 0
+
+[tag.removes_defender]
+vp = "takes {piece}, which was guarding {targets}"
+label = "Show the line"
+min_rating = 0
+
+[tag.overloaded]
+vp = "overloads {piece}, which cannot guard both {targets}"
+label = "Show the line"
+min_rating = 600
+
+[tag.attraction]
+vp = "lures {piece_role} to {square}"
+label = "Show the line"
+min_rating = 600
+
+[tag.promotion]
+vp = "promotes on {square}"
+label = "Show the promotion"
+min_rating = 0
+
+[tag.moves_pinned_piece]
+vp = "moves {piece_role} out of a pin and exposes {targets}"
+label = "Show the punishment"
+min_rating = 0
+
+[tag.did_not_recapture]
+vp = "does not take back {piece}"
+label = "Show the punishment"
+min_rating = 0
+
+[tag.ignores_threat]
+vp = "leaves {piece} under attack"
+label = "Show the punishment"
+min_rating = 0
+
+[tag.removes_own_defender]
+vp = "stops guarding {piece}"
+label = "Show the punishment"
+min_rating = 0
+
+[tag.bad_trade]
+vp = "gives up {piece_role} for {targets}"
+label = "Show the punishment"
+min_rating = 0
+
+[tag.loses_trade]
+vp = "takes {targets}, but loses the trade that follows"
+label = "Show the trade"
+min_rating = 0
+
+[tag.hangs_piece]
+vp = "leaves {piece} hanging"
+label = "Show the punishment"
+min_rating = 0
+
+[tag.hangs_pawn]
+vp = "leaves {piece} hanging"
+label = "Show the punishment"
+min_rating = 0
+
+[tag.recapture]
+vp = "takes back on {square}"
+label = "Show the line"
+min_rating = 0
+
+[tag.equal_trade]
+vp = "trades on {square}: the exchange comes out even"
+label = "Show the trade"
+min_rating = 0
+
+[tag.blocks_check]
+vp = "blocks the check"
+label = "Show the line"
+min_rating = 0
+
+[tag.evades_check]
+vp = "gets out of the check from {targets}"
+label = "Show the line"
+min_rating = 0
+
+[tag.defends_piece]
+vp = "defends {piece}"
+label = "Show the line"
+min_rating = 0
+
+[tag.escapes_threat]
+vp = "moves {piece_role} out of danger"
+label = "Show the line"
+min_rating = 0
+
+[tag.counter_threat]
+vp = "hits back at {piece} instead of saving {targets}"
+label = "Show the line"
+min_rating = 0
+
+[tag.kicks]
+vp = "chases away {piece}"
+label = "Show the line"
+min_rating = 0
+
+[tag.gains_tempo]
+vp = "attacks {piece}, gaining time as it moves away"
+label = "Show the line"
+min_rating = 0
+
+[tag.offers_trade]
+vp = "offers to trade {targets} for {piece}"
+label = "Show the line"
+min_rating = 0
+
+[tag.sacrifice]
+vp = "gives up {piece_role} on {square}"
+label = "Show the sacrifice"
+min_rating = 0
+
+[tag.offers_piece]
+vp = "leaves {piece} to be taken"
+label = "Show the sacrifice"
+min_rating = 0
+
+# Positional ideas (group 13). min_rating: beginners hear development and
+# castling; activity from about 600-900; pawn structure from about 900-1100.
+
+[tag.forces_doubled_pawns]
+vp = "leaves {targets} doubled once a pawn takes back"
+label = "Show the line"
+min_rating = 1000
+
+[tag.forces_isolated_pawn]
+vp = "leaves {piece} isolated once a pawn takes back"
+label = "Show the line"
+min_rating = 1000
+
+[tag.strikes_at_center]
+vp = "strikes at the centre, hitting {piece}"
+label = "Show the line"
+min_rating = 0
+
+[tag.central_break]
+vp = "breaks open the centre, hitting {piece}"
+label = "Show the line"
+min_rating = 900
+
+[tag.puts_pawn_in_center]
+vp = "puts a pawn in the centre"
+label = "Show the line"
+min_rating = 0
+
+[tag.attacks_pawn_chain]
+vp = "attacks the pawn chain at {piece}"
+label = "Show the line"
+min_rating = 1000
+
+[tag.prepares_central_push]
+vp = "prepares a central advance with {piece}"
+label = "Show the line"
+min_rating = 800
+
+[tag.rook_on_seventh]
+vp = "puts {piece_role} on the seventh rank"
+label = "Show the line"
+min_rating = 900
+
+[tag.outpost]
+vp = "puts {piece_role} on a strong square that no pawn can chase it from"
+label = "Show the line"
+min_rating = 800
+
+[tag.takes_open_file]
+vp = "puts {piece_role} on an open file"
+label = "Show the line"
+min_rating = 800
+
+[tag.battery]
+vp = "lines up {piece_role} with {targets}"
+label = "Show the line"
+min_rating = 800
+
+[tag.centralizes_knight]
+vp = "brings {piece_role} to the centre"
+label = "Show the line"
+min_rating = 600
+
+[tag.moves_to_active_square]
+vp = "moves {piece_role} to a more active square"
+label = "Show the line"
+min_rating = 600
+
+[tag.bishop_gains_scope]
+vp = "puts {piece_role} on a longer diagonal"
+label = "Show the line"
+min_rating = 700
+
+[tag.castles_same_side]
+vp = "castles on the same side as the other king"
+label = "Show the line"
+min_rating = 0
+
+[tag.castles_opposite_side]
+vp = "castles on the opposite side to the other king"
+label = "Show the line"
+min_rating = 0
+
+[tag.castles_kingside]
+vp = "tucks the king away and brings a rook toward the centre"
+label = "Show the line"
+min_rating = 0
+
+[tag.castles_queenside]
+vp = "tucks the king away on the queenside and brings a rook to the centre"
+label = "Show the line"
+min_rating = 0
+
+[tag.connects_rooks]
+vp = "connects {targets}"
+label = "Show the line"
+min_rating = 0
+
+[tag.fianchetto]
+vp = "fianchettoes {piece_role}, aiming it down the long diagonal"
+label = "Show the line"
+min_rating = 700
+
+[tag.prepares_to_castle_queenside]
+vp = "clears the way to castle queenside"
+label = "Show the line"
+min_rating = 0
+
+[tag.prepares_to_castle_kingside]
+vp = "clears the way to castle kingside"
+label = "Show the line"
+min_rating = 0
+
+[tag.develops_center]
+vp = "develops {piece_role} toward the centre"
+label = "Show the line"
+min_rating = 0
+
+[tag.develops_opening]
+vp = "develops {piece_role}"
+label = "Show the line"
+min_rating = 0
+
+[tag.develops_middlegame]
+vp = "brings {piece_role} into play"
+label = "Show the line"
+min_rating = 0
+
+[tag.prepares_bishop_development]
+vp = "opens a diagonal for {piece_role}"
+label = "Show the line"
+min_rating = 0
+
+[tag.pushes_passed_pawn]
+vp = "advances the passed pawn"
+label = "Show the line"
+min_rating = 900
+
+[tag.pushes_passed_pawn_endgame]
+vp = "advances the passed pawn toward promotion"
+label = "Show the line"
+min_rating = 900
+
+[tag.makes_passed_pawn]
+vp = "creates a passed pawn on {square}"
+label = "Show the line"
+min_rating = 800
+
+[tag.king_activity]
+vp = "brings {piece_role} toward the centre, where it fights in the endgame"
+label = "Show the line"
+min_rating = 700
+
+[tag.creates_luft]
+vp = "gives {piece_role} a square to breathe"
+label = "Show the line"
+min_rating = 600
+
+# Positional errors (group 14).
+
+[tag.loses_castling]
+vp = "gives up the right to castle"
+label = "Show the line"
+min_rating = 0
+
+[tag.doubled_pawns]
+vp = "doubles {piece_role}s"
+label = "Show the line"
+min_rating = 1000
+
+[tag.isolated_pawn]
+vp = "leaves {piece} isolated"
+label = "Show the line"
+min_rating = 1000
+
+[tag.backward_pawn]
+vp = "leaves {piece} backward"
+label = "Show the line"
+min_rating = 1100
+
+[tag.weakens_king]
+vp = "weakens the diagonal to {piece_role}"
+label = "Show the line"
+min_rating = 0
+
+[tag.moves_pawn_in_front_of_king]
+vp = "loosens the pawns in front of {piece_role}"
+label = "Show the line"
+min_rating = 600
+
+[tag.too_early_queen]
+vp = "brings {piece_role} out early, before the knights and bishops"
+label = "Show the line"
+min_rating = 0
+
+[tag.moves_same_piece]
+vp = "moves {piece_role} again while other pieces wait at home"
+label = "Show the line"
+min_rating = 0
+
+[tag.moves_to_passive_square]
+vp = "puts {piece_role} on a passive square"
+label = "Show the line"
+min_rating = 700
+
+[tag.only_move]
+vp = "is the only good move here"
+label = "Show the line"
+min_rating = 0
+
+[tag.slide]
+vp = "lets the position slide"
+label = "Show the line"
+min_rating = 0
+
+[tag.material_gain]
+vp = "wins {gain}"
+wins = "wins {gain}"
+label = "Show the line"
+min_rating = 0
+
+# ---------------------------------------------------------------- show lines
+
+# One short line per move of a replayed line. A move that carries out a tag
+# uses `tactic` with that tag's vp.
+[narrate]
+tactic = "{san} {vp}."
+capture = "{san} takes {piece}."
+recapture = "{san} takes back."
+check = "{san} gives check."
+forced = "{san} is the only move."
+quiet = "{san}."
+
+[label]
+best = "Show the best line"
+threat = "Show the threat"
+
+# ---------------------------------------------------------------- words
+
+[words]
+pawn = "pawn"
+knight = "knight"
+bishop = "bishop"
+rook = "rook"
+queen = "queen"
+king = "king"
+you = "you"
+opponent = "your opponent"
+white = "White"
+black = "Black"
+your = "your"
+their = "their"
+white_s = "White's"
+black_s = "Black's"
+piece = "{owner} {role} on {square}"
+piece_role = "{owner} {role}"
+pieces_same = "{owner} {role}s on {squares}"
+king_piece = "{owner} king"
+list_comma = ", "
+list_and = " and "
+wins_default = "{vp}, winning {gain}"
+gain_piece = "a {role}"
+gain_exchange = "the exchange"
+gain_pawns = "{count} pawns"
+gain_material = "material worth about {count} pawns"
+numbers = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
+# How the game stands for a side, in five steps.
+[outlook]
+losing = "losing"
+worse = "worse"
+equal = "equal"
+better = "better"
+winning = "winning"

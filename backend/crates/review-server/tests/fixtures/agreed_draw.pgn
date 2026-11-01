@@ -1,0 +1,9 @@
+[Event "Club"]
+[White "A"]
+[Black "B"]
+[WhiteElo "1800"]
+[BlackElo "1820"]
+[Result "1/2-1/2"]
+[Termination "Draw by agreement"]
+
+1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Bg5 Be7 5. e3 O-O 6. Nf3 h6 7. Bh4 b6 1/2-1/2

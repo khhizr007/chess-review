@@ -1,0 +1,177 @@
+// Chess rules for exploring sidelines (docs/explore-mode.md §5.1): legality, SAN, FEN and move
+// flags come from chessops here. Everything about the game itself still comes from the backend.
+import { Chess, castlingSide, normalizeMove } from "chessops/chess";
+import { makeFen, parseFen } from "chessops/fen";
+import { makeSanAndPlay } from "chessops/san";
+import { charToRole, makeSquare, makeUci, parseSquare } from "chessops/util";
+import type { NormalMove } from "chessops/types";
+import type { MoveFlags } from "../api/generated/MoveFlags";
+import type { MoveRef } from "../api/generated/MoveRef";
+
+/** A move played on the board: its SAN, UCI and FEN, the squares to highlight and its flags. */
+export interface PlayedMove extends MoveRef {
+  from: string;
+  /** Where the moving piece lands (the king's square when castling). */
+  to: string;
+  flags: MoveFlags;
+}
+
+export type PromotionPiece = "q" | "r" | "b" | "n";
+
+/** How a position ends the game, if it does. */
+export type Ending = "checkmate" | "stalemate" | "insufficient_material" | "fifty_moves";
+
+function position(fen: string): Chess | null {
+  const setup = parseFen(fen);
+  if (setup.isErr) return null;
+  const pos = Chess.fromSetup(setup.value);
+  return pos.isOk ? pos.value : null;
+}
+
+function rawMove(from: string, to: string, promotion?: PromotionPiece): NormalMove | null {
+  const f = parseSquare(from);
+  const t = parseSquare(to);
+  if (f === undefined || t === undefined) return null;
+  return promotion ? { from: f, to: t, promotion: charToRole(promotion) } : { from: f, to: t };
+}
+
+/**
+ * Whether `from`→`to` is a legal move, a promotion counting whatever the piece. A castling king may
+ * go to its target square or onto its rook, as `playMove` takes it.
+ */
+export function canPlay(fen: string, from: string, to: string, chess960 = false): boolean {
+  return needsPromotion(fen, from, to) || playMove(fen, from, to, undefined, chess960) !== null;
+}
+
+/** A square the selected piece can move to, and whether the move takes a piece there. */
+export interface MoveTarget {
+  square: string;
+  capture: boolean;
+}
+
+/**
+ * The squares the piece on `square` can legally move to, for the board's move hints. A castling
+ * king is shown its target square (g1, c1…) in standard chess and its rook's square in Chess960, as
+ * the drop it accepts there.
+ */
+export function legalTargets(fen: string, square: string, chess960 = false): MoveTarget[] {
+  const pos = position(fen);
+  const from = parseSquare(square);
+  if (!pos || from === undefined || !pos.board[pos.turn].has(from)) return [];
+  const king = pos.board.getRole(from) === "king";
+  const out: MoveTarget[] = [];
+  for (const to of pos.dests(from)) {
+    const own = pos.board[pos.turn].has(to);
+    if (own && king && !chess960) {
+      // Castling: chessops moves the king onto its rook; the board shows where the king lands.
+      out.push({ square: makeSquare((to > from ? 6 : 2) + (pos.turn === "white" ? 0 : 56)), capture: false });
+      continue;
+    }
+    out.push({ square: makeSquare(to), capture: !own && pos.board.occupied.has(to) });
+  }
+  return out.filter((t, i) => out.findIndex((u) => u.square === t.square) === i);
+}
+
+/** Whether moving `from`→`to` is a legal pawn move that needs a promotion piece. */
+export function needsPromotion(fen: string, from: string, to: string): boolean {
+  const pos = position(fen);
+  const move = rawMove(from, to, "q");
+  if (!pos || !move) return false;
+  const pawn = pos.board.getRole(move.from) === "pawn";
+  const lastRank = Math.floor(move.to / 8) === (pos.turn === "white" ? 7 : 0);
+  return pawn && lastRank && pos.isLegal(move);
+}
+
+/**
+ * Plays `from`→`to` (a castling king may be dropped on its target square or on its rook), or
+ * returns null when the move is illegal. UCI follows the backend: king squares in standard chess,
+ * king-takes-rook in Chess960.
+ */
+export function playMove(fen: string, from: string, to: string, promotion?: PromotionPiece, chess960 = false): PlayedMove | null {
+  const pos = position(fen);
+  const raw = rawMove(from, to, promotion);
+  if (!pos || !raw) return null;
+  const side = castlingSide(pos, raw);
+  const move = normalizeMove(pos, raw) as NormalMove;
+  if (promotion) move.promotion = charToRole(promotion);
+  if (!pos.isLegal(move)) return null;
+
+  const role = pos.board.getRole(move.from);
+  const enPassant = role === "pawn" && move.to === pos.epSquare && !pos.board.occupied.has(move.to);
+  const castle = !!side && role === "king";
+  const capture = enPassant || (!castle && pos.board.occupied.has(move.to));
+  const turn = pos.turn;
+
+  const san = makeSanAndPlay(pos, move);
+  const kingTo = castle ? makeSquare((side === "h" ? 6 : 2) + (turn === "white" ? 0 : 56)) : makeSquare(move.to);
+  const uci = castle && !chess960 ? makeSquare(move.from) + kingTo : makeUci(move);
+  const checkmate = pos.isCheckmate();
+  return {
+    san,
+    uci,
+    fen: makeFen(pos.toSetup()),
+    from: makeSquare(move.from),
+    to: kingTo,
+    flags: {
+      check: pos.isCheck(),
+      checkmate,
+      stalemate: pos.isStalemate(),
+      capture,
+      castle,
+      promotion: !!move.promotion,
+      en_passant: enPassant,
+    },
+  };
+}
+
+/** Number of legal moves in the position (0 for an invalid FEN). */
+export function legalMoveCount(fen: string): number {
+  const pos = position(fen);
+  if (!pos) return 0;
+  let n = 0;
+  for (const [from, dests] of pos.allDests()) {
+    // A pawn reaching the last rank is four moves, as the engine counts them.
+    const promotes = pos.board.getRole(from) === "pawn" && (pos.turn === "white" ? from >= 48 : from < 16);
+    n += dests.size() * (promotes ? 4 : 1);
+  }
+  return n;
+}
+
+/**
+ * The position with the other side to move and no en passant square (a null move), for the coach's
+ * threat searches; as the server's `board::null_move`: null when the side to move is in check, when
+ * the result is not a legal position, or when the new side to move has no legal move.
+ */
+export function nullMoveFen(fen: string): string | null {
+  const pos = position(fen);
+  if (!pos || pos.isCheck()) return null;
+  const setup = pos.toSetup();
+  const swapped = Chess.fromSetup({ ...setup, turn: setup.turn === "white" ? "black" : "white", epSquare: undefined });
+  if (swapped.isErr || !swapped.value.hasDests()) return null;
+  return makeFen(swapped.value.toSetup());
+}
+
+/** Plays an engine line (UCI moves) from `fen`, up to `limit` moves; stops at the first illegal move. */
+export function lineMoves(fen: string, uci: string[], limit: number, chess960 = false): PlayedMove[] {
+  const out: PlayedMove[] = [];
+  let at = fen;
+  for (const u of uci.slice(0, limit)) {
+    const promo = u[4] as PromotionPiece | undefined;
+    const move = playMove(at, u.slice(0, 2), u.slice(2, 4), promo, chess960);
+    if (!move) break;
+    out.push(move);
+    at = move.fen;
+  }
+  return out;
+}
+
+/** How the position ends the game: mate, stalemate, dead material, or the fifty-move rule (claimable). */
+export function ending(fen: string): Ending | null {
+  const pos = position(fen);
+  if (!pos) return null;
+  if (pos.isCheckmate()) return "checkmate";
+  if (pos.isStalemate()) return "stalemate";
+  if (pos.isInsufficientMaterial()) return "insufficient_material";
+  if (pos.halfmoves >= 100) return "fifty_moves";
+  return null;
+}

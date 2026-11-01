@@ -1,0 +1,8 @@
+[Event "Back rank, from FEN"]
+[SetUp "1"]
+[FEN "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1"]
+[WhiteElo "1600"]
+[BlackElo "1600"]
+[Result "1-0"]
+
+1. Rd7 h6 2. Rd8+ Kh7 3. Rd3 g5 4. Rh3 Kg6 5. Rxh6+ Kxh6 6. h4 gxh4 1/2-1/2
