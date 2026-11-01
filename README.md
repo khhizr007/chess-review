@@ -12,7 +12,7 @@ try yourself.
 Most open-source review tools grade a move by how many centipawns it lost, and stop there. This
 project grades moves with the full rule set a professional review uses, and adds a real coach on top.
 
-| | **Chess Game Review** | Typical open-source review | Paid commercial review |
+| | **Our Game Review** | Typical open-source review | Paid commercial review |
 |---|:---:|:---:|:---:|
 | Free, unlimited reviews | ✅ | ✅ | Limited on the free tier |
 | Open source, self-hostable | ✅ | ✅ | ❌ |
