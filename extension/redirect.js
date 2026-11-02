@@ -17,8 +17,9 @@ try {
   }
 } catch (err) {
   document.getElementById("spinner").hidden = true;
-  document.getElementById("status").textContent = "Could not open the review";
+  document.getElementById("status").textContent = "We couldn't open this review";
   const box = document.getElementById("error");
   box.textContent = err instanceof Error ? err.message : String(err);
   box.hidden = false;
+  document.getElementById("help").hidden = false;
 }

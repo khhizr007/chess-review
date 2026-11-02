@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { OTHER_TAB, REVIEW_URL, appReviewUrl, normaliseAppUrl } from "./shared.js";
+import { APP_URL, DEFAULTS, OTHER_TAB, REVIEW_URL, appReviewUrl, normaliseAppUrl } from "./shared.js";
 
 const pattern = new RegExp(REVIEW_URL, "i");
 const otherTab = new RegExp(OTHER_TAB, "i");
@@ -69,4 +69,21 @@ test("accepts only http(s) app addresses and drops their hash", () => {
   assert.equal(normaliseAppUrl("https://example.org/app/#x"), "https://example.org/app/");
   assert.equal(normaliseAppUrl("javascript:alert(1)"), null);
   assert.equal(normaliseAppUrl("not a url"), null);
+});
+
+test("opens the live site by default", () => {
+  assert.equal(DEFAULTS.appUrl, "https://openchess.online/");
+  assert.equal(normaliseAppUrl(APP_URL), APP_URL);
+  assert.equal(appReviewUrl({ ...DEFAULTS, username: "khhizr7" }, "live", "42"), "https://openchess.online/#chesscom=live/42&user=khhizr7");
+});
+
+test("shipped files carry no development addresses", () => {
+  const shipped = ["manifest.json", "background.js", "content.js", "options.html", "options.js", "redirect.html", "redirect.js"];
+  for (const file of shipped) {
+    const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /localhost|127\.0\.0\.1/, file);
+  }
+  const manifest = JSON.parse(readFileSync(new URL("./manifest.json", import.meta.url), "utf8"));
+  assert.ok(manifest.description.length <= 132, "store description limit");
+  assert.ok(manifest.name.length <= 75, "store name limit");
 });

@@ -1,8 +1,9 @@
 {
-  "name": "chess-review-opener",
+  "name": "openchess-extension",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test.mjs"
+    "test": "node --test test.mjs",
+    "pack": "node --test test.mjs && node pack.mjs"
   }
 }

@@ -19,7 +19,13 @@ export const REVIEW_URL =
 /** An analysis page asked for a tab other than the review (left to Chess.com). */
 export const OTHER_TAB = "[?&]tab=(?:analysis|games|explorer|tablebase|collection-settings)(?:[&#]|$)";
 
-export const DEFAULTS = { appUrl: "http://localhost:5173/", username: "", enabled: true };
+/** Where reviews open. Self-hosters can change it under Advanced on the options page. */
+export const APP_URL = "https://openchess.online/";
+
+/** The address older development builds stored by default; replaced by APP_URL on update. */
+export const LEGACY_DEV_URL = "http://localhost:5173/";
+
+export const DEFAULTS = { appUrl: APP_URL, username: "", enabled: true };
 
 const USERNAME = /^[A-Za-z0-9_-]{2,30}$/;
 
@@ -47,8 +53,8 @@ export function normaliseAppUrl(value) {
 
 /** The app page that reviews Chess.com game `id` (see frontend/src/lib/handoff.ts). */
 export function appReviewUrl(settings, type, id) {
-  if (type !== "live" && type !== "daily") throw new Error("This is not a Chess.com game link.");
-  if (!/^[0-9]+$/.test(id)) throw new Error("This is not a Chess.com game link.");
+  if (type !== "live" && type !== "daily") throw new Error("This link does not point to a Chess.com game.");
+  if (!/^[0-9]+$/.test(id)) throw new Error("This link does not point to a Chess.com game.");
   const user = USERNAME.test(settings.username) ? `&user=${settings.username}` : "";
   return `${settings.appUrl}#chesscom=${type}/${id}${user}`;
 }

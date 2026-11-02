@@ -1,6 +1,6 @@
 // Service worker: keeps the redirect rule in step with the settings and opens the app for clicks
 // that content.js caught on Chess.com.
-import { OTHER_TAB, REVIEW_URL, appReviewUrl, loadSettings } from "./shared.js";
+import { LEGACY_DEV_URL, OTHER_TAB, REVIEW_URL, appReviewUrl, loadSettings } from "./shared.js";
 
 const RULE_ID = 1;
 const OTHER_TAB_RULE_ID = 2;
@@ -35,7 +35,18 @@ async function syncRules() {
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [RULE_ID, OTHER_TAB_RULE_ID], addRules });
 }
 
-chrome.runtime.onInstalled.addListener(() => void syncRules());
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  void (async () => {
+    if (reason === "update") {
+      // Development builds saved the local dev server as the app address; move them to the live site.
+      const { appUrl } = await chrome.storage.sync.get("appUrl");
+      if (appUrl === LEGACY_DEV_URL) await chrome.storage.sync.remove("appUrl");
+    }
+    await syncRules();
+    // First install: show the settings so the user can add their Chess.com username.
+    if (reason === "install") await chrome.runtime.openOptionsPage();
+  })();
+});
 chrome.runtime.onStartup.addListener(() => void syncRules());
 // The toolbar button opens the settings.
 chrome.action.onClicked.addListener(() => void chrome.runtime.openOptionsPage());

@@ -290,6 +290,71 @@ code {
   color: var(--muted);
 }
 
+.footnote a {
+  color: var(--text-3);
+  text-decoration: none;
+}
+
+.footnote a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+a.logo {
+  text-decoration: none;
+}
+
+/* advanced settings */
+.advanced {
+  margin-top: 22px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.advanced summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.advanced summary:hover {
+  color: var(--text);
+}
+
+.advanced .field {
+  margin-top: 14px;
+}
+
+.link-button {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--green-300);
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--green-200);
+  text-decoration: underline;
+}
+
+.notice a {
+  color: inherit;
+}
+
+.notice + .lede {
+  margin-top: 12px;
+}
+
+.lede a {
+  color: var(--green-300);
+}
+
 /* redirect page */
 .opening {
   display: flex;
