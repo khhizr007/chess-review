@@ -26,14 +26,26 @@ FROM debian:trixie-slim AS stockfish
 # x86-64-avx2 suits most cloud CPUs; use x86-64 for old CPUs. Arm hosts are not covered.
 ARG STOCKFISH_VERSION=sf_18
 ARG STOCKFISH_ARCH=x86-64-avx2
+# 64-bit Arm (Raspberry Pi 4/5 on a 64-bit OS, Oracle Ampere): sf_18 has no Linux Arm binary, so
+# use the sf_19 "universal" build, which picks the right CPU features at run time.
+ARG STOCKFISH_ARM64_VERSION=sf_19
+ARG TARGETARCH
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL -o /tmp/sf.tar \
-      "https://github.com/official-stockfish/Stockfish/releases/download/${STOCKFISH_VERSION}/stockfish-ubuntu-${STOCKFISH_ARCH}.tar" \
- && tar -xf /tmp/sf.tar -C /tmp \
- && install -m 0755 "/tmp/stockfish/stockfish-ubuntu-${STOCKFISH_ARCH}" /usr/local/bin/stockfish \
- && rm -rf /tmp/sf.tar /tmp/stockfish
+RUN set -eu; \
+    if [ "${TARGETARCH:-amd64}" = "arm64" ]; then \
+      curl -fsSL -o /tmp/sf.tar.gz \
+        "https://github.com/official-stockfish/Stockfish/releases/download/${STOCKFISH_ARM64_VERSION}/stockfish-linux-arm64-universal.tar.gz"; \
+      tar -xzf /tmp/sf.tar.gz -C /tmp; \
+      install -m 0755 /tmp/stockfish/stockfish-linux-arm64-universal /usr/local/bin/stockfish; \
+    else \
+      curl -fsSL -o /tmp/sf.tar \
+        "https://github.com/official-stockfish/Stockfish/releases/download/${STOCKFISH_VERSION}/stockfish-ubuntu-${STOCKFISH_ARCH}.tar"; \
+      tar -xf /tmp/sf.tar -C /tmp; \
+      install -m 0755 "/tmp/stockfish/stockfish-ubuntu-${STOCKFISH_ARCH}" /usr/local/bin/stockfish; \
+    fi; \
+    rm -rf /tmp/sf.tar /tmp/sf.tar.gz /tmp/stockfish
 
 # --- Sound pack (optional, from a separate repository) --------------------------
 # Set SOUNDS_REPO=owner/name to pull a raw sound pack (default/*.mp3 and assets-ds/*.mp3, as in

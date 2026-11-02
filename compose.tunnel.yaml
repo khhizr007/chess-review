@@ -1,0 +1,13 @@
+# Publishes the app through a Cloudflare Tunnel (no open router ports, no static IP).
+# Put TUNNEL_TOKEN=<token from Cloudflare Zero Trust> in a .env file next to this one, then:
+#   docker compose -f compose.yaml -f compose.tunnel.yaml up -d --build
+# In the tunnel's Public Hostname settings, point openchess.online at http://chess-review:8080.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - chess-review
+    restart: unless-stopped
