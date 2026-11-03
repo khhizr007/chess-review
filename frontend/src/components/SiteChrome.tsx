@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
+import { REPO, REPO_URL } from "../lib/repo";
 
-const REPO = "khhizr007/chess-review";
-const REPO_URL = `https://github.com/${REPO}`;
 const CACHE_KEY = "chess-review:github-stars";
 /** GitHub allows 60 unauthenticated API calls an hour; one an hour per visitor is plenty. */
 const CACHE_MS = 60 * 60 * 1000;

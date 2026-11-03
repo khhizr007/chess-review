@@ -1,9 +1,9 @@
-# OpenChess Game Review: privacy policy
+# KnightReview: privacy policy
 
 Last updated: 2 November 2026
 
-OpenChess Game Review is a browser extension that opens your finished Chess.com games in
-[OpenChess](https://openchess.online/) for review.
+The KnightReview browser extension opens your finished Chess.com games in
+[KnightReview](https://knightreview.online/) for review.
 
 ## What the extension stores
 
@@ -23,9 +23,9 @@ use cookies.
 
 ## What is sent, and to whom
 
-When you click Review, the extension opens a new tab at openchess.online with the game's ID and
-your username (if set) in the address. OpenChess then downloads that game from Chess.com's public
-API (`api.chess.com`) and analyses it on the OpenChess servers. See the site for how it handles
+When you click Review, the extension opens a new tab at knightreview.online with the game's ID and
+your username (if set) in the address. KnightReview then downloads that game from Chess.com's public
+API (`api.chess.com`) and analyses it on the KnightReview servers. See the site for how it handles
 reviews.
 
 The extension contains no analytics, ads or trackers. It does not sell or share data with anyone.

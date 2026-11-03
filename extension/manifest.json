@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "OpenChess Game Review",
-  "short_name": "OpenChess",
+  "name": "KnightReview: Free Chess Game Review",
+  "short_name": "KnightReview",
   "version": "1.0.0",
-  "description": "Free reviews of your Chess.com games: click Review and the game opens in OpenChess. Not affiliated with Chess.com.",
-  "homepage_url": "https://openchess.online/",
+  "description": "Free reviews of your Chess.com games: click Review and the game opens in KnightReview. Not affiliated with Chess.com.",
+  "homepage_url": "https://knightreview.online/",
   "minimum_chrome_version": "118",
   "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
   "action": {
-    "default_title": "OpenChess Game Review settings",
+    "default_title": "KnightReview settings",
     "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }
   },
   "permissions": ["declarativeNetRequestWithHostAccess", "storage"],

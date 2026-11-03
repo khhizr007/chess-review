@@ -3,25 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Settings · OpenChess Game Review</title>
+    <title>Settings · KnightReview</title>
     <link rel="icon" href="icons/icon-32.png" />
     <link rel="stylesheet" href="ui.css" />
     <script type="module" src="options.js"></script>
   </head>
   <body>
     <header class="topbar">
-      <a class="logo" href="https://openchess.online/" target="_blank" rel="noopener">
+      <a class="logo" href="https://knightreview.online/" target="_blank" rel="noopener">
         <img src="icons/icon-128.png" alt="" />
-        <span class="logo__word">Game<span class="logo__accent">Review</span></span>
+        <span class="logo__word">Knight<span class="logo__accent">Review</span></span>
       </a>
     </header>
     <main class="main">
       <form id="form" class="card" novalidate>
         <h1>Settings</h1>
-        <p class="lede">Click Review on any finished Chess.com game and it opens in OpenChess in a new tab.</p>
+        <p class="lede">Click Review on any finished Chess.com game and it opens in KnightReview in a new tab.</p>
 
         <label class="toggle">
-          <span>Open Chess.com reviews in OpenChess</span>
+          <span>Open Chess.com reviews in KnightReview</span>
           <input type="checkbox" id="enabled" />
           <span class="switch" aria-hidden="true"></span>
         </label>
@@ -44,9 +44,9 @@
           <summary>Advanced</summary>
           <div class="field">
             <label class="card__title" for="appUrl">Review site</label>
-            <input class="input" type="url" id="appUrl" required spellcheck="false" placeholder="https://openchess.online/" />
-            <p class="hint" id="appStatus" aria-live="polite">Only change this if you run your own copy of OpenChess.</p>
-            <button class="link-button" type="button" id="resetUrl">Use openchess.online</button>
+            <input class="input" type="url" id="appUrl" required spellcheck="false" placeholder="https://knightreview.online/" />
+            <p class="hint" id="appStatus" aria-live="polite">Only change this if you run your own copy of KnightReview.</p>
+            <button class="link-button" type="button" id="resetUrl">Use knightreview.online</button>
           </div>
         </details>
 
@@ -56,7 +56,7 @@
         </div>
       </form>
       <p class="footnote">
-        <a href="https://openchess.online/" target="_blank" rel="noopener">openchess.online</a>
+        <a href="https://knightreview.online/" target="_blank" rel="noopener">knightreview.online</a>
         · Not affiliated with Chess.com.
       </p>
     </main>

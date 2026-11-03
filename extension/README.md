@@ -1,7 +1,7 @@
-# OpenChess Game Review (browser extension)
+# KnightReview browser extension
 
 When you click **Review** on a finished Chess.com game, the game opens in
-[OpenChess](https://openchess.online/) in a new tab instead. Chrome or Edge (Manifest V3, version
+[KnightReview](https://knightreview.online/) in a new tab instead. Chrome or Edge (Manifest V3, version
 118 or later). Not affiliated with Chess.com.
 
 ## Install
@@ -12,7 +12,7 @@ From the Chrome Web Store (once published), or unpacked for development:
 2. Click **Load unpacked** and pick this `extension` folder.
 3. The settings page opens. Enter your Chess.com username.
 
-Reviews open at https://openchess.online/ by default. To test against a local frontend
+Reviews open at https://knightreview.online/ by default. To test against a local frontend
 (`npm run dev` in `frontend`, http://localhost:5173/), set **Advanced → Review site** in the
 extension's settings.
 
@@ -20,7 +20,7 @@ extension's settings.
 
 1. Bump `version` in `manifest.json` (each store upload needs a higher version).
 2. `npm run pack` here (or `node pack.mjs`). It runs the tests, then writes
-   `dist/openchess-extension-<version>.zip` with only the shipped files.
+   `dist/knightreview-extension-<version>.zip` with only the shipped files.
 3. Upload the zip in the Chrome Web Store Developer Dashboard. Listing text, permission
    justifications and the privacy answers are in `STORE.md`; the privacy policy is `PRIVACY.md`.
 

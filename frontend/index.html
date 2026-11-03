@@ -4,8 +4,75 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='8' height='8' fill='%23769656'/><rect x='8' y='8' width='8' height='8' fill='%23769656'/><rect x='8' width='8' height='8' fill='%23eeeed2'/><rect y='8' width='8' height='8' fill='%23eeeed2'/></svg>" />
-    <title>Chess Game Review</title>
+    <meta name="theme-color" content="#769656" />
+    <title>Free Chess Game Review – Chess.com, Lichess &amp; PGN | KnightReview</title>
+    <meta name="description" content="Review your chess games for free. Every move graded from Brilliant to Blunder, with a coach that explains why. Chess.com, Lichess or PGN. No account, no daily limit." />
+    <link rel="canonical" href="https://knightreview.online/" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="KnightReview" />
+    <meta property="og:url" content="https://knightreview.online/" />
+    <meta property="og:title" content="KnightReview – free chess game review" />
+    <meta property="og:description" content="Every move graded, a coach that explains why, and a live engine for your own ideas. Free and open source." />
+    <meta name="twitter:card" content="summary" />
+
+    <!-- The FAQPage entries match src/lib/faq.ts word for word (checked by src/lib/faq.test.ts). -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "name": "KnightReview",
+            "url": "https://knightreview.online/",
+            "description": "Free chess game review for Chess.com, Lichess and PGN games: every move graded, with a coach that explains why.",
+            "applicationCategory": "GameApplication",
+            "operatingSystem": "Any",
+            "browserRequirements": "Requires JavaScript.",
+            "isAccessibleForFree": true,
+            "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is KnightReview really free?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every review is free, with no daily limit and no account. The code is open source, so it stays free." }
+              },
+              {
+                "@type": "Question",
+                "name": "Do I need an account?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. Enter your Chess.com or Lichess username, or paste a PGN, and start the review." }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it work with Chess.com and Lichess games?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. It loads your recent public games from both sites. You can also paste or open a PGN from anywhere." }
+              },
+              {
+                "@type": "Question",
+                "name": "How is a Brilliant move decided?",
+                "acceptedAnswer": { "@type": "Answer", "text": "A Brilliant move is the best move, or very close to it, that gives up a piece. Your position must still be good afterwards, and you must not already be winning easily." }
+              },
+              {
+                "@type": "Question",
+                "name": "How is accuracy worked out?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Each move is scored by how much of your winning chances it keeps. Accuracy is the average for each player, and is also shown for the opening, middlegame and endgame." }
+              },
+              {
+                "@type": "Question",
+                "name": "Is KnightReview part of Chess.com or Lichess?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. KnightReview is an independent open-source project. It is not affiliated with Chess.com or Lichess." }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

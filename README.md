@@ -1,4 +1,4 @@
-# Chess Game Review
+# KnightReview
 
 **The most complete open-source chess game review.** Review your games and learn from your
 mistakes, for free, with no daily limit and no account.
@@ -7,12 +7,14 @@ Enter your Chess.com or Lichess username, pick a game, and get a full review in 
 every move graded, a coach that explains *why* in plain words, and a live engine for the moves you
 try yourself.
 
+Try it at [knightreview.online](https://knightreview.online/).
+
 ## Why this review
 
 Most open-source review tools grade a move by how many centipawns it lost, and stop there. This
 project grades moves with the full rule set a professional review uses, and adds a real coach on top.
 
-| | **Our Game Review** | Typical open-source review | Paid commercial review |
+| | **KnightReview** | Typical open-source review | Paid commercial review |
 |---|:---:|:---:|:---:|
 | Free, unlimited reviews | ✅ | ✅ | Limited on the free tier |
 | Open source, self-hostable | ✅ | ✅ | ❌ |

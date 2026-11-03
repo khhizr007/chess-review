@@ -1,7 +1,7 @@
 import { APP_URL, loadSettings, normaliseAppUrl } from "./shared.js";
 
 const USERNAME = /^[A-Za-z0-9_-]{2,30}$/;
-const SITE_HINT = "Only change this if you run your own copy of OpenChess.";
+const SITE_HINT = "Only change this if you run your own copy of KnightReview.";
 const form = document.getElementById("form");
 const fields = {
   enabled: document.getElementById("enabled"),

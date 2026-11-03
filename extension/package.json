@@ -1,5 +1,5 @@
 {
-  "name": "openchess-extension",
+  "name": "knightreview-extension",
   "private": true,
   "type": "module",
   "scripts": {
