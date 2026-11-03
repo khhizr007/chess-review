@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Game Review opener",
-  "version": "0.2.0",
-  "description": "Opens your finished Chess.com games in your own Game Review app. Not affiliated with Chess.com.",
+  "name": "OpenChess Game Review",
+  "short_name": "OpenChess",
+  "version": "1.0.0",
+  "description": "Free reviews of your Chess.com games: click Review and the game opens in OpenChess. Not affiliated with Chess.com.",
+  "homepage_url": "https://openchess.online/",
   "minimum_chrome_version": "118",
   "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
   "action": {
-    "default_title": "Game Review opener: settings",
+    "default_title": "OpenChess Game Review settings",
     "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }
   },
   "permissions": ["declarativeNetRequestWithHostAccess", "storage"],
@@ -20,5 +22,5 @@
     }
   ],
   "web_accessible_resources": [{ "resources": ["redirect.html"], "matches": ["https://*.chess.com/*"] }],
-  "options_page": "options.html"
+  "options_ui": { "page": "options.html", "open_in_tab": true }
 }
