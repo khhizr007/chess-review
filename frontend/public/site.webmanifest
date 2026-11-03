@@ -1,0 +1,10 @@
+{
+  "name": "KnightReview",
+  "short_name": "KnightReview",
+  "description": "Free chess game review for Chess.com, Lichess and PGN games.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#302e2b",
+  "theme_color": "#769656",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -20,7 +20,7 @@ export const REVIEW_URL =
 export const OTHER_TAB = "[?&]tab=(?:analysis|games|explorer|tablebase|collection-settings)(?:[&#]|$)";
 
 /** Where reviews open. Self-hosters can change it under Advanced on the options page. */
-export const APP_URL = "https://openchess.online/";
+export const APP_URL = "https://knightreview.online/";
 
 /** The address older development builds stored by default; replaced by APP_URL on update. */
 export const LEGACY_DEV_URL = "http://localhost:5173/";

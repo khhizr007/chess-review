@@ -72,9 +72,9 @@ test("accepts only http(s) app addresses and drops their hash", () => {
 });
 
 test("opens the live site by default", () => {
-  assert.equal(DEFAULTS.appUrl, "https://openchess.online/");
+  assert.equal(DEFAULTS.appUrl, "https://knightreview.online/");
   assert.equal(normaliseAppUrl(APP_URL), APP_URL);
-  assert.equal(appReviewUrl({ ...DEFAULTS, username: "khhizr7" }, "live", "42"), "https://openchess.online/#chesscom=live/42&user=khhizr7");
+  assert.equal(appReviewUrl({ ...DEFAULTS, username: "khhizr7" }, "live", "42"), "https://knightreview.online/#chesscom=live/42&user=khhizr7");
 });
 
 test("shipped files carry no development addresses", () => {

@@ -485,8 +485,8 @@ select option {
 /* =================================================================== import */
 
 /*
- * The landing page reads like a page of a chess book: a serif headline, a diagram with its
- * caption, and the key to the annotation signs. The search stays the first thing to use.
+ * The landing page reads like a page of a chess book: a serif headline and a diagram with its
+ * caption. The search stays the first thing to use; what the review is follows below it.
  */
 .landing {
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -506,15 +506,6 @@ select option {
   flex-direction: column;
   min-width: 0;
   max-width: 600px;
-}
-
-.landing__kicker {
-  margin: 0 0 14px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--green-200);
 }
 
 .landing__title {
@@ -779,6 +770,117 @@ select option {
 
 .landing__figure-note strong {
   color: var(--c-brilliant);
+}
+
+/* Below the form: what the review is, in a few short sections set like the rest of the page. */
+.landing-info {
+  display: grid;
+  gap: 56px;
+  max-width: 1080px;
+  padding: 40px 0 24px;
+  border-top: 1px solid var(--border);
+}
+
+.landing-info__heading {
+  margin: 0 0 10px;
+  font-family: var(--serif);
+  font-size: 1.32rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.landing-info p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.landing-info a {
+  color: var(--link);
+}
+
+.landing-info__steps ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.landing-info__steps li {
+  counter-increment: step;
+  padding-top: 14px;
+  border-top: 2px solid var(--green-400);
+}
+
+.landing-info__steps li::before {
+  content: counter(step);
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--green-200);
+}
+
+.landing-info__steps h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.landing-info__features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px 56px;
+}
+
+.landing-info__faq {
+  max-width: 760px;
+}
+
+.landing-info__faq details {
+  border-bottom: 1px solid var(--border);
+}
+
+.landing-info__faq summary {
+  padding: 14px 28px 14px 0;
+  position: relative;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.landing-info__faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.landing-info__faq summary::after {
+  content: "+";
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
+  color: var(--muted);
+}
+
+.landing-info__faq details[open] summary::after {
+  content: "–";
+}
+
+.landing-info__faq summary:hover {
+  color: var(--text);
+}
+
+.landing-info__faq details p {
+  padding: 0 28px 16px 0;
 }
 
 /* Top bar's "Star" button with the repo's live GitHub count. */
@@ -3675,6 +3777,11 @@ select option {
   .landing__figure {
     position: static;
     max-width: 440px;
+  }
+
+  .landing-info__steps ol,
+  .landing-info__features {
+    grid-template-columns: 1fr;
   }
 
   .site-footer__inner {

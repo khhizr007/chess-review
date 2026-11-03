@@ -14,7 +14,7 @@ export function Logo() {
     <span className="logo">
       <LogoMark />
       <span className="logo__word">
-        Game<span className="logo__accent">Review</span>
+        Knight<span className="logo__accent">Review</span>
       </span>
     </span>
   );

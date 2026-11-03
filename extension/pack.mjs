@@ -1,4 +1,4 @@
-// Builds the Chrome Web Store upload: `node pack.mjs` writes dist/openchess-extension-<version>.zip
+// Builds the Chrome Web Store upload: `node pack.mjs` writes dist/knightreview-extension-<version>.zip
 // with only the files the extension needs (no tests, README or package.json). No dependencies.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
@@ -79,6 +79,6 @@ end.writeUInt32LE(centralSize, 12);
 end.writeUInt32LE(offset, 16);
 
 mkdirSync(new URL("dist/", root), { recursive: true });
-const out = new URL(`dist/openchess-extension-${manifest.version}.zip`, root);
+const out = new URL(`dist/knightreview-extension-${manifest.version}.zip`, root);
 writeFileSync(out, Buffer.concat([...locals, ...centrals, end]));
 console.log(`Wrote ${out.pathname} (${files.length} files)`);
