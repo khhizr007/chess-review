@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "KnightReview: Free Chess Game Review",
   "short_name": "KnightReview",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Free reviews of your Chess.com games: click Review and the game opens in KnightReview. Not affiliated with Chess.com.",
   "homepage_url": "https://knightreview.online/",
   "minimum_chrome_version": "118",

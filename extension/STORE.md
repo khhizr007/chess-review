@@ -38,7 +38,7 @@ Copy these into the Developer Dashboard. Keep them in sync with `manifest.json`.
 
 **Homepage URL:** https://knightreview.online/
 
-**Support URL:** https://github.com/khhizr007/chess-review/issues
+**Support URL:** https://github.com/khhizr007/knightreview/issues
 
 ## Graphics (you make these)
 
@@ -74,6 +74,5 @@ when they click Review on Chess.com.
 (it is a public Chess.com username; ticking it is the safe choice). Tick nothing else. Then tick all
 three certifications (no selling, no unrelated use, no credit-worthiness use).
 
-**Privacy policy URL:** a public page with the text of `PRIVACY.md`, e.g.
-https://knightreview.online/privacy or
-https://github.com/khhizr007/chess-review/blob/main/extension/PRIVACY.md
+**Privacy policy URL:** https://github.com/khhizr007/knightreview/blob/main/extension/PRIVACY.md
+(the site has no `/privacy` page; it would return the home page)
