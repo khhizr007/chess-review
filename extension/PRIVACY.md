@@ -32,4 +32,4 @@ The extension contains no analytics, ads or trackers. It does not sell or share 
 
 ## Contact
 
-Questions: open an issue at https://github.com/khhizr007/chess-review/issues
+Questions: open an issue at https://github.com/khhizr007/knightreview/issues
