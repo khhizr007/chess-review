@@ -222,6 +222,9 @@ export function ImportPanel({ onStart, busy }: Props) {
             Review your games and learn from your mistakes. Enter your Chess.com or Lichess username, or paste a PGN. No
             account, no daily limit.
           </p>
+          <p className="landing__ext-link">
+            On Chess.com? <a href="#extension">Get the extension</a> and review any game from its Review button.
+          </p>
 
           {healthError && <div className="notice notice--error">Servers unavailable. Please try again in a moment.</div>}
           {health && !health.engine && (

@@ -1,11 +1,26 @@
 import { FAQ } from "../lib/faq";
-import { REPO_URL } from "../lib/repo";
+import { EXTENSION_URL, REPO_URL } from "../lib/repo";
 
 const STEPS = [
   { title: "Enter your username", text: "Your Chess.com or Lichess name, or paste a PGN from anywhere." },
   { title: "Pick a game", text: "Your recent games are listed. Choose the one you want to look at." },
   { title: "Read the review", text: "Every move graded, the key moments marked, and a coach that explains them." },
 ];
+
+const EXTENSION_STEPS = [
+  "Add the extension to Chrome or Edge.",
+  "Enter your Chess.com username in its settings.",
+  "Click Review on any finished game.",
+];
+
+/** A puzzle piece, the usual mark for a browser extension. */
+function ExtensionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor">
+      <path d="M10.5 2a2.5 2.5 0 0 1 2.5 2.5V6h3a2 2 0 0 1 2 2v3h1.5a2.5 2.5 0 0 1 0 5H18v3a2 2 0 0 1-2 2h-3v-1.5a2.5 2.5 0 0 0-5 0V21H5a2 2 0 0 1-2-2v-3h1.5a2.5 2.5 0 0 0 0-5H3V8a2 2 0 0 1 2-2h3V4.5A2.5 2.5 0 0 1 10.5 2z" />
+    </svg>
+  );
+}
 
 /** What the review is, under the import form: plain text a reader (and a search engine) can find. */
 export function LandingInfo() {
@@ -21,6 +36,32 @@ export function LandingInfo() {
               <h3>{step.title}</h3>
               <p>{step.text}</p>
             </li>
+          ))}
+        </ol>
+      </section>
+
+      <section id="extension" className="landing-ext" aria-labelledby="ext-title">
+        <div className="landing-ext__copy">
+          <p className="landing-ext__eyebrow">Browser extension</p>
+          <h2 id="ext-title" className="landing-info__heading">
+            Review straight from Chess.com
+          </h2>
+          <p>
+            With the free KnightReview extension, the Review button on Chess.com opens your game here in a new tab and
+            the review starts on its own. Your daily Chess.com review is not used.
+          </p>
+          <a className="button button--primary landing-ext__cta" href={EXTENSION_URL} target="_blank" rel="noreferrer">
+            <ExtensionIcon />
+            Add to Chrome, it&apos;s free
+          </a>
+          <p className="landing-ext__note">
+            Works in Chrome and Edge. Running your own copy of KnightReview? Set its address under Advanced → Review site
+            in the extension&apos;s settings.
+          </p>
+        </div>
+        <ol className="landing-ext__steps">
+          {EXTENSION_STEPS.map((step) => (
+            <li key={step}>{step}</li>
           ))}
         </ol>
       </section>
