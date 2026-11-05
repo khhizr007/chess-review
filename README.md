@@ -17,7 +17,7 @@ No account. No daily limit. Works with Chess.com, Lichess and any PGN.
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/khhizr007/knightreview?style=flat)](https://github.com/khhizr007/knightreview)
 
-<img src="docs/screenshots/coach.png" alt="KnightReview explaining a mistake: Rxd7 looks natural, but Rd1 uses the pin on d7. Better was Nxd7, a sacrifice that works, though hard to find at this level." width="860" />
+<img src="docs/screenshots/chrome-store-screenshot-4-1280x800.png" />
 
 </div>
 
