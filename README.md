@@ -1,204 +1,279 @@
+<div align="center">
+
+<img src="extension/icons/icon-128.png" alt="KnightReview logo" width="88" />
+
 # KnightReview
 
-**The most complete open-source chess game review.** Review your games and learn from your
-mistakes, for free, with no daily limit and no account.
+**Free, open-source chess game review with a coach that explains every move.**
 
-Enter your Chess.com or Lichess username, pick a game, and get a full review in about 15 seconds:
-every move graded, a coach that explains *why* in plain words, and a live engine for the moves you
-try yourself.
+No account. No daily limit. Works with Chess.com, Lichess and any PGN.
 
-Try it at [knightreview.online](https://knightreview.online/).
+[**Try it now at knightreview.online**](https://knightreview.online/) ·
+[Chrome extension](https://chromewebstore.google.com/detail/knightreview-free-chess-g/ofiloeeincplbpiokogjdjoekgngohco) ·
+[Run it yourself](#run-it-yourself)
 
-## Why this review
+[![Live site](https://img.shields.io/badge/live-knightreview.online-81b64c)](https://knightreview.online/)
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/ofiloeeincplbpiokogjdjoekgngohco?label=chrome%20extension&color=4285f4)](https://chromewebstore.google.com/detail/knightreview-free-chess-g/ofiloeeincplbpiokogjdjoekgngohco)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/khhizr007/knightreview?style=flat)](https://github.com/khhizr007/knightreview)
 
-Most open-source review tools grade a move by how many centipawns it lost, and stop there. This
-project grades moves with the full rule set a professional review uses, and adds a real coach on top.
+<img src="docs/screenshots/coach.png" alt="KnightReview explaining a mistake: Rxd7 looks natural, but Rd1 uses the pin on d7. Better was Nxd7, a sacrifice that works, though hard to find at this level." width="860" />
 
-| | **KnightReview** | Typical open-source review | Paid commercial review |
-|---|:---:|:---:|:---:|
-| Free, unlimited reviews | ✅ | ✅ | Limited on the free tier |
-| Open source, self-hostable | ✅ | ✅ | ❌ |
-| Full grade set: Brilliant, Great, Best, Excellent, Good, Book, Inaccuracy, Mistake, Miss, Blunder | ✅ | Partial | ✅ |
-| Grades from win chances and player rating, not raw centipawns | ✅ | ❌ | ✅ |
-| Coach explains each move: forks, pins, skewers, trapped pieces, mates, threats, structure | ✅ | ❌ | ✅ |
-| Coach also explains the moves *you* try on the board | ✅ | ❌ | ✅ |
-| Every coach sentence checked against the board by an automated fact checker | ✅ | ❌ | ❌ |
-| Says when the best move was hard to find for your rating (Maia-2) | ✅ | ❌ | ❌ |
-| Live engine for sidelines, running in your browser | ✅ | Some | ✅ |
-| Accuracy per side and per game phase, evaluation graph, takeaways | ✅ | Partial | ✅ |
-| One-click handoff from Chess.com's Review button (browser extension) | ✅ | ❌ | — |
+</div>
 
-### Where it goes further
+## What it does
 
-- **A coach you can trust.** The coach names the real event on the board and shows the line that
-  proves it. A built-in fact checker (`coach_verify`) re-checks every sentence against the position;
-  on our test games it finds zero false claims.
-- **Honest about difficulty.** With the optional Maia-2 model, the coach tells you when the best move
-  is one most players at your rating would miss, instead of only calling your move bad.
-- **Your ideas count too.** Play any move on the board and it is graded and explained the same way as
-  the game's moves. The live engine runs in your browser, so exploring costs the server nothing.
-- **Yours to run.** One Docker command, your own machine, your own data. Finished reviews are kept for
-  a day, then deleted.
+Type your Chess.com or Lichess username, pick a game, and you get a full review:
 
-## How it works
+- **Every move graded**, from Brilliant and Great down to Mistake, Miss and Blunder.
+- **A coach that explains why** in plain words: the fork, the pin, the piece left hanging, the threat
+  you missed. It shows the line that proves it.
+- **Accuracy for each player** and for each phase of the game, an evaluation graph, and the moments
+  that decided it.
+- **Your own ideas count too.** Play any move on the board and it is graded and explained the same
+  way, with a live Stockfish engine running in your browser.
 
-Every move is searched with Stockfish, then graded by expected points (win chances adjusted for the
-players' rating), precision thresholds, a classification decision tree with mate rules, and a
-per-move accuracy score. The rules and their defaults are documented in
-`backend/crates/review-core/src/config.rs`.
+<p align="center">
+  <img src="docs/screenshots/report.png" alt="Game report with accuracy and move counts per grade" width="49%" />
+  <img src="docs/screenshots/brilliant.png" alt="Qb8+ graded Brilliant: a sacrifice that starts a forced mate in 2" width="49%" />
+</p>
 
-- **Backend:** Rust (axum, tokio, shakmaty, pgn-reader). The `review-core` crate holds the
-  rules with no I/O. `review-server` holds the API, PGN import, the Stockfish pool and the pipeline.
-- **Frontend:** React + TypeScript (Vite, chessground, chessops). Its API types are generated from the
-  Rust types (`frontend/src/api/generated/`).
+## What makes it different
 
-## Requirements
+- **Grades that fit the player.** A move is graded by how much of your winning chances it keeps,
+  at your rating, not only by how many centipawns it lost. The same slip costs more in a won
+  endgame than in a wild position.
+- **A coach you can trust.** Before you see a note, a built-in fact checker reads it back and checks
+  every claim about the board: the pieces it names, the moves, the material won, the forks and pins.
+- **Honest about difficulty.** With [Maia-2](https://github.com/CSSLab/maia2), a model trained on
+  millions of human games, the coach knows which moves players at your rating usually find. It says
+  "hard to find at this level" instead of only calling your move bad.
+- **Free and yours.** No account, no daily limit, open source under the GPL. Run your own copy with
+  one Docker command. Finished reviews are deleted after a day.
 
-- Rust 1.88+ (`rustup`)
-- Node.js 20+ and npm
-- A UCI engine, normally [Stockfish](https://stockfishchess.org/download/). It is not bundled (see
-  [Installing Stockfish](#installing-stockfish)).
+## Chrome extension: review straight from Chess.com
 
-## Quick start (development)
+With the [KnightReview extension](https://chromewebstore.google.com/detail/knightreview-free-chess-g/ofiloeeincplbpiokogjdjoekgngohco),
+the **Review** button on Chess.com opens your game in KnightReview instead, and the review starts on
+its own. Your daily Chess.com review is not used.
 
-```bash
-# 1. Backend (http://127.0.0.1:8080)
-cd backend
-STOCKFISH_PATH=/path/to/stockfish cargo run --release -p review-server
+1. [Add the extension](https://chromewebstore.google.com/detail/knightreview-free-chess-g/ofiloeeincplbpiokogjdjoekgngohco)
+   to Chrome or Edge.
+2. In the settings page that opens, enter your Chess.com username and click **Save**.
+3. Finish a game on Chess.com and click **Review**.
 
-# 2. Frontend (http://localhost:5173, proxies /api to the backend)
-cd frontend
-npm install
-npm run dev
-```
+**Running your own copy?** Point the extension at it: open the extension's settings (click its icon
+in the toolbar), expand **Advanced**, and set **Review site** to your address, for example
+`http://localhost:8080/` or `https://chess.example.com/`. Click **Save**. Reviews now open on your
+server instead of knightreview.online.
 
-Open http://localhost:5173. Then type your Chess.com or Lichess username under **Your games** and pick a game, or click **Load sample**, or paste or open a PGN. Then click **Start review**.
-At the Standard preset (600,000 nodes per position) a 40-move game
-takes about 15 seconds on an 8-core machine. **Fast** is much quicker.
+<img src="docs/screenshots/extension.png" alt="The extension section on the KnightReview home page: add the extension, enter your Chess.com username, click Review on any finished game" width="100%" />
 
-**Board keys:** `←`/`→` move, `Home`/`End` first or last move, `f` flip, `Esc` leave a line preview.
-Moves and brilliant moves have sounds; the **Sound** switch turns them off.
+The extension's source is in [`extension/`](extension/README.md).
 
-## Docker
+## Run it yourself
 
-The image builds the frontend and the server, and bundles Stockfish 18 (official release binary)
-and the Maia-2 sidecar with its rapid weights (CPU PyTorch; the image is about 2 GB, and Maia uses
-about 400 MB of RAM). Run with `-e MAIA_COMMAND=` to turn Maia off.
+There are two ways to run KnightReview on your own computer:
 
-```bash
-docker build -t chess-review .
-docker run --rm -p 127.0.0.1:8080:8080 -e ENGINE_POOL_SIZE=2 chess-review
-# or: docker compose up --build
-```
+- **[Option 1: Docker](#option-1-docker-easiest)** is the easiest. One command, everything included.
+- **[Option 2: From source](#option-2-from-source)** is for when you want to change the code.
 
-Then open http://127.0.0.1:8080. Every variable in [Configuration](#configuration) can be set with
-`-e`. Build arguments: `STOCKFISH_VERSION` (default `sf_18`) and `STOCKFISH_ARCH` (default
-`x86-64-avx2`; use `x86-64` on CPUs without AVX2). Finished reviews are saved in the
-`/app/data/reviews` volume for a day (`REVIEW_TTL_SECS`), so they survive a restart; compose keeps
-them in the named volume `reviews`.
+Both set up **Maia-2**, which is what lets the coach talk about how hard a move was to find. We
+recommend keeping it on: the coach's explanations are noticeably better with it. Turn it off only if
+your machine is short on memory (Maia needs about 400 MB of extra RAM).
 
-A recorded sound pack can be pulled from another GitHub repository at build time, in the raw
-layout `tools/sounds/install-sound-pack.sh` reads. Put `SOUNDS_REPO=owner/name` (and, if the branch
-is not `master`, `SOUNDS_REF`) in a `.env` file, then build with a read-only token for a private
-repository:
+### Option 1: Docker (easiest)
+
+You need [Docker](https://docs.docker.com/get-docker/) (Docker Desktop on Windows and macOS) and
+about 3 GB of free disk space. The image includes Stockfish 18 and Maia-2, so there is nothing else
+to install.
+
+**Step 1.** Download the code:
 
 ```bash
-GITHUB_TOKEN=<token> docker compose up -d --build
+git clone https://github.com/khhizr007/knightreview.git
+cd knightreview
 ```
 
-The token is a build secret and is not stored in the image. Without `SOUNDS_REPO` the app uses its
-synthesised sounds.
-
-## Single-process deployment
+**Step 2.** Build and start it:
 
 ```bash
-cd frontend && npm ci && npm run build
-cd ../backend && cargo build --release -p review-server
-STOCKFISH_PATH=/path/to/stockfish STATIC_DIR=../frontend/dist ./target/release/review-server
-# → http://127.0.0.1:8080 serves both the UI and the API
+docker compose up -d --build
 ```
 
-All settings are environment variables (see [Configuration](#configuration)).
+The first build takes several minutes. Later starts take seconds.
 
-## Configuration
+**Step 3.** Open **http://localhost:8080** in your browser, enter a username, and review a game.
 
-### Backend (environment variables)
+That's it. To stop it, run `docker compose down`. Your finished reviews are kept for a day.
 
-| Variable | Default | Meaning |
+<details>
+<summary><b>Without Docker Compose</b></summary>
+
+```bash
+docker build -t knightreview .
+docker run -d --name knightreview -p 127.0.0.1:8080:8080 knightreview
+```
+
+Stop it with `docker stop knightreview`.
+
+</details>
+
+<details>
+<summary><b>Low on memory? Turn Maia off</b></summary>
+
+Add `-e MAIA_COMMAND=` to `docker run`:
+
+```bash
+docker run -d --name knightreview -p 127.0.0.1:8080:8080 -e MAIA_COMMAND= knightreview
+```
+
+With Docker Compose, add `MAIA_COMMAND: ""` under `environment:` in `compose.yaml`. Reviews still
+work; the coach just won't comment on how hard a move was to find.
+
+</details>
+
+<details>
+<summary><b>Older CPU or slow reviews?</b></summary>
+
+- If Stockfish crashes on start, your CPU may not support AVX2. Rebuild with
+  `docker build --build-arg STOCKFISH_ARCH=x86-64 -t knightreview .`
+- Each engine process uses about 370 MB of RAM. `ENGINE_POOL_SIZE` (2 in `compose.yaml`) sets how
+  many run at once. Lower it on a small machine, raise it on a big one for faster reviews.
+
+</details>
+
+### Option 2: From source
+
+These steps are for Linux and macOS. On Windows, run them inside
+[WSL](https://learn.microsoft.com/windows/wsl/install).
+
+**Step 1. Install the tools.**
+
+| Tool | Version | How to get it |
 |---|---|---|
-| `STOCKFISH_PATH` | `stockfish` found on `PATH` | UCI engine executable. Without one the server starts in "degraded" mode: import and parsing work, reviews return 503. |
-| `BIND_ADDR` | `127.0.0.1:8080` | Listen address |
-| `ENGINE_POOL_SIZE` | half the CPUs, 1–8 | Engine processes, which is also the maximum number of parallel searches. Each Stockfish process uses about 370 MB of RAM. |
-| `ENGINE_THREADS` | `1` | `Threads` per engine process |
-| `ENGINE_HASH_MB` | `64` | `Hash` per engine process |
-| `ENGINE_SEARCH_TIMEOUT_SECS` | `60` | Hard limit per position |
-| `ANALYSIS_CACHE_ENTRIES` | `20000` | LRU cache of position analyses (0 disables it) |
-| `OPENINGS_DIR` | `./data/openings` if present | Opening TSVs. Without them, no move is classified as Book. |
-| `MAX_CONCURRENT_REVIEWS` | `2` | Reviews that run at the same time; others queue |
-| `MAX_STORED_REVIEWS` | `5000` | Finished reviews kept on disk. Beyond it the oldest are deleted first. |
-| `REVIEW_STORE_DIR` | `./data/reviews` | Directory for finished reviews, one JSON file each. Only running and queued reviews stay in memory. Avoid a tmpfs such as `/tmp` on many Linux hosts: it is held in RAM. |
-| `REVIEW_TTL_SECS` | `86400` (one day) | How long a finished review is kept. After it the review returns 404 and its file is deleted (minimum 60). |
-| `STATIC_DIR` | unset | Serve a built frontend (`frontend/dist`) from the backend |
-| `CORS_ORIGIN` | unset | Allowed browser origin. Only needed when the frontend is served from another origin without the Vite proxy. |
-| `MAIA_COMMAND` | unset | Command that starts the optional Maia-2 sidecar (see below). Without it the coach does not judge how hard a move was to find. |
-| `RUST_LOG` | `info,tower_http=warn` | Log filter |
+| Git | any | [git-scm.com](https://git-scm.com/downloads) |
+| Rust | 1.88 or newer | [rustup.rs](https://rustup.rs/) |
+| Node.js | 20.19 or newer | [nodejs.org](https://nodejs.org/) |
+| Stockfish | any recent | `sudo apt install stockfish` or `brew install stockfish` |
+| uv (for Maia) | any | [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
 
-**CPU budget.** CPU use is about `ENGINE_POOL_SIZE × ENGINE_THREADS` cores while a review runs. On a
-4-core machine the defaults (2 × 1) keep the desktop responsive.
+**Step 2. Download the code.**
 
-**Review rules.** The defaults are returned by `GET /api/config/defaults`. A review request may pass
-`config` to override them; the fields are documented in `backend/crates/review-core/src/config.rs`.
+```bash
+git clone https://github.com/khhizr007/knightreview.git
+cd knightreview
+```
 
-### Frontend
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `VITE_BACKEND_URL` | `http://127.0.0.1:8080` | Where the Vite dev server proxies `/api` |
-
-### Maia-2 (optional)
-
-[Maia-2](https://github.com/CSSLab/maia2) (MIT) predicts the moves human players of a given rating
-make; the coach uses it to say when the best move was hard to find. It runs as a separate Python
-process; the Docker image bundles it, otherwise install it yourself. `maia2` 0.10.0 needs Python
-3.12 or 3.13:
+**Step 3. Install Maia-2.** This creates a separate Python 3.12 environment in `~/maia312`, so it
+doesn't touch your system Python. uv downloads Python 3.12 for you if you don't have it.
 
 ```bash
 uv venv --python 3.12 ~/maia312
 uv pip install --python ~/maia312/bin/python torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
 uv pip install --python ~/maia312/bin/python maia2==0.10.0 --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
-MAIA_COMMAND="$HOME/maia312/bin/python tools/maia/maia_sidecar.py --type rapid" ./target/release/review-server
 ```
 
-On first start the sidecar downloads the weights (280 MB) into `~/.cache/maia2`. If it fails to
-start or answer, reviews go on without it.
+Low on memory? Skip this step, and leave out the `MAIA_COMMAND` line in the next one.
 
-### Installing Stockfish
-
-The server's Stockfish is GPL-3.0 and is **not** bundled. Install it from your package manager
-(`apt install stockfish`, `brew install stockfish`) or from https://stockfishchess.org/download/,
-then point `STOCKFISH_PATH` at the binary. Any UCI engine with `MultiPV` support works.
-
-The live engine for sidelines is a separate, bundled WebAssembly build (Stockfish 19 Lite,
-`frontend/public/engine/`, see `THIRD_PARTY.md`). It runs in the reader's browser and adds no work to
-the server. Any server that serves `.wasm` as `application/wasm` can host it; with `STATIC_DIR` the
-backend does.
-
-## Tests and checks
+**Step 4. Start the server** (from the `knightreview` folder):
 
 ```bash
 cd backend
-cargo test                       # unit + integration tests (fake engine, no Stockfish needed)
-STOCKFISH_PATH=… cargo test --release --test stockfish_e2e -- --nocapture   # real-engine review
-cargo clippy --all-targets && cargo fmt --all -- --check
-
-cd frontend
-npm test && npm run typecheck && npm run lint && npm run build
+MAIA_COMMAND="$HOME/maia312/bin/python $PWD/../tools/maia/maia_sidecar.py --type rapid" \
+  cargo run --release -p review-server
 ```
 
-`cargo test` also regenerates `frontend/src/api/generated/*.ts`. The test PGNs are in
-[`backend/crates/review-server/tests/fixtures/`](backend/crates/review-server/tests/fixtures/README.md).
+The first build takes a few minutes. On its first start, Maia downloads its model (280 MB). The
+server is ready when you see:
+
+```text
+human-move model ready model=Maia-2 rapid
+listening on http://127.0.0.1:8080
+```
+
+Leave this terminal open.
+
+**Step 5. Start the website.** Open a **second terminal** in the `knightreview` folder:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**Step 6.** Open **http://localhost:5173** in your browser and review a game.
+
+<details>
+<summary><b>Troubleshooting</b></summary>
+
+- **"Analysis servers unavailable" on the page:** the server didn't find Stockfish. Run
+  `which stockfish` to get its path, then start the server with
+  `STOCKFISH_PATH=/path/to/stockfish` added in front of `cargo run`.
+- **No "human-move model ready" line:** check the Maia paths in `MAIA_COMMAND`. The folder path must
+  not contain spaces. Reviews still work without Maia.
+- **Port 5173 is in use:** run `npm run dev -- --port 5174` and open that port instead.
+
+</details>
+
+<details>
+<summary><b>Run it as a single server</b></summary>
+
+To serve the website and the API from one process (for example on a home server):
+
+```bash
+cd frontend && npm ci && npm run build
+cd ../backend && cargo build --release -p review-server
+STATIC_DIR=../frontend/dist \
+MAIA_COMMAND="$HOME/maia312/bin/python $PWD/../tools/maia/maia_sidecar.py --type rapid" \
+  ./target/release/review-server
+```
+
+Then open http://localhost:8080.
+
+</details>
+
+## Custom sounds
+
+KnightReview makes its own move and review sounds, so it works without any audio files. To use your
+own, add MP3 files with these names. Any file you leave out keeps the built-in sound.
+
+| File | When it plays |
+|---|---|
+| `move.mp3`, `capture.mp3`, `castle.mp3`, `check.mp3`, `promote.mp3` | Moves on the board |
+| `brilliant.mp3` | A Brilliant move |
+| `correct.mp3`, `incorrect.mp3` | Retrying a missed move: found it, or not yet |
+| `result_good.mp3`, `result_ok.mp3`, `result_bad.mp3` | Retrying a missed move: how good your answer was |
+
+- **From source:** put the files in `frontend/public/sounds/` and reload the page. That folder is
+  ignored by Git, so your sounds stay local.
+- **With Docker:** keep the files in a folder and mount it into the container:
+
+  ```bash
+  docker run -d --name knightreview -p 127.0.0.1:8080:8080 \
+    -v "$PWD/my-sounds:/app/static/sounds:ro" knightreview
+  ```
+
+  With Docker Compose, add `- ./my-sounds:/app/static/sounds:ro` under `volumes:` in `compose.yaml`.
+
+Only use sounds you have the right to use.
+
+## How it's built
+
+- **Backend:** Rust. Every move is analysed with [Stockfish](https://stockfishchess.org/), then
+  graded by a set of rules based on win chances and the players' ratings. The rules live in
+  [`backend/crates/review-core`](backend/crates/review-core/src/config.rs).
+- **Frontend:** React and TypeScript, with Lichess's [chessground](https://github.com/lichess-org/chessground)
+  board and a WebAssembly Stockfish for the moves you try yourself.
+- **Maia-2:** a small Python process the server talks to, in [`tools/maia`](tools/maia/maia_sidecar.py).
+
+## Contributing
+
+Bug reports and ideas are welcome in [Issues](https://github.com/khhizr007/knightreview/issues). If
+KnightReview helped you, a ⭐ on GitHub helps other players find it.
 
 ## License
 
-GPL-3.0-or-later (see [`LICENSE`](LICENSE) and [`THIRD_PARTY.md`](THIRD_PARTY.md)). The project
-contains no code or assets from the reference application.
+[GPL-3.0-or-later](LICENSE). Third-party components and their licenses are listed in
+[`THIRD_PARTY.md`](THIRD_PARTY.md). KnightReview is an independent project and is not affiliated with
+Chess.com or Lichess.

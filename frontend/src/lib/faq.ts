@@ -20,6 +20,10 @@ export const FAQ: FaqEntry[] = [
     a: "Yes. It loads your recent public games from both sites. You can also paste or open a PGN from anywhere.",
   },
   {
+    q: "Can I review a game straight from Chess.com?",
+    a: "Yes. Add the free KnightReview extension to Chrome or Edge. When you click Review on a finished Chess.com game, the game opens in KnightReview instead, so your daily Chess.com review is not used.",
+  },
+  {
     q: "How is a Brilliant move decided?",
     a: "A Brilliant move is the best move, or very close to it, that gives up a piece. Your position must still be good afterwards, and you must not already be winning easily.",
   },
